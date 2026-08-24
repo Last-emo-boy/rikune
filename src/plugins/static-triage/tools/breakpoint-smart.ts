@@ -25,6 +25,11 @@ import {
   type CryptoPlanningArtifactScope,
 } from '../crypto-planning-artifacts.js'
 import { RequiredUserInputSchema, SetupActionSchema } from '../../../setup-guidance.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'breakpoint.smart'
 
@@ -119,8 +124,8 @@ export const breakpointSmartToolDefinition: ToolDefinition = {
 }
 
 interface BreakpointSmartDependencies {
-  cryptoIdentify?: (args: unknown) => Promise<WorkerResult>
-  dynamicDependencies?: (args: unknown) => Promise<WorkerResult>
+  cryptoIdentify?: AbortableHandler<unknown, WorkerResult>
+  dynamicDependencies?: AbortableHandler<unknown, WorkerResult>
   loadDynamicTrace?: (
     workspaceManager: WorkspaceManager,
     database: DatabaseManager,
@@ -182,9 +187,10 @@ export function createBreakpointSmartHandler(
     dependencies.dynamicDependencies || createDynamicDependenciesHandler(workspaceManager, database)
   const dynamicTraceLoader = dependencies.loadDynamicTrace || loadDynamicTraceEvidence
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const startTime = Date.now()
     try {
+      throwIfAnalysisAborted(abortSignal)
       const input = breakpointSmartInputSchema.parse(args)
       const sample = database.findSample(input.sample_id)
       if (!sample) {
@@ -206,6 +212,7 @@ export function createBreakpointSmartHandler(
             sessionTag: input.session_tag,
           }
         )
+        throwIfAnalysisAborted(abortSignal)
         if (selection.latest_payload) {
           return {
             ok: true,
@@ -235,6 +242,7 @@ export function createBreakpointSmartHandler(
             sessionTag: input.session_tag,
           }
         )
+        throwIfAnalysisAborted(abortSignal)
         if (cryptoSelection.latest_payload) {
           cryptoResult = {
             ok: true,
@@ -245,16 +253,20 @@ export function createBreakpointSmartHandler(
       }
 
       if (!cryptoResult) {
-        cryptoResult = await cryptoIdentifyHandler({
-          sample_id: input.sample_id,
-          include_runtime_evidence: input.include_runtime_evidence,
-          runtime_evidence_scope: input.runtime_evidence_scope,
-          persist_artifact: false,
-          reuse_cached: true,
-          artifact_scope: input.artifact_scope,
-          force_refresh: input.force_refresh,
-          session_tag: input.session_tag,
-        })
+        cryptoResult = await invokeAbortable(
+          cryptoIdentifyHandler,
+          {
+            sample_id: input.sample_id,
+            include_runtime_evidence: input.include_runtime_evidence,
+            runtime_evidence_scope: input.runtime_evidence_scope,
+            persist_artifact: false,
+            reuse_cached: true,
+            artifact_scope: input.artifact_scope,
+            force_refresh: input.force_refresh,
+            session_tag: input.session_tag,
+          },
+          abortSignal
+        )
       }
 
       warnings.push(...(cryptoResult.warnings || []))
@@ -264,13 +276,18 @@ export function createBreakpointSmartHandler(
             sessionTag: input.session_tag,
           })
         : null
+      throwIfAnalysisAborted(abortSignal)
       const candidates = buildBreakpointCandidates({
         findings: parseCryptoFindings(cryptoResult),
         dynamicEvidence,
         maxCandidates: input.max_candidates,
       })
       const runtimeReadiness = buildRuntimeReadiness(
-        await dynamicDependenciesHandler({ sample_id: input.sample_id })
+        await invokeAbortable(
+          dynamicDependenciesHandler,
+          { sample_id: input.sample_id },
+          abortSignal
+        )
       )
       const sourceArtifactRefs = dedupeArtifactRefs(collectArtifactRefs(cryptoResult))
       const summary = summarizeBreakpointCandidates(candidates)
@@ -325,6 +342,7 @@ export function createBreakpointSmartHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [error instanceof Error ? error.message : String(error)],

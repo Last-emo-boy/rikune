@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals'
 import fs from 'fs'
 import os from 'os'
@@ -22,7 +23,7 @@ describe('dynamic.behavior.diff tool', () => {
     tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rikune-behavior-diff-'))
     workspaceManager = new WorkspaceManager(path.join(tempRoot, 'workspaces'))
     database = new DatabaseManager(path.join(tempRoot, 'rikune.db'))
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: SAMPLE_ID,
       sha256: SAMPLE_HASH,
       md5: '5'.repeat(32),

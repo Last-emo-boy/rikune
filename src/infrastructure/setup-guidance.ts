@@ -27,8 +27,8 @@ export type SetupAction = z.infer<typeof SetupActionSchema>
 export type RequiredUserInput = z.infer<typeof RequiredUserInputSchema>
 
 const WINDOWS_GHIDRA_EXAMPLES = [
-  'C:\\Users\\<user>\\Downloads\\ghidra_12.0.4_PUBLIC',
-  'D:\\tools\\ghidra_12.0.4_PUBLIC',
+  'C:\\Users\\<user>\\Downloads\\ghidra_12.1.3_PUBLIC',
+  'D:\\tools\\ghidra_12.1.3_PUBLIC',
 ]
 
 const WINDOWS_JAVA_EXAMPLES = [
@@ -40,14 +40,50 @@ const WINDOWS_CAPA_RULES_EXAMPLES = ['C:\\tools\\capa-rules', 'D:\\analysis\\cap
 
 const WINDOWS_DIE_EXAMPLES = ['C:\\tools\\die\\diec.exe', 'D:\\tools\\Detect It Easy\\diec.exe']
 
-const WINDOWS_FRIDA_EXAMPLES = ['pip install frida', 'pip install frida-tools']
+const WINDOWS_FRIDA_EXAMPLES = [
+  'python -m pip install --require-hashes -r workers/requirements-dynamic.windows.lock.txt',
+]
 
 const LINUX_QILING_ROOTFS_EXAMPLES = ['/opt/qiling-rootfs/windows_x86_64', '/mnt/qiling-rootfs']
+const LINUX_QILING_PYTHON_EXAMPLES = [
+  '/opt/qiling-audited/bin/python',
+  '/srv/qiling-patched/bin/python',
+]
 
 const LINUX_RETDEC_EXAMPLES = [
   '/opt/retdec/bin/retdec-decompiler',
   '/usr/local/bin/retdec-decompiler',
 ]
+
+export function getBaselinePythonRequirementsLock(
+  platform: NodeJS.Platform = process.platform
+): string {
+  return platform === 'win32' ? 'requirements.windows.lock.txt' : 'requirements.lock.txt'
+}
+
+export function getDynamicPythonRequirementsLock(
+  platform: NodeJS.Platform = process.platform
+): string {
+  return platform === 'win32'
+    ? 'workers/requirements-dynamic.windows.lock.txt'
+    : 'workers/requirements-dynamic.lock.txt'
+}
+
+export function getHashedPipInstallCommand(lockFile: string): string {
+  return `python -m pip install --require-hashes -r ${lockFile}`
+}
+
+export function getBaselinePythonInstallCommand(
+  platform: NodeJS.Platform = process.platform
+): string {
+  return getHashedPipInstallCommand(getBaselinePythonRequirementsLock(platform))
+}
+
+export function getDynamicPythonInstallCommand(
+  platform: NodeJS.Platform = process.platform
+): string {
+  return getHashedPipInstallCommand(getDynamicPythonRequirementsLock(platform))
+}
 
 export function mergeSetupActions(...groups: SetupAction[][]): SetupAction[] {
   const merged = new Map<string, SetupAction>()
@@ -70,6 +106,7 @@ export function mergeRequiredUserInputs(...groups: RequiredUserInput[][]): Requi
 }
 
 export function buildBaselinePythonSetupActions(): SetupAction[] {
+  const command = getBaselinePythonInstallCommand()
   return [
     {
       id: 'install_python_requirements',
@@ -77,9 +114,9 @@ export function buildBaselinePythonSetupActions(): SetupAction[] {
       kind: 'pip_install',
       title: 'Install baseline Python dependencies',
       summary:
-        'Install the baseline static-analysis Python packages before using worker-backed analysis tools.',
-      command: 'python -m pip install -r requirements.txt',
-      examples: ['python -m pip install -r requirements.txt'],
+        'From the Rikune package root, install the hash-locked baseline for this operating system before using worker-backed analysis tools.',
+      command,
+      examples: [command],
       applies_to: ['system.health', 'dynamic.dependencies', 'static-analysis'],
     },
   ]
@@ -109,6 +146,7 @@ export function buildStaticAnalysisRequiredUserInputs(): RequiredUserInput[] {
 }
 
 export function buildStaticAnalysisSetupActions(): SetupAction[] {
+  const baselineCommand = getBaselinePythonInstallCommand()
   return [
     {
       id: 'install_static_python_requirements',
@@ -116,9 +154,9 @@ export function buildStaticAnalysisSetupActions(): SetupAction[] {
       kind: 'pip_install',
       title: 'Install static-analysis Python dependencies',
       summary:
-        'Install the core Python packages used by PE parsing and capability triage, including pefile, LIEF, and flare-capa.',
-      command: 'python -m pip install -r requirements.txt',
-      examples: ['python -m pip install -r requirements.txt'],
+        'From the Rikune package root, install the hash-locked core packages used by PE parsing and capability triage, including pefile, LIEF, and flare-capa.',
+      command: baselineCommand,
+      examples: [baselineCommand],
       applies_to: [
         'system.health',
         'system.setup.guide',
@@ -133,8 +171,8 @@ export function buildStaticAnalysisSetupActions(): SetupAction[] {
       title: 'Install capa',
       summary:
         'Install FLARE capa so the server can recognize executable behavior capabilities from rules.',
-      command: 'python -m pip install flare-capa',
-      examples: ['python -m pip install flare-capa'],
+      command: baselineCommand,
+      examples: [baselineCommand],
       applies_to: ['static.capability.triage', 'system.health'],
     },
     {
@@ -144,8 +182,8 @@ export function buildStaticAnalysisSetupActions(): SetupAction[] {
       title: 'Install pefile',
       summary:
         'Install pefile for lightweight PE header, section, import, export, and resource parsing.',
-      command: 'python -m pip install pefile',
-      examples: ['python -m pip install pefile'],
+      command: baselineCommand,
+      examples: [baselineCommand],
       applies_to: ['pe.structure.analyze', 'system.health'],
     },
     {
@@ -155,8 +193,8 @@ export function buildStaticAnalysisSetupActions(): SetupAction[] {
       title: 'Install LIEF',
       summary:
         'Install LIEF for richer normalized PE parsing and rebuild-oriented metadata extraction.',
-      command: 'python -m pip install lief',
-      examples: ['python -m pip install lief'],
+      command: baselineCommand,
+      examples: [baselineCommand],
       applies_to: ['pe.structure.analyze', 'system.health'],
     },
     {
@@ -220,6 +258,8 @@ export function buildStaticAnalysisSetupActions(): SetupAction[] {
 }
 
 export function buildCoreLinuxToolchainSetupActions(): SetupAction[] {
+  const baselineCommand = getBaselinePythonInstallCommand()
+  const dynamicCommand = getDynamicPythonInstallCommand()
   return [
     {
       id: 'install_graphviz_package',
@@ -253,8 +293,8 @@ export function buildCoreLinuxToolchainSetupActions(): SetupAction[] {
       title: 'Install YARA-X',
       summary:
         'Install YARA-X alongside legacy YARA so future scans can use the newer engine without removing yara-python.',
-      command: 'python -m pip install yara-x',
-      examples: ['python -m pip install yara-x'],
+      command: baselineCommand,
+      examples: [baselineCommand],
       applies_to: ['yara.scan', 'system.health', 'system.setup.guide'],
     },
     {
@@ -288,14 +328,15 @@ export function buildCoreLinuxToolchainSetupActions(): SetupAction[] {
       title: 'Install Frida CLI tools',
       summary:
         'Install frida-tools so frida-ps, frida-trace, and other CLI helpers are available on PATH.',
-      command: 'python -m pip install frida-tools',
-      examples: ['python -m pip install frida-tools'],
+      command: dynamicCommand,
+      examples: [dynamicCommand],
       applies_to: ['dynamic.dependencies', 'system.health', 'system.setup.guide'],
     },
   ]
 }
 
 export function buildDynamicDependencySetupActions(): SetupAction[] {
+  const dynamicCommand = getDynamicPythonInstallCommand()
   return [
     {
       id: 'install_dynamic_requirements',
@@ -303,9 +344,9 @@ export function buildDynamicDependencySetupActions(): SetupAction[] {
       kind: 'pip_install',
       title: 'Install dynamic-analysis extras',
       summary:
-        'Install the optional dynamic-analysis package set used by Speakeasy, Frida, and process telemetry probes.',
-      command: 'python -m pip install -r workers/requirements-dynamic.txt',
-      examples: ['python -m pip install -r workers/requirements-dynamic.txt'],
+        'From the Rikune package root, install the platform-specific hash-locked dynamic-analysis package set used by Speakeasy, Frida, PANDA, and process telemetry probes.',
+      command: dynamicCommand,
+      examples: [dynamicCommand],
       applies_to: ['dynamic.dependencies', 'sandbox.execute'],
     },
     {
@@ -314,8 +355,8 @@ export function buildDynamicDependencySetupActions(): SetupAction[] {
       kind: 'pip_install',
       title: 'Install Speakeasy emulator',
       summary: 'Install FLARE Speakeasy for user-mode PE emulation.',
-      command: 'python -m pip install speakeasy-emulator',
-      examples: ['python -m pip install speakeasy-emulator'],
+      command: dynamicCommand,
+      examples: [dynamicCommand],
       applies_to: ['dynamic.dependencies', 'sandbox.execute'],
     },
     {
@@ -324,8 +365,8 @@ export function buildDynamicDependencySetupActions(): SetupAction[] {
       kind: 'pip_install',
       title: 'Install Frida runtime tracing',
       summary: 'Install Frida when you need live instrumentation or API tracing support.',
-      command: 'python -m pip install frida',
-      examples: ['python -m pip install frida'],
+      command: dynamicCommand,
+      examples: [dynamicCommand],
       applies_to: ['dynamic.dependencies', 'frida.runtime.instrument'],
     },
     {
@@ -334,8 +375,8 @@ export function buildDynamicDependencySetupActions(): SetupAction[] {
       kind: 'pip_install',
       title: 'Install Frida tools',
       summary: 'Install frida-tools for CLI support and script compilation.',
-      command: 'python -m pip install frida-tools',
-      examples: ['python -m pip install frida-tools'],
+      command: dynamicCommand,
+      examples: [dynamicCommand],
       applies_to: ['dynamic.dependencies', 'frida.script.inject'],
     },
     {
@@ -344,19 +385,20 @@ export function buildDynamicDependencySetupActions(): SetupAction[] {
       kind: 'pip_install',
       title: 'Install psutil process telemetry',
       summary: 'Install psutil for process metadata and lightweight telemetry probes.',
-      command: 'python -m pip install psutil',
-      examples: ['python -m pip install psutil'],
+      command: dynamicCommand,
+      examples: [dynamicCommand],
       applies_to: ['dynamic.dependencies'],
     },
     {
-      id: 'install_qiling_runtime',
+      id: 'configure_qiling_python',
       required: false,
-      kind: 'pip_install',
-      title: 'Install Qiling',
+      kind: 'set_env',
+      title: 'Configure an externally managed Qiling environment',
       summary:
-        'Install Qiling for Windows API emulation, hookable user-mode execution, and automated dynamic analysis workflows.',
-      command: 'python -m pip install qiling',
-      examples: ['python -m pip install qiling'],
+        'Automatic Qiling installation is disabled because Qiling 1.4.6 requires Pillow <11, below the v1.4.0 vulnerability baseline. Point QILING_PYTHON only at a separately managed and independently audited environment.',
+      env_var: 'QILING_PYTHON',
+      value_hint: 'Absolute path to an independently audited Python interpreter with Qiling',
+      examples: LINUX_QILING_PYTHON_EXAMPLES.map((example) => `export QILING_PYTHON="${example}"`),
       applies_to: [
         'dynamic.dependencies',
         'sandbox.execute',
@@ -388,8 +430,11 @@ export function buildDynamicDependencySetupActions(): SetupAction[] {
       title: 'Install angr',
       summary:
         'Install angr, ideally in an isolated Python environment, for symbolic execution, CFG recovery, and path exploration.',
-      command: 'python -m venv /opt/angr-venv && /opt/angr-venv/bin/pip install angr',
-      examples: ['python -m venv /opt/angr-venv && /opt/angr-venv/bin/pip install angr'],
+      command:
+        'python -m venv /opt/angr-venv && /opt/angr-venv/bin/python -m pip install --require-hashes -r src/plugins/angr/requirements.lock.txt',
+      examples: [
+        'python -m venv /opt/angr-venv && /opt/angr-venv/bin/python -m pip install --require-hashes -r src/plugins/angr/requirements.lock.txt',
+      ],
       applies_to: ['dynamic.dependencies', 'system.health', 'system.setup.guide'],
     },
     {
@@ -411,8 +456,8 @@ export function buildDynamicDependencySetupActions(): SetupAction[] {
       title: 'Install PANDA Python bindings',
       summary:
         'Install pandare so record/replay-oriented PANDA workflows are available to helper tooling and future integrations.',
-      command: 'python -m pip install pandare',
-      examples: ['python -m pip install pandare'],
+      command: dynamicCommand,
+      examples: [dynamicCommand],
       applies_to: ['dynamic.dependencies', 'system.health', 'system.setup.guide'],
     },
     {
@@ -432,6 +477,15 @@ export function buildDynamicDependencySetupActions(): SetupAction[] {
 
 export function buildDynamicDependencyRequiredUserInputs(): RequiredUserInput[] {
   return [
+    {
+      key: 'qiling_python_path',
+      label: 'Audited Qiling Python interpreter',
+      summary:
+        'Optional: provide an independently audited Qiling environment. Rikune does not install Qiling automatically because its supported dependency chain is below the release vulnerability baseline.',
+      required: false,
+      env_vars: ['QILING_PYTHON'],
+      examples: LINUX_QILING_PYTHON_EXAMPLES,
+    },
     {
       key: 'qiling_rootfs_path',
       label: 'Qiling rootfs directory',
@@ -468,6 +522,7 @@ export function buildFridaRequiredUserInputs(): RequiredUserInput[] {
 }
 
 export function buildFridaSetupActions(): SetupAction[] {
+  const dynamicCommand = getDynamicPythonInstallCommand()
   return [
     {
       id: 'install_frida_runtime',
@@ -476,8 +531,8 @@ export function buildFridaSetupActions(): SetupAction[] {
       title: 'Install Frida runtime',
       summary:
         'Install the Frida runtime for dynamic instrumentation. This provides the core functionality for process instrumentation and API tracing.',
-      command: 'python -m pip install frida',
-      examples: ['python -m pip install frida'],
+      command: dynamicCommand,
+      examples: [dynamicCommand],
       applies_to: ['frida.runtime.instrument', 'system.health'],
     },
     {
@@ -486,8 +541,8 @@ export function buildFridaSetupActions(): SetupAction[] {
       kind: 'pip_install',
       title: 'Install Frida tools package',
       summary: 'Install frida-tools for additional CLI utilities and script compilation support.',
-      command: 'python -m pip install frida-tools',
-      examples: ['python -m pip install frida-tools'],
+      command: dynamicCommand,
+      examples: [dynamicCommand],
       applies_to: ['frida.script.inject', 'system.health'],
     },
     {

@@ -30,11 +30,6 @@ print("frida-tools", m.version("frida-tools"))
 print("psutil", psutil.__version__)
 PY
 
-/opt/qiling-venv/bin/python - <<'PY'
-import qiling
-print("qiling", qiling.__version__ if hasattr(qiling, "__version__") else "unknown")
-PY
-
 /opt/angr-venv/bin/python - <<'PY'
 import angr
 print("angr", angr.__version__)

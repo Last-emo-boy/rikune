@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from '../../src/database.js'
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals'
 import fs from 'fs'
 import os from 'os'
@@ -36,7 +37,7 @@ describe('static.behavior.classify tool', () => {
       'ResumeThread',
     ].join('\0')
     const sampleBytes = Buffer.from(payload, 'ascii')
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: SAMPLE_ID,
       sha256: SAMPLE_HASH,
       md5: '8'.repeat(32),
@@ -48,36 +49,63 @@ describe('static.behavior.classify tool', () => {
     const workspace = await workspaceManager.createWorkspace(SAMPLE_ID)
     fs.writeFileSync(path.join(workspace.original, 'behavior.exe'), sampleBytes)
 
-    await persistStaticAnalysisJsonArtifact(workspaceManager, database, SAMPLE_ID, 'static_config_carver', 'config_carver', {
-      schema: 'rikune.static_config_carver.v1',
-      candidates: [
-        {
-          kind: 'registry_path',
-          value: 'HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run',
-          confidence: 0.84,
-          evidence: ['registry_path_string'],
-        },
-      ],
-    }, 'behavior-session')
+    await persistStaticAnalysisJsonArtifact(
+      workspaceManager,
+      database,
+      SAMPLE_ID,
+      'static_config_carver',
+      'config_carver',
+      {
+        schema: 'rikune.static_config_carver.v1',
+        candidates: [
+          {
+            kind: 'registry_path',
+            value: 'HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run',
+            confidence: 0.84,
+            evidence: ['registry_path_string'],
+          },
+        ],
+      },
+      'behavior-session'
+    )
 
-    await persistStaticAnalysisJsonArtifact(workspaceManager, database, SAMPLE_ID, 'dynamic_trace_json', 'dynamic_trace', {
-      schema_version: '0.1.0',
-      source_format: 'generic_json',
-      evidence_kind: 'trace',
-      imported_at: new Date().toISOString(),
-      executed: true,
-      raw_event_count: 2,
-      api_calls: [
-        { api: 'WriteProcessMemory', category: 'process_manipulation', count: 1, confidence: 0.92, sources: [] },
-        { api: 'CreateRemoteThread', category: 'process_manipulation', count: 1, confidence: 0.92, sources: [] },
-      ],
-      memory_regions: [],
-      modules: [],
-      strings: [],
-      stages: ['prepare_remote_process_access'],
-      risk_hints: [],
-      notes: [],
-    })
+    await persistStaticAnalysisJsonArtifact(
+      workspaceManager,
+      database,
+      SAMPLE_ID,
+      'dynamic_trace_json',
+      'dynamic_trace',
+      {
+        schema_version: '0.1.0',
+        source_format: 'generic_json',
+        evidence_kind: 'trace',
+        imported_at: new Date().toISOString(),
+        executed: true,
+        raw_event_count: 2,
+        api_calls: [
+          {
+            api: 'WriteProcessMemory',
+            category: 'process_manipulation',
+            count: 1,
+            confidence: 0.92,
+            sources: [],
+          },
+          {
+            api: 'CreateRemoteThread',
+            category: 'process_manipulation',
+            count: 1,
+            confidence: 0.92,
+            sources: [],
+          },
+        ],
+        memory_regions: [],
+        modules: [],
+        strings: [],
+        stages: ['prepare_remote_process_access'],
+        risk_hints: [],
+        notes: [],
+      }
+    )
   })
 
   afterEach(() => {
@@ -121,7 +149,10 @@ describe('static.behavior.classify tool', () => {
   })
 
   test('classifies persistence and injection indicators', async () => {
-    const result = await createStaticBehaviorClassifyHandler(workspaceManager, database)({
+    const result = await createStaticBehaviorClassifyHandler(
+      workspaceManager,
+      database
+    )({
       sample_id: SAMPLE_ID,
       static_artifact_scope: 'session',
       static_artifact_session_tag: 'behavior-session',
@@ -133,8 +164,12 @@ describe('static.behavior.classify tool', () => {
     expect(data.schema).toBe('rikune.static_behavior_classifier.v1')
     expect(data.summary.finding_count).toBeGreaterThanOrEqual(2)
     expect(data.findings.some((finding: any) => finding.id === 'persistence.run_key')).toBe(true)
-    expect(data.findings.some((finding: any) => finding.id === 'injection.remote_thread')).toBe(true)
-    expect(data.findings.some((finding: any) => finding.id === 'injection.process_hollowing')).toBe(true)
+    expect(data.findings.some((finding: any) => finding.id === 'injection.remote_thread')).toBe(
+      true
+    )
+    expect(data.findings.some((finding: any) => finding.id === 'injection.process_hollowing')).toBe(
+      true
+    )
     expect(data.evidence_summary).toEqual(
       expect.objectContaining({
         schema: 'rikune.static_behavior_classifier.evidence_summary.v1',
@@ -199,5 +234,26 @@ describe('static.behavior.classify tool', () => {
     expect(data.dynamic_summary.executed).toBe(true)
     expect(data.recommended_next_tools).toContain('dynamic.behavior.diff')
     expect(result.artifacts?.[0]?.type).toBe('static_behavior_classifier')
+  })
+
+  test('cooperatively aborts a large real classifier scan', async () => {
+    const workspace = await workspaceManager.getWorkspace(SAMPLE_ID)
+    fs.writeFileSync(
+      path.join(workspace.original, 'behavior.exe'),
+      Buffer.alloc(32 * 1024 * 1024, 0x41)
+    )
+    const controller = new AbortController()
+    const running = createStaticBehaviorClassifyHandler(workspaceManager, database)(
+      {
+        sample_id: SAMPLE_ID,
+        max_strings: 5_000,
+        persist_artifact: false,
+      },
+      controller.signal
+    )
+    await new Promise<void>((resolve) => setTimeout(resolve, 5))
+    controller.abort(new Error('cancel classifier scan'))
+
+    await expect(running).rejects.toMatchObject({ name: 'AbortError' })
   })
 })

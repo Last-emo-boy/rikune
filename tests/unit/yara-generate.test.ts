@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 /**
  * Unit tests for yara-rule-builder
  */
@@ -168,7 +169,7 @@ describe('yara.generate tool', () => {
     tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rikune-yara-generate-'))
     database = new DatabaseManager(path.join(tempRoot, 'rikune.db'))
     workspaceManager = new WorkspaceManager(path.join(tempRoot, 'workspaces'))
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: sampleHash,
       md5: '5'.repeat(32),
@@ -305,7 +306,7 @@ describe('yara.generate.batch tool', () => {
   const sampleIds = sampleHashes.map((hash) => `sha256:${hash}`)
 
   function insertSampleWithEvidence(sampleId: string, sampleHash: string, index: number) {
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: sampleHash,
       md5: String(index).repeat(32).slice(0, 32),

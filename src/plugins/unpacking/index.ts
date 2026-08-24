@@ -15,6 +15,7 @@ import {
   unpackWorkflowPlanToolDefinition,
   createUnpackWorkflowPlanHandler,
 } from './tools/unpack-workflow-plan.js'
+import { createSampleFinalizationService } from '../../sample/sample-finalization.js'
 
 const unpackingPlugin: Plugin = {
   id: 'unpacking',
@@ -33,11 +34,18 @@ const unpackingPlugin: Plugin = {
   description: 'Automated unpacking, child-sample handoff, and packer-specific unpacking guidance',
   version: '1.0.0',
   register(server, deps) {
-    const { workspaceManager: wm, database: db } = deps
+    const { workspaceManager: wm, database: db, policyGuard, sampleOperationGate } = deps
+    if (!policyGuard || !sampleOperationGate) {
+      throw new Error('unpacking plugin requires PolicyGuard and SampleOperationGate')
+    }
+    const finalizer = createSampleFinalizationService(wm, db, policyGuard, sampleOperationGate)
 
-    server.registerTool(unpackAutoToolDefinition, createUnpackAutoHandler(wm, db))
+    server.registerTool(unpackAutoToolDefinition, createUnpackAutoHandler(wm, db, finalizer))
     server.registerTool(unpackGuideToolDefinition, createUnpackGuideHandler(wm, db))
-    server.registerTool(unpackChildHandoffToolDefinition, createUnpackChildHandoffHandler(wm, db))
+    server.registerTool(
+      unpackChildHandoffToolDefinition,
+      createUnpackChildHandoffHandler(wm, db, finalizer)
+    )
     server.registerTool(unpackWorkflowPlanToolDefinition, createUnpackWorkflowPlanHandler())
 
     return ['unpack.auto', 'unpack.guide', 'unpack.child.handoff', 'unpack.workflow.plan']

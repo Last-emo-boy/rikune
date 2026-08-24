@@ -3,7 +3,6 @@
  */
 
 import { z } from 'zod'
-import { spawn } from 'child_process'
 import type { ToolDefinition, WorkerResult, ArtifactRef } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
@@ -11,6 +10,8 @@ import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
 import { getPythonCommand } from '../../../utils/shared-helpers.js'
+import { runAbortableProcess } from '../../../worker/abortable-process.js'
+import { throwIfAnalysisAborted } from '../../../analysis/analysis-cancellation.js'
 import {
   ELF_MACHO_CAPABILITIES,
   ELF_MACHO_EVIDENCE,
@@ -23,6 +24,10 @@ import {
 } from '../elf-macho-metadata.js'
 
 const TOOL_NAME = 'macho.structure.analyze'
+
+interface MachoStructureAnalyzeDependencies {
+  runProcess?: typeof runAbortableProcess
+}
 
 export const MachoStructureAnalyzeInputSchema = z.object({
   sample_id: z.string().describe('Sample ID (format: sha256:<hex>)'),
@@ -83,20 +88,31 @@ export const machoStructureAnalyzeToolDefinition: ToolDefinition = {
 
 export function createMachoStructureAnalyzeHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager
+  database: DatabaseManager,
+  dependencies: MachoStructureAnalyzeDependencies = {}
 ) {
-  return async (args: z.infer<typeof MachoStructureAnalyzeInputSchema>): Promise<WorkerResult> => {
+  return async (
+    args: z.infer<typeof MachoStructureAnalyzeInputSchema>,
+    abortSignal?: AbortSignal
+  ): Promise<WorkerResult> => {
     const t0 = Date.now()
 
     try {
+      throwIfAnalysisAborted(abortSignal)
       const sample = database.findSample(args.sample_id)
       if (!sample) {
         return { ok: false, errors: [`Sample not found: ${args.sample_id}`] }
       }
 
       const { samplePath } = await resolvePrimarySamplePath(workspaceManager, args.sample_id)
+      throwIfAnalysisAborted(abortSignal)
 
-      const result = await callElfMachoWorker({ action: 'parse_macho', file_path: samplePath })
+      const result = await callElfMachoWorker(
+        { action: 'parse_macho', file_path: samplePath },
+        abortSignal,
+        dependencies.runProcess
+      )
+      throwIfAnalysisAborted(abortSignal)
 
       if (!result.ok) {
         return { ok: false, errors: [String(result.error || 'Mach-O parsing failed')] }
@@ -105,6 +121,7 @@ export function createMachoStructureAnalyzeHandler(
       const enriched = enrichMachoStructureResult(result, { sampleId: args.sample_id })
       const artifacts: ArtifactRef[] = []
       try {
+        throwIfAnalysisAborted(abortSignal)
         const artRef = await persistStaticAnalysisJsonArtifact(
           workspaceManager,
           database,
@@ -113,8 +130,10 @@ export function createMachoStructureAnalyzeHandler(
           'macho-structure',
           enriched
         )
+        throwIfAnalysisAborted(abortSignal)
         if (artRef) artifacts.push(artRef)
       } catch {
+        throwIfAnalysisAborted(abortSignal)
         // non-fatal
       }
 
@@ -125,6 +144,7 @@ export function createMachoStructureAnalyzeHandler(
         metrics: { elapsed_ms: Date.now() - t0, tool: TOOL_NAME },
       }
     } catch (err) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [`${TOOL_NAME} failed: ${err instanceof Error ? err.message : String(err)}`],
@@ -135,45 +155,37 @@ export function createMachoStructureAnalyzeHandler(
 }
 
 async function callElfMachoWorker(
-  request: Record<string, unknown>
+  request: Record<string, unknown>,
+  abortSignal?: AbortSignal,
+  runProcess: typeof runAbortableProcess = runAbortableProcess
 ): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const workerPath = resolvePackagePath(
-      'src',
-      'plugins',
-      'elf-macho',
-      'workers',
-      'elf_macho_worker.py'
-    )
-    const pythonCommand = getPythonCommand()
-    const proc = spawn(pythonCommand, [workerPath], { stdio: ['pipe', 'pipe', 'pipe'] })
-
-    let stdout = ''
-    let stderr = ''
-
-    proc.stdout.on('data', (d) => {
-      stdout += d.toString()
-    })
-    proc.stderr.on('data', (d) => {
-      stderr += d.toString()
-    })
-
-    proc.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`ELF/Mach-O worker exited with code ${code}: ${stderr}`))
-        return
-      }
-      try {
-        const lines = stdout.trim().split('\n')
-        resolve(JSON.parse(lines[lines.length - 1]))
-      } catch (e) {
-        reject(new Error(`Failed to parse worker response: ${(e as Error).message}`))
-      }
-    })
-
-    proc.on('error', (e) => reject(new Error(`Failed to spawn worker: ${e.message}`)))
-
-    proc.stdin.write(JSON.stringify(request) + '\n')
-    proc.stdin.end()
+  const workerPath = resolvePackagePath(
+    'src',
+    'plugins',
+    'elf-macho',
+    'workers',
+    'elf_macho_worker.py'
+  )
+  const result = await runProcess({
+    command: getPythonCommand(),
+    args: [workerPath],
+    cwd: process.cwd(),
+    stdin: `${JSON.stringify(request)}\n`,
+    timeoutMs: 120_000,
+    abortSignal,
   })
+  if (result.timedOut) {
+    throw new Error('ELF/Mach-O worker timed out')
+  }
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `ELF/Mach-O worker exited with code ${result.exitCode ?? 'unknown'}: ${result.stderr}`
+    )
+  }
+  try {
+    const lines = result.stdout.trim().split('\n')
+    return JSON.parse(lines[lines.length - 1]) as Record<string, unknown>
+  } catch (error) {
+    throw new Error(`Failed to parse worker response: ${(error as Error).message}`)
+  }
 }

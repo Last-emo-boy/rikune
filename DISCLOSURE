@@ -1,0 +1,30 @@
+Rikune Dual-Use Disclosure
+
+Rikune is a dual-use reverse-engineering and security-analysis workbench. It can
+inspect binaries, recover program structure, identify suspicious behavior, and
+support defensive malware research. The same capabilities could be misused
+against systems or software without authorization.
+
+Use Rikune only on samples, systems, and environments that you own or are
+explicitly authorized to assess. Users are responsible for complying with
+applicable law, license terms, organizational policy, privacy requirements, and
+safe malware-handling practices. Do not use Rikune to deploy malware, evade
+security controls, obtain unauthorized access, or harm third parties.
+
+Official npm releases are prepared as immutable staged candidates by CI. The
+publishable `npm-release-candidate` artifact is exposed only after the exact-tag
+stage run has completed its static OCI build, signature, attestation, and
+runtime verification. A human maintainer must wait for that entire run to
+succeed, verify the artifact manifest's tag, commit, integrity, run URL, and OCI
+digest, acknowledge this disclosure, and publish the exact tarball through an
+interactive npm ceremony protected by account 2FA. CI is not authorized to hold
+an npm publication token or publish the package.
+
+The reviewed ceremony publishes the staged tarball explicitly as the latest
+release with `npm publish rikune-1.4.0.tgz --tag latest --access public`; the
+maintainer completes npm's interactive 2FA prompt locally and never transmits
+the one-time code to CI or an AI assistant.
+
+Security issues should be reported privately through the repository's GitHub
+Security Advisories. Do not include live malware, credentials, or sensitive
+third-party data in public issues.

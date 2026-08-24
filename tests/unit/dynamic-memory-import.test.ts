@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
 import fs from 'fs'
 import path from 'path'
@@ -50,7 +51,7 @@ describe('dynamic.memory.import tool', () => {
 
   test('should import minidump-style memory evidence and persist raw dump plus normalized trace', async () => {
     const sampleId = 'sha256:' + 'a'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'a'.repeat(64),
       md5: 'a'.repeat(32),
@@ -124,7 +125,7 @@ describe('dynamic.memory.import tool', () => {
 
   test('should detect process-memory snapshots by extension and derive file plus registry stages', async () => {
     const sampleId = 'sha256:' + 'b'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'b'.repeat(64),
       md5: 'b'.repeat(32),

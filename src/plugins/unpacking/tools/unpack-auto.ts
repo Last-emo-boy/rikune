@@ -7,6 +7,7 @@ import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
+import type { SampleFinalizationService } from '../../../sample/sample-finalization.js'
 import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import {
   selectUnpackStrategy,
@@ -161,7 +162,8 @@ function extractPackerResult(database: DatabaseManager, sampleId: string): Packe
 
 export function createUnpackAutoHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager
+  database: DatabaseManager,
+  finalizer: SampleFinalizationService
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     try {
@@ -274,8 +276,7 @@ export function createUnpackAutoHandler(
         // Register child sample
         try {
           const child = await registerChildSample(
-            workspaceManager,
-            database,
+            finalizer,
             currentSampleId,
             result.unpacked_path,
             {

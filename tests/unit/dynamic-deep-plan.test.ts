@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 /**
  * Unit tests for dynamic.deep_plan.
  */
@@ -65,7 +66,7 @@ describe('dynamic.deep_plan tool', () => {
     const sampleId = `sha256:${sampleHash}`
 
     try {
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: sampleHash,
         md5: '9'.repeat(32),

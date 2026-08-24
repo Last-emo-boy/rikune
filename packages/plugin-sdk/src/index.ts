@@ -124,6 +124,25 @@ export interface ToolDefinition {
   runtime?: ToolRuntimeContract
   /** Bounded backend worker contract for optional worker-backed tools. */
   workerBackend?: BackendWorkerContract
+  /** Internal exact sample-reference extraction contract for host fencing. */
+  sampleReferences?: {
+    direct?: readonly string[]
+    arrays?: readonly string[]
+    foreign?: ReadonlyArray<{
+      field: string
+      relation:
+        | 'analysis_run'
+        | 'job'
+        | 'artifact'
+        | 'debug_session'
+        | 'analysis'
+        | 'analysis_evidence'
+        | 'batch'
+    }>
+    none?: boolean
+  }
+  /** Host sample-operation lease policy; destructive lifecycle tools manage exclusivity themselves. */
+  sampleLeaseMode?: 'shared' | 'exclusive-managed'
 }
 
 /** Generic tool arguments (for tools that don't use Zod parsing). */
@@ -758,6 +777,7 @@ export interface PluginToolDeps {
   cacheManager?: any
   jobQueue?: any
   storageManager?: any
+  sampleOperationGate?: any
   server?: any
   services?: PluginServices
 
@@ -1078,7 +1098,7 @@ export interface PluginSystemDep {
    * Merged across all plugins into global ARG declarations and
    * docker-compose build args.
    *
-   * Example: `{ GHIDRA_VERSION: '12.0.4' }`
+   * Example: `{ GHIDRA_VERSION: '12.1.3' }`
    */
   buildArgs?: Record<string, string>
 

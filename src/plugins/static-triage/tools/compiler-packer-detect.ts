@@ -23,6 +23,7 @@ import {
   persistStaticAnalysisJsonArtifact,
 } from '../../../artifacts/static-analysis-artifacts.js'
 import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
+import { throwIfAnalysisAborted } from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'compiler.packer.detect'
 const execFileAsync = promisify(execFile)
@@ -207,7 +208,8 @@ interface CompilerPackerDetectDependencies {
   executeBackend?: (
     binaryPath: string,
     samplePath: string,
-    timeoutSec: number
+    timeoutSec: number,
+    abortSignal?: AbortSignal
   ) => Promise<DieExecutionResult>
 }
 
@@ -564,7 +566,8 @@ function buildNextActions(summary: z.infer<typeof CompilerPackerDetectDataSchema
 async function defaultExecuteBackend(
   binaryPath: string,
   samplePath: string,
-  timeoutSec: number
+  timeoutSec: number,
+  abortSignal?: AbortSignal
 ): Promise<DieExecutionResult> {
   const attempts: Array<{ args: string[]; format: 'json' | 'text' }> = [
     { args: ['-j', samplePath], format: 'json' },
@@ -575,13 +578,16 @@ async function defaultExecuteBackend(
   let lastStdout = ''
   let lastStderr = ''
   for (const attempt of attempts) {
+    throwIfAnalysisAborted(abortSignal)
     try {
       const result = await execFileAsync(binaryPath, attempt.args, {
         timeout: Math.max(5000, timeoutSec * 1000),
         windowsHide: true,
         encoding: 'utf8',
         maxBuffer: 8 * 1024 * 1024,
+        signal: abortSignal,
       })
+      throwIfAnalysisAborted(abortSignal)
       return {
         stdout: result.stdout || '',
         stderr: result.stderr || '',
@@ -589,6 +595,7 @@ async function defaultExecuteBackend(
         command: [binaryPath, ...attempt.args],
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       const failed = error as { stdout?: string; stderr?: string }
       lastStdout = typeof failed.stdout === 'string' ? failed.stdout : ''
       lastStderr = typeof failed.stderr === 'string' ? failed.stderr : String(error)
@@ -609,7 +616,8 @@ export function createCompilerPackerDetectHandler(
   const resolveBackend = dependencies.resolveBackend || (() => resolveDieCli())
   const executeBackend = dependencies.executeBackend || defaultExecuteBackend
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
+    throwIfAnalysisAborted(abortSignal)
     const startTime = Date.now()
     const warnings: string[] = []
 
@@ -696,7 +704,13 @@ export function createCompilerPackerDetectHandler(
       }
 
       const { samplePath } = await resolvePrimarySamplePath(workspaceManager, input.sample_id)
-      const execution = await executeBackend(backend.path, samplePath, input.timeout_sec)
+      const execution = await executeBackend(
+        backend.path,
+        samplePath,
+        input.timeout_sec,
+        abortSignal
+      )
+      throwIfAnalysisAborted(abortSignal)
       const findings =
         execution.format === 'json'
           ? (() => {
@@ -850,6 +864,7 @@ export function createCompilerPackerDetectHandler(
         metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [error instanceof Error ? error.message : String(error)],

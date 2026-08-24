@@ -272,11 +272,128 @@ export function getConfiguredGhidraLogRoot(): string {
   return path.resolve(configured || getDefaultGhidraLogRoot())
 }
 
-export function getSampleScopedGhidraProjectRoot(sampleId: string): string {
+function sampleSha256(sampleId: string): string {
   const sha256 = sampleId.startsWith('sha256:') ? sampleId.slice('sha256:'.length) : sampleId
+  if (!/^[a-f0-9]{64}$/.test(sha256)) {
+    throw new Error('Ghidra sample scope requires a lowercase canonical SHA-256.')
+  }
+  return sha256
+}
+
+function fsyncDirectory(directory: string): void {
+  const descriptor = fs.openSync(directory, 'r')
+  try {
+    fs.fsyncSync(descriptor)
+  } finally {
+    fs.closeSync(descriptor)
+  }
+}
+
+function lstatIfExists(candidate: string): fs.Stats | null {
+  try {
+    return fs.lstatSync(candidate)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  }
+}
+
+function migrateLegacySampleScopedDirectory(root: string, sha256: string): string {
   const bucket1 = sha256.slice(0, 2)
   const bucket2 = sha256.slice(2, 4)
-  return path.join(getConfiguredGhidraProjectRoot(), bucket1, bucket2, sha256)
+  const direct = path.join(root, sha256)
+  const legacy = path.join(root, bucket1, bucket2, sha256)
+  const rootStat = fs.lstatSync(root)
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+    throw new Error('Ghidra sample root failed trusted-root validation.')
+  }
+  const rootReal = path.resolve(fs.realpathSync.native(root))
+  const validateDirectory = (candidate: string, label: string): fs.Stats | null => {
+    const stat = lstatIfExists(candidate)
+    if (!stat) return null
+    const real = path.resolve(fs.realpathSync.native(candidate))
+    if (
+      !stat.isDirectory() ||
+      stat.isSymbolicLink() ||
+      (real !== rootReal && !real.startsWith(`${rootReal}${path.sep}`))
+    ) {
+      throw new Error(`${label} Ghidra sample directory failed trusted-root validation.`)
+    }
+    return stat
+  }
+  const directStat = validateDirectory(direct, 'Direct')
+  const legacyStat = validateDirectory(legacy, 'Legacy')
+  if (!legacyStat) return direct
+  for (const component of [path.join(root, bucket1), path.join(root, bucket1, bucket2)]) {
+    const stat = fs.lstatSync(component)
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      throw new Error('Legacy Ghidra bucket failed trusted-root validation.')
+    }
+  }
+  if (directStat) {
+    throw new Error(`Both direct and legacy Ghidra sample directories exist for ${sha256}.`)
+  }
+  fs.renameSync(legacy, direct)
+  fsyncDirectory(root)
+  fsyncDirectory(path.dirname(legacy))
+  for (const directory of [path.dirname(legacy), path.dirname(path.dirname(legacy))]) {
+    try {
+      if (fs.readdirSync(directory).length === 0) fs.rmdirSync(directory)
+    } catch {
+      // Non-empty legacy buckets remain valid containers for other samples.
+    }
+  }
+  return direct
+}
+
+/**
+ * Enumerate and migrate every legacy <aa>/<bb>/<sha256> sample directory.
+ * Direct <sha256> paths are the only layout used after this startup migration.
+ */
+export function migrateLegacyGhidraSampleDirectories(root: string): number {
+  const resolvedRoot = path.resolve(root)
+  const rootStat = fs.lstatSync(resolvedRoot)
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+    throw new Error('Ghidra migration root must be a real directory.')
+  }
+  let migrated = 0
+  for (const first of fs.readdirSync(resolvedRoot, { withFileTypes: true })) {
+    if (!/^[a-f0-9]{2}$/.test(first.name)) continue
+    if (!first.isDirectory() || first.isSymbolicLink()) {
+      throw new Error('Legacy Ghidra first-level bucket must be a real directory.')
+    }
+    const firstPath = path.join(resolvedRoot, first.name)
+    for (const second of fs.readdirSync(firstPath, { withFileTypes: true })) {
+      if (!/^[a-f0-9]{2}$/.test(second.name)) continue
+      if (!second.isDirectory() || second.isSymbolicLink()) {
+        throw new Error('Legacy Ghidra second-level bucket must be a real directory.')
+      }
+      const secondPath = path.join(firstPath, second.name)
+      for (const candidate of fs.readdirSync(secondPath, { withFileTypes: true })) {
+        if (!/^[a-f0-9]{64}$/.test(candidate.name)) continue
+        if (
+          candidate.name.slice(0, 2) !== first.name ||
+          candidate.name.slice(2, 4) !== second.name
+        ) {
+          throw new Error('Legacy Ghidra sample directory is stored under the wrong hash bucket.')
+        }
+        migrateLegacySampleScopedDirectory(resolvedRoot, candidate.name)
+        migrated++
+      }
+    }
+  }
+  return migrated
+}
+
+export function getSampleScopedGhidraProjectRoot(sampleId: string): string {
+  return migrateLegacySampleScopedDirectory(
+    getConfiguredGhidraProjectRoot(),
+    sampleSha256(sampleId)
+  )
+}
+
+export function getSampleScopedGhidraLogRoot(sampleId: string): string {
+  return migrateLegacySampleScopedDirectory(getConfiguredGhidraLogRoot(), sampleSha256(sampleId))
 }
 
 function looksLikeAnalyzeHeadlessHelp(stdout: string, stderr: string): boolean {
@@ -509,9 +626,7 @@ export function getGhidraVersion(installDir: string): string | null {
  * Ensure Ghidra scripts directory exists
  */
 export function ensureScriptsDirectory(baseDir?: string): string {
-  const scriptsDir = path.resolve(
-    baseDir || resolvePackagePath('src', 'plugins', 'ghidra', 'scripts')
-  )
+  const scriptsDir = resolveScriptsDirectory(baseDir)
 
   if (!fs.existsSync(scriptsDir)) {
     fs.mkdirSync(scriptsDir, { recursive: true })
@@ -521,14 +636,16 @@ export function ensureScriptsDirectory(baseDir?: string): string {
   return scriptsDir
 }
 
+function resolveScriptsDirectory(baseDir?: string): string {
+  return path.resolve(baseDir || resolvePackagePath('src', 'plugins', 'ghidra', 'scripts'))
+}
+
 /**
  * Initialize Ghidra configuration
  */
 export function initializeGhidraConfig(installDir?: string): GhidraConfig {
   const projectRoot = getConfiguredGhidraProjectRoot()
   const logRoot = getConfiguredGhidraLogRoot()
-  fs.mkdirSync(projectRoot, { recursive: true })
-  fs.mkdirSync(logRoot, { recursive: true })
 
   // Detect installation directory
   const detectedInstallDir = installDir || detectGhidraInstallation()
@@ -564,7 +681,9 @@ export function initializeGhidraConfig(installDir?: string): GhidraConfig {
 
   // Get paths and version
   const analyzeHeadlessPath = getAnalyzeHeadlessPath(detectedInstallDir)
-  const scriptsDir = ensureScriptsDirectory()
+  // Resolution is intentionally read-only. Bootstrap creates the directory
+  // only after the baked static backend contract has been validated.
+  const scriptsDir = resolveScriptsDirectory()
   const version = getGhidraVersion(detectedInstallDir)
 
   const resolvedConfig: GhidraConfig = {
@@ -590,6 +709,23 @@ export function initializeGhidraConfig(installDir?: string): GhidraConfig {
   )
 
   return resolvedConfig
+}
+
+/**
+ * Perform mutable Ghidra directory preparation explicitly during server
+ * bootstrap. Importing this module remains read-only, so a baked static image
+ * can validate its exact lock and backend identity first.
+ */
+export function prepareGhidraRuntimeDirectories(): void {
+  const initialized = initializeGhidraConfig()
+  Object.assign(ghidraConfig, initialized)
+  if (ghidraConfig.scriptsDir) fs.mkdirSync(ghidraConfig.scriptsDir, { recursive: true })
+  const projectRoot = getConfiguredGhidraProjectRoot()
+  const logRoot = getConfiguredGhidraLogRoot()
+  fs.mkdirSync(projectRoot, { recursive: true })
+  fs.mkdirSync(logRoot, { recursive: true })
+  migrateLegacyGhidraSampleDirectories(projectRoot)
+  migrateLegacyGhidraSampleDirectories(logRoot)
 }
 
 /**
@@ -846,4 +982,12 @@ export function checkGhidraHealth(timeoutMs: number = 8000): GhidraHealthStatus 
 /**
  * Global Ghidra configuration instance
  */
-export const ghidraConfig = initializeGhidraConfig()
+export const ghidraConfig: GhidraConfig = {
+  installDir: '',
+  analyzeHeadlessPath: '',
+  scriptsDir: resolveScriptsDirectory(),
+  projectRoot: getConfiguredGhidraProjectRoot(),
+  logRoot: getConfiguredGhidraLogRoot(),
+  minJavaVersion: config.workers.ghidra.minJavaVersion,
+  isValid: false,
+}

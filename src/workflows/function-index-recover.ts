@@ -7,6 +7,11 @@ import { createCodeFunctionsSmartRecoverHandler } from '../plugins/code-analysis
 import { createPESymbolsRecoverHandler } from '../plugins/pe-analysis/tools/pe-symbols-recover.js'
 import { createCodeFunctionsDefineHandler } from '../plugins/code-analysis/tools/code-functions-define.js'
 import { DecompilerWorker } from '../worker/decompiler-worker.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'workflow.function_index_recover'
 
@@ -188,9 +193,9 @@ type DefineData = {
 }
 
 interface FunctionIndexRecoverWorkflowDependencies {
-  smartRecoverHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  symbolsRecoverHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  defineHandler?: (args: ToolArgs) => Promise<WorkerResult>
+  smartRecoverHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  symbolsRecoverHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  defineHandler?: AbortableHandler<ToolArgs, WorkerResult>
 }
 
 function normalizeRankPreview(items: any[]): Array<z.infer<typeof RankPreviewSchema>> {
@@ -218,10 +223,11 @@ export function createFunctionIndexRecoverWorkflowHandler(
   const defineHandler =
     dependencies.defineHandler || createCodeFunctionsDefineHandler(workspaceManager, database)
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const startTime = Date.now()
 
     try {
+      throwIfAnalysisAborted(abortSignal)
       const input = FunctionIndexRecoverWorkflowInputSchema.parse(args)
       const sample = database.findSample(input.sample_id)
       if (!sample) {
@@ -237,15 +243,23 @@ export function createFunctionIndexRecoverWorkflowHandler(
 
       const warnings: string[] = []
       const [smartRecoverResult, symbolsRecoverResult] = await Promise.all([
-        smartRecoverHandler({
-          sample_id: input.sample_id,
-          force_refresh: input.force_refresh,
-        }),
-        symbolsRecoverHandler({
-          sample_id: input.sample_id,
-          max_string_hints: input.max_string_hints,
-          force_refresh: input.force_refresh,
-        }),
+        invokeAbortable(
+          smartRecoverHandler,
+          {
+            sample_id: input.sample_id,
+            force_refresh: input.force_refresh,
+          },
+          abortSignal
+        ),
+        invokeAbortable(
+          symbolsRecoverHandler,
+          {
+            sample_id: input.sample_id,
+            max_string_hints: input.max_string_hints,
+            force_refresh: input.force_refresh,
+          },
+          abortSignal
+        ),
       ])
 
       if (!smartRecoverResult.ok || !smartRecoverResult.data) {
@@ -315,15 +329,19 @@ export function createFunctionIndexRecoverWorkflowHandler(
         }
       })
 
-      const defineResult = await defineHandler({
-        sample_id: input.sample_id,
-        definitions,
-        source: defineFrom,
-        replace_all: input.replace_all,
-        persist_artifact: input.persist_artifact,
-        register_analysis: input.register_analysis,
-        session_tag: input.session_tag,
-      })
+      const defineResult = await invokeAbortable(
+        defineHandler,
+        {
+          sample_id: input.sample_id,
+          definitions,
+          source: defineFrom,
+          replace_all: input.replace_all,
+          persist_artifact: input.persist_artifact,
+          register_analysis: input.register_analysis,
+          session_tag: input.session_tag,
+        },
+        abortSignal
+      )
 
       if (!defineResult.ok || !defineResult.data) {
         return {
@@ -344,7 +362,11 @@ export function createFunctionIndexRecoverWorkflowHandler(
       let rankPreview: Array<z.infer<typeof RankPreviewSchema>> | undefined
       if (input.include_rank_preview) {
         const decompilerWorker = new DecompilerWorker(database, workspaceManager)
-        const ranked = await decompilerWorker.rankFunctions(input.sample_id, input.rank_topk)
+        const ranked = await decompilerWorker.rankFunctions(
+          input.sample_id,
+          input.rank_topk,
+          abortSignal
+        )
         rankPreview = normalizeRankPreview(ranked)
       }
 
@@ -391,6 +413,7 @@ export function createFunctionIndexRecoverWorkflowHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [error instanceof Error ? error.message : String(error)],

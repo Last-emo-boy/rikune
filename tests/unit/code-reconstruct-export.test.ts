@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 /**
  * Unit tests for code.reconstruct.export tool
  */
@@ -100,7 +101,7 @@ describe('code.reconstruct.export tool', () => {
   })
 
   async function setupSample(sampleId: string, hashChar: string, fileType = 'PE') {
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: hashChar.repeat(64),
       md5: hashChar.repeat(32),

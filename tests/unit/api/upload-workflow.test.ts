@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../../src/database.js"
 /**
  * Upload Workflow E2E tests
  * Tasks: api-file-server 7.5
@@ -46,7 +47,7 @@ describe('api-file-server - Upload Workflow E2E', () => {
 
       // Step 2: Register in database
       const sampleId = `sha256:${stored.sha256}`
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: stored.sha256,
         size: stored.size,
@@ -109,7 +110,7 @@ describe('api-file-server - Upload Workflow E2E', () => {
       const stored = await storageManager.storeSample(testData, 'meta-test.exe')
 
       const sampleId = `sha256:${stored.sha256}`
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: stored.sha256,
         size: stored.size,

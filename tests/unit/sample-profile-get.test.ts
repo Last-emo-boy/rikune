@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 /**
  * Unit tests for sample.profile.get tool
  */
@@ -53,7 +54,7 @@ describe('sample.profile.get tool', () => {
       created_at: '2024-01-01T00:00:00Z',
       source: 'upload',
     }
-    database.insertSample(sample)
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, sample)
 
     // Call the handler
     const result = await handler({ sample_id: 'sha256:abc123' })
@@ -93,7 +94,7 @@ describe('sample.profile.get tool', () => {
       created_at: '2024-01-01T00:00:00Z',
       source: 'upload',
     }
-    database.insertSample(sample)
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, sample)
 
     // Insert test analyses
     const analysis1: Analysis = {
@@ -187,7 +188,7 @@ describe('sample.profile.get tool', () => {
       created_at: '2024-01-01T00:00:00Z',
       source: 'upload',
     }
-    database.insertSample(sample)
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, sample)
 
     database.insertAnalysis({
       id: 'analysis-full',
@@ -246,7 +247,7 @@ describe('sample.profile.get tool', () => {
       created_at: '2024-01-02T00:00:00Z',
       source: 'manual',
     }
-    database.insertSample(sample)
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, sample)
 
     // Call the handler
     const result = await handler({ sample_id: 'sha256:xyz789' })
@@ -270,7 +271,7 @@ describe('sample.profile.get tool', () => {
       created_at: '2024-01-03T00:00:00Z',
       source: 'upload',
     }
-    database.insertSample(sample)
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, sample)
 
     // Insert analysis with null optional fields
     const analysis: Analysis = {
@@ -324,7 +325,7 @@ describe('sample.profile.get tool', () => {
       created_at: '2024-01-04T00:00:00Z',
       source: 'upload',
     }
-    database.insertSample(sample)
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, sample)
 
     // Insert multiple analyses
     for (let i = 1; i <= 5; i++) {
@@ -377,7 +378,7 @@ describe('sample.profile.get tool', () => {
       created_at: '2024-01-05T00:00:00Z',
       source: 'upload',
     }
-    database.insertSample(sample)
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, sample)
 
     database.insertAnalysis({
       id: 'analysis-stale',
@@ -415,7 +416,7 @@ describe('sample.profile.get tool', () => {
       created_at: '2024-01-05T00:00:00Z',
       source: 'upload',
     }
-    database.insertSample(sample)
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, sample)
 
     database.insertAnalysis({
       id: 'analysis-running',
@@ -451,7 +452,7 @@ describe('sample.profile.get tool', () => {
       created_at: '2024-01-06T00:00:00Z',
       source: 'upload',
     }
-    database.insertSample(sample)
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, sample)
 
     const workspace = await workspaceManager.createWorkspace(sample.id)
     expect(fs.existsSync(workspace.original)).toBe(true)
@@ -481,7 +482,7 @@ describe('sample.profile.get tool', () => {
       created_at: '2024-01-06T00:00:00Z',
       source: 'upload',
     }
-    database.insertSample(sample)
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, sample)
 
     const largeJson = JSON.stringify({ blob: 'A'.repeat(400) })
     for (let i = 1; i <= 4; i++) {
@@ -538,7 +539,7 @@ describe('sample.profile.get tool', () => {
       created_at: '2024-01-07T00:00:00Z',
       source: 'upload',
     }
-    database.insertSample(sample)
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, sample)
 
     database.insertAnalysis({
       id: 'analysis-android-inventory',

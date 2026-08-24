@@ -30,9 +30,12 @@ The TypeScript Analyzer owns orchestration, persistence, caching, policy checks,
 | `speakeasy_compat.py` | Speakeasy compatibility helpers |
 | `requirements.txt` | Baseline worker dependencies |
 | `requirements-dynamic.txt` | Dynamic-analysis Python dependencies |
-| `requirements-qiling.txt` | Qiling-related dependencies |
 | `yara_rules/` | Bundled YARA rules |
 | `test_*.py` | Worker unit and integration tests |
+
+Qiling remains a BYO backend. Automatic installation is disabled because the supported Qiling
+dependency chain requires a Pillow version below this release's vulnerability baseline. Configure
+`QILING_PYTHON` only for a separately managed and independently audited environment.
 
 ## Protocol
 
@@ -122,26 +125,25 @@ Some handlers are compatibility surfaces or safe simulations. Live runtime evide
 
 ## Installation
 
-Use Python 3.11+ where possible.
+Use exact 64-bit CPython 3.12 and the platform-specific hash locks. The root lock already includes
+the baseline dependencies declared by both `requirements.txt` and `workers/requirements.txt`.
 
 ```bash
-python -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
-python -m pip install -U pip
-python -m pip install -r requirements.txt
-python -m pip install -r workers/requirements.txt
-python -m pip install -r workers/requirements-dynamic.txt
+python -m pip install --disable-pip-version-check --require-hashes -r requirements.lock.txt
+# Optional dynamic-analysis closure:
+python -m pip install --disable-pip-version-check --require-hashes -r workers/requirements-dynamic.lock.txt
 ```
 
 PowerShell:
 
 ```powershell
-python -m venv .venv
+py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -U pip
-python -m pip install -r requirements.txt
-python -m pip install -r workers\requirements.txt
-python -m pip install -r workers\requirements-dynamic.txt
+python -m pip install --disable-pip-version-check --require-hashes -r requirements.windows.lock.txt
+# Optional dynamic-analysis closure:
+python -m pip install --disable-pip-version-check --require-hashes -r workers\requirements-dynamic.windows.lock.txt
 ```
 
 Optional dependency availability is reported by worker health checks and plugin readiness.

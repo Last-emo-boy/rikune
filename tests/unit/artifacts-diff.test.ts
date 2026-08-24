@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
 import fs from 'fs'
 import path from 'path'
@@ -70,7 +71,7 @@ describe('artifacts.diff tool', () => {
 
   test('should diff two artifact sessions and report added/removed/changed items', async () => {
     const sampleId = 'sha256:' + 'a'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'a'.repeat(64),
       md5: 'a'.repeat(32),
@@ -128,7 +129,7 @@ describe('artifacts.diff tool', () => {
 
   test('should warn when one session has no matching artifacts', async () => {
     const sampleId = 'sha256:' + 'b'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'b'.repeat(64),
       md5: 'b'.repeat(32),

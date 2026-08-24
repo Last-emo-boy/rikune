@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 const { WorkspaceManager } = await import('../../dist/workspace-manager.js')
-const { DatabaseManager } = await import('../../dist/database.js')
+const { DATABASE_FIXTURE_CAPABILITY, DatabaseManager } = await import('../../dist/database.js')
 const { CacheManager } = await import('../../dist/cache-manager.js')
 const { createWorkflowSummarizeHandler } = await import('../../dist/workflows/summarize.js')
 
@@ -19,7 +19,7 @@ const cacheManager = new CacheManager(cacheRoot, database)
 
 try {
   const sampleId = `sha256:${'e'.repeat(64)}`
-  database.insertSample({
+  database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
     id: sampleId,
     sha256: 'e'.repeat(64),
     md5: 'e'.repeat(32),

@@ -5,6 +5,7 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js'
 import {
   CallToolRequestSchema,
   type CallToolResult,
@@ -35,6 +36,7 @@ import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { PolicyGuard } from '../policy-guard.js'
 import type { StorageManager } from '../storage/storage-manager.js'
+import type { SampleOperationGate } from '../sample/sample-operation-gate.js'
 import type { ToolDefinition, PromptDefinition } from '../types.js'
 import type {
   ElicitationClient,
@@ -58,6 +60,7 @@ interface MCPServerDependencies {
   policyGuard?: PolicyGuard
   storageManager?: StorageManager
   apiBootstrapper?: ApiBootstrapper
+  sampleOperationGate?: SampleOperationGate
 }
 
 /**
@@ -499,6 +502,7 @@ export class MCPServer
       pluginRuntime: this.pluginManager ?? undefined,
       logger: this.logger,
       signal,
+      sampleOperationGate: this.dependencies.sampleOperationGate,
     })
   }
 
@@ -553,10 +557,14 @@ export class MCPServer
 
     await storageManager.initialize()
 
+    if (!this.dependencies.sampleOperationGate) {
+      throw new Error('HTTP sample upload requires SampleOperationGate')
+    }
     const finalizationService = createSampleFinalizationService(
       workspaceManager,
       database,
-      policyGuard
+      policyGuard,
+      this.dependencies.sampleOperationGate
     )
 
     const fileServer = new FileServer(
@@ -570,6 +578,7 @@ export class MCPServer
         database,
         workspaceManager,
         finalizationService,
+        sampleOperationGate: this.dependencies.sampleOperationGate,
       }
     )
 
@@ -652,7 +661,8 @@ export class MCPServer
    * Throws if the connected client did not advertise sampling support.
    */
   public async createMessage(
-    params: CreateMessageRequest['params']
+    params: CreateMessageRequest['params'],
+    options?: RequestOptions
   ): Promise<CreateMessageResult | CreateMessageResultWithTools> {
     if (!this.supportsSampling()) {
       throw new Error(
@@ -660,7 +670,9 @@ export class MCPServer
           'The connected MCP client did not advertise sampling capability.'
       )
     }
-    return this.server.createMessage(params)
+    return options === undefined
+      ? this.server.createMessage(params)
+      : this.server.createMessage(params, options)
   }
 
   /**

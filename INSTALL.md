@@ -102,7 +102,8 @@ Linux/macOS Analyzer + 远程 Windows runtime host：
 .\install-docker.ps1
 .\install-docker.ps1 -Profile static -DataRoot "D:\Docker\rikune"
 .\install-docker.ps1 -Profile full
-.\install-docker.ps1 -Profile hybrid -RuntimeHostAgentEndpoint "http://host.docker.internal:18082"
+# 先通过受保护的 process environment / secret manager 注入 runtime key；不要放入 CLI 参数
+.\install-docker.ps1 -Profile hybrid -HostAgentEndpoint "http://host.docker.internal:18082"
 .\install-docker.ps1 -Profile static -SkipStart
 .\install-docker.ps1 -Profile static -SkipBuild
 .\install-docker.ps1 -Profile static -ResetData
@@ -114,7 +115,8 @@ Linux/macOS Analyzer + 远程 Windows runtime host：
 ```bash
 ./rikune.sh
 ./rikune.sh install --profile static --data-root "$HOME/.rikune"
-./rikune.sh install --profile hybrid --windows-host <windows-host> --windows-user <windows-user>
+./rikune.sh install --profile hybrid --windows-host <windows-host> --windows-user <windows-user> \
+  --host-agent-endpoint https://runtime.example.internal
 ./rikune.sh status
 ./rikune.sh logs
 ./rikune.sh stop
@@ -125,27 +127,54 @@ Linux/macOS Analyzer + 远程 Windows runtime host：
 Static：
 
 ```bash
-npm install
+RIKUNE_REMOVE_PRIVATE_ENV_PATH="$PWD/.docker-runtime.env" node scripts/write-docker-runtime-env.mjs
+unset RIKUNE_API_KEY RIKUNE_ANALYZER_API_KEY RUNTIME_HOST_AGENT_API_KEY \
+  HOST_AGENT_API_KEY HOST_AGENT_RUNTIME_API_KEY RUNTIME_API_KEY
+npm ci --include=dev
 npm run build
 npm run docker:generate:all
+RIKUNE_DOCKER_ENV_PATH="$PWD/.docker-runtime.env" \
+RIKUNE_DOCKER_ENV_DATA_ROOT="${RIKUNE_DATA_ROOT:-$HOME/.rikune}" \
+RIKUNE_DOCKER_ENV_PROFILE=static \
+  node scripts/write-docker-runtime-env.mjs
 docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d --build analyzer
 ```
 
 Full：
 
 ```bash
-npm install
+RIKUNE_REMOVE_PRIVATE_ENV_PATH="$PWD/.docker-runtime.env" node scripts/write-docker-runtime-env.mjs
+unset RIKUNE_API_KEY RIKUNE_ANALYZER_API_KEY RUNTIME_HOST_AGENT_API_KEY \
+  HOST_AGENT_API_KEY HOST_AGENT_RUNTIME_API_KEY RUNTIME_API_KEY
+npm ci --include=dev
 npm run build
 npm run docker:generate:all
+RIKUNE_DOCKER_ENV_PATH="$PWD/.docker-runtime.env" \
+RIKUNE_DOCKER_ENV_DATA_ROOT="${RIKUNE_DATA_ROOT:-$HOME/.rikune}" \
+RIKUNE_DOCKER_ENV_PROFILE=full \
+  node scripts/write-docker-runtime-env.mjs
 docker compose --env-file .docker-runtime.env -f docker-compose.yml up -d --build mcp-server
 ```
 
 Hybrid：
 
 ```bash
-npm install
+HOST_AGENT_KEY='<至少 32 个可打印非空白 ASCII 字符>'
+RUNTIME_NODE_KEY='<另一把至少 32 个字符的 key>'
+export -n HOST_AGENT_KEY RUNTIME_NODE_KEY
+RIKUNE_REMOVE_PRIVATE_ENV_PATH="$PWD/.docker-runtime.env" node scripts/write-docker-runtime-env.mjs
+unset RIKUNE_API_KEY RIKUNE_ANALYZER_API_KEY RUNTIME_HOST_AGENT_API_KEY \
+  HOST_AGENT_API_KEY HOST_AGENT_RUNTIME_API_KEY RUNTIME_API_KEY
+npm ci --include=dev
 npm run build
 npm run docker:generate:all
+RIKUNE_DOCKER_ENV_PATH="$PWD/.docker-runtime.env" \
+RIKUNE_DOCKER_ENV_DATA_ROOT="${RIKUNE_DATA_ROOT:-$HOME/.rikune}" \
+RIKUNE_DOCKER_ENV_PROFILE=hybrid \
+RUNTIME_HOST_AGENT_ENDPOINT="https://runtime.example.internal" \
+RUNTIME_HOST_AGENT_API_KEY="$HOST_AGENT_KEY" \
+RUNTIME_API_KEY="$RUNTIME_NODE_KEY" \
+  node scripts/write-docker-runtime-env.mjs
 docker compose --env-file .docker-runtime.env -f docker-compose.hybrid.yml up -d --build analyzer
 ```
 
@@ -155,24 +184,22 @@ docker compose --env-file .docker-runtime.env -f docker-compose.hybrid.yml up -d
 
 ```env
 RIKUNE_DATA_ROOT=D:/Docker/rikune
-API_ENABLED=true
-API_PORT=18080
-PLUGINS=*
-RUNTIME_MODE=disabled
+RIKUNE_API_KEY=<由安装器生成的 64 位 hex key>
+RIKUNE_ANALYZER_API_KEY=<与 RIKUNE_API_KEY 相同>
 ```
 
 Hybrid 示例：
 
 ```env
 RIKUNE_DATA_ROOT=D:/Docker/rikune
-API_ENABLED=true
-API_PORT=18080
-PLUGINS=*
-RUNTIME_MODE=remote-sandbox
+RIKUNE_API_KEY=<由安装器生成的 64 位 hex key>
+RIKUNE_ANALYZER_API_KEY=<与 RIKUNE_API_KEY 相同>
 RUNTIME_HOST_AGENT_ENDPOINT=http://host.docker.internal:18082
 RUNTIME_HOST_AGENT_API_KEY=<host-agent-key>
 RUNTIME_API_KEY=<runtime-node-key>
 ```
+
+安装器每次安装默认使用操作系统 CSPRNG 轮换 32-byte analyzer key；只有本次显式提供的 key 才会保留。Host Agent 与 Runtime Node 必须分别使用两把不同的 key，且都至少包含 32 个可打印非空白 ASCII 字符。不要提交或分享 `.docker-runtime.env`。POSIX 安装器把权限设为 `0600`，Windows 安装器会移除继承 ACL 并仅授权当前用户。
 
 ## 数据目录
 

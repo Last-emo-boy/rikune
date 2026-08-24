@@ -49,6 +49,11 @@ import {
   type CryptoPlanningArtifactScope,
 } from '../crypto-planning-artifacts.js'
 import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'crypto.identify'
 const TOOL_VERSION = '0.2.0'
@@ -674,7 +679,10 @@ export function createCryptoIdentifyHandler(
     createStaticCapabilityTriageHandler(workspaceManager, database)
   const dynamicTraceLoader = dependencies.loadDynamicTrace || loadDynamicTraceEvidence
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
+    throwIfAnalysisAborted(abortSignal)
+    const runHandler = (handler: AbortableHandler<unknown, WorkerResult>, handlerArgs: unknown) =>
+      invokeAbortable(handler, handlerArgs, abortSignal)
     const startTime = Date.now()
     try {
       const input = cryptoIdentifyInputSchema.parse(args)
@@ -717,6 +725,7 @@ export function createCryptoIdentifyHandler(
             xref_depth: input.xref_depth,
           },
         })
+        throwIfAnalysisAborted(abortSignal)
         if (resolved) {
           return {
             ok: true,
@@ -752,6 +761,7 @@ export function createCryptoIdentifyHandler(
             sessionTag: input.session_tag,
           }
         )
+        throwIfAnalysisAborted(abortSignal)
         if (selection.latest_payload) {
           return {
             ok: true,
@@ -824,7 +834,7 @@ export function createCryptoIdentifyHandler(
       }
 
       const warnings: string[] = []
-      const stringsResult = await stringsExtractHandler({
+      const stringsResult = await runHandler(stringsExtractHandler, {
         sample_id: input.sample_id,
         mode: input.mode === 'preview' ? 'preview' : 'full',
         max_strings: input.mode === 'preview' ? 240 : 800,
@@ -836,7 +846,7 @@ export function createCryptoIdentifyHandler(
       })
       const decodedResult =
         input.mode === 'full'
-          ? await stringsFlossDecodeHandler({
+          ? await runHandler(stringsFlossDecodeHandler, {
               sample_id: input.sample_id,
               timeout: 90,
               persist_artifact: false,
@@ -846,7 +856,7 @@ export function createCryptoIdentifyHandler(
               session_tag: input.session_tag,
             })
           : undefined
-      const contextResult = await analysisContextLinkHandler({
+      const contextResult = await runHandler(analysisContextLinkHandler, {
         sample_id: input.sample_id,
         mode: input.mode,
         include_decoded: input.mode === 'full',
@@ -860,12 +870,12 @@ export function createCryptoIdentifyHandler(
         defer_if_slow: false,
         session_tag: input.session_tag,
       })
-      const importsResult = await peImportsExtractHandler({
+      const importsResult = await runHandler(peImportsExtractHandler, {
         sample_id: input.sample_id,
         group_by_dll: true,
         force_refresh: input.force_refresh,
       })
-      const capabilityResult = await staticCapabilityTriageHandler({
+      const capabilityResult = await runHandler(staticCapabilityTriageHandler, {
         sample_id: input.sample_id,
         timeout: 120,
         persist_artifact: false,
@@ -885,6 +895,7 @@ export function createCryptoIdentifyHandler(
             sessionTag: input.session_tag,
           })
         : null
+      throwIfAnalysisAborted(abortSignal)
 
       const stringRecords = mergeStringRecords(
         collectStringRecords(stringsResult),
@@ -942,8 +953,9 @@ export function createCryptoIdentifyHandler(
             'Large-sample crypto identification retained a bounded inline digest and persisted the remaining findings as chunk artifacts.',
           ],
           buildLabel: (index, itemCount) => `crypto chunk ${index + 1} (${itemCount} findings)`,
-          persistChunk: async ({ index, itemCount, items }) =>
-            persistCryptoPlanningJsonArtifact(
+          persistChunk: async ({ index, itemCount, items }) => {
+            throwIfAnalysisAborted(abortSignal)
+            const chunkArtifact = await persistCryptoPlanningJsonArtifact(
               workspaceManager,
               database,
               input.sample_id,
@@ -959,8 +971,12 @@ export function createCryptoIdentifyHandler(
                 algorithms: items,
               },
               input.session_tag
-            ),
+            )
+            throwIfAnalysisAborted(abortSignal)
+            return chunkArtifact
+          },
         })
+        throwIfAnalysisAborted(abortSignal)
         if (chunked.manifest) {
           algorithms = chunked.inline_items
           chunkManifest = chunked.manifest
@@ -1030,6 +1046,7 @@ export function createCryptoIdentifyHandler(
 
       let artifact: ArtifactRef | undefined
       if (input.persist_artifact) {
+        throwIfAnalysisAborted(abortSignal)
         artifact = await persistCryptoPlanningJsonArtifact(
           workspaceManager,
           database,
@@ -1042,8 +1059,11 @@ export function createCryptoIdentifyHandler(
           },
           input.session_tag
         )
+        throwIfAnalysisAborted(abortSignal)
       }
+      throwIfAnalysisAborted(abortSignal)
       await cacheManager.setCachedResult(cacheKey, outputData, CACHE_TTL_MS, sample.sha256)
+      throwIfAnalysisAborted(abortSignal)
       persistCanonicalEvidence(database, {
         sample,
         evidenceFamily: 'crypto_identify',
@@ -1089,6 +1109,7 @@ export function createCryptoIdentifyHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [error instanceof Error ? error.message : String(error)],

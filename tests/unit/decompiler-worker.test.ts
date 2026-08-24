@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 ﻿/**
  * Unit tests for Decompiler Worker
  * 
@@ -7,6 +8,8 @@
 import { describe, test, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import fs from 'fs';
 import path from 'path';
+import { EventEmitter } from 'events';
+import type { ChildProcess } from 'child_process';
 import { fileURLToPath } from 'url';
 import {
   DecompilerWorker,
@@ -99,8 +102,96 @@ function createMinimalAmd64PdataPE(): Buffer {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Mock child_process
-jest.mock('child_process');
+function createFakeChildProcess(pid?: number) {
+  return Object.assign(new EventEmitter(), {
+    pid,
+    stdout: new EventEmitter(),
+    stderr: new EventEmitter(),
+    kill: jest.fn(() => true),
+  });
+}
+
+function observePromise<T>(promise: Promise<T>) {
+  const observation: {
+    status: 'pending' | 'resolved' | 'rejected';
+    value?: T;
+    error?: unknown;
+  } = { status: 'pending' };
+
+  void promise.then(
+    (value) => {
+      observation.status = 'resolved';
+      observation.value = value;
+    },
+    (error: unknown) => {
+      observation.status = 'rejected';
+      observation.error = error;
+    }
+  );
+
+  return observation;
+}
+
+async function flushPromiseCallbacks(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+function isProcessRunnable(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+  } catch (error) {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as NodeJS.ErrnoException).code)
+        : undefined;
+    return code !== 'ESRCH';
+  }
+
+  if (process.platform === 'linux') {
+    try {
+      const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+      const commandEnd = stat.lastIndexOf(')');
+      const state = commandEnd >= 0 ? stat.slice(commandEnd + 2).split(' ')[0] : undefined;
+      return state !== 'Z' && state !== 'X';
+    } catch {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function listLinuxProcessGroupMembers(processGroupId: number): string[] {
+  if (process.platform !== 'linux') return [];
+  const members: string[] = [];
+  for (const entry of fs.readdirSync('/proc')) {
+    if (!/^\d+$/.test(entry)) continue;
+    try {
+      const stat = fs.readFileSync(`/proc/${entry}/stat`, 'utf8');
+      const commandEnd = stat.lastIndexOf(')');
+      if (commandEnd < 0) continue;
+      const fields = stat.slice(commandEnd + 2).split(' ');
+      if (Number(fields[2]) === processGroupId) {
+        members.push(`${entry}:${fields[0]}`);
+      }
+    } catch {
+      // Process exited during the diagnostic scan.
+    }
+  }
+  return members;
+}
+
+function readLinuxProcessRecord(pid: number): string {
+  if (process.platform !== 'linux') return 'not-linux';
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+    const commandEnd = stat.lastIndexOf(')');
+    return commandEnd >= 0 ? stat.slice(commandEnd + 2).split(' ').slice(0, 4).join(':') : stat;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
 
 describe('DecompilerWorker', () => {
   let database: DatabaseManager;
@@ -175,8 +266,7 @@ describe('DecompilerWorker', () => {
           return 'ok'
         },
         { sampleId: 'sha256:' + '1'.repeat(64) },
-        2,
-        0
+        { attempts: 2, initialDelayMs: 0 }
       )
 
       expect(result).toBe('ok')
@@ -221,7 +311,7 @@ describe('DecompilerWorker', () => {
       const sha256 = 'c'.repeat(64);
       const sampleId = `sha256:${sha256}`;
 
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256,
         md5: 'd'.repeat(32),
@@ -356,7 +446,7 @@ describe('DecompilerWorker', () => {
       const sha256 = 'e'.repeat(64);
       const sampleId = `sha256:${sha256}`;
 
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256,
         md5: 'f'.repeat(32),
@@ -428,7 +518,7 @@ describe('DecompilerWorker', () => {
       const sha256 = '7'.repeat(64);
       const sampleId = `sha256:${sha256}`;
 
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256,
         md5: '8'.repeat(32),
@@ -499,7 +589,7 @@ describe('DecompilerWorker', () => {
 
       const sha256 = '9'.repeat(64)
       const sampleId = `sha256:${sha256}`
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256,
         md5: 'a'.repeat(32),
@@ -600,7 +690,7 @@ describe('DecompilerWorker', () => {
 
       const sha256 = 'b'.repeat(64)
       const sampleId = `sha256:${sha256}`
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256,
         md5: 'c'.repeat(32),
@@ -685,7 +775,7 @@ describe('DecompilerWorker', () => {
       try {
         const sha256 = 'a'.repeat(64)
         const sampleId = `sha256:${sha256}`
-        database.insertSample({
+        database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
           id: sampleId,
           sha256,
           md5: 'b'.repeat(32),
@@ -765,6 +855,472 @@ describe('DecompilerWorker', () => {
         ghidraConfig.isValid = originalConfig.isValid
       }
     })
+  });
+
+  describe('process lifecycle supervision', () => {
+    const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+
+    afterEach(() => {
+      jest.useRealTimers();
+      jest.restoreAllMocks();
+      if (originalPlatformDescriptor) {
+        Object.defineProperty(process, 'platform', originalPlatformDescriptor);
+      }
+    });
+
+    function workerInternals() {
+      return decompilerWorker as unknown as {
+        processTerminationGraceMs: number;
+        spawnGhidraProcess: (
+          invocation: { command: string; args: string[]; windowsVerbatimArguments?: boolean },
+          cwd: string
+        ) => ChildProcess;
+        spawnWindowsTreeKiller: (pid: number) => ChildProcess;
+        isPosixProcessGroupAlive: (pid: number | undefined) => boolean;
+        runGhidraCommand: (
+          command: string,
+          args: string[],
+          cwd: string,
+          timeoutMs: number,
+          abortSignal: AbortSignal | undefined,
+          timeoutMessage: string,
+          failureMessage: string,
+          logFilePath?: string,
+          runtimeLogPath?: string
+        ) => Promise<unknown>;
+      };
+    }
+
+    test('keeps post-spawn errors under POSIX tree supervision until the whole group exits', async () => {
+      if (process.platform === 'win32') return;
+
+      jest.useFakeTimers();
+      const child = createFakeChildProcess(43_001);
+      const internals = workerInternals();
+      internals.spawnGhidraProcess = jest.fn(() => child as unknown as ChildProcess);
+      internals.processTerminationGraceMs = 25;
+
+      let groupAlive = true;
+      const killSpy = jest.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+        expect(pid).toBe(-43_001);
+        if (signal === 'SIGKILL') groupAlive = false;
+        return true;
+      });
+      internals.isPosixProcessGroupAlive = jest.fn(() => groupAlive);
+
+      const promise = workerInternals().runGhidraCommand(
+        'fake-ghidra',
+        [],
+        testWorkspaceRoot,
+        10,
+        undefined,
+        'timed out',
+        'failed'
+      );
+      const observation = observePromise(promise);
+
+      await jest.advanceTimersByTimeAsync(10);
+      child.emit('error', new Error('post-spawn stream failure'));
+      child.emit('close', null, 'SIGTERM');
+      await flushPromiseCallbacks();
+      const statusBeforeEscalation = observation.status;
+
+      await jest.advanceTimersByTimeAsync(25);
+      await flushPromiseCallbacks();
+
+      expect(statusBeforeEscalation).toBe('pending');
+      expect(killSpy).toHaveBeenCalledWith(-43_001, 'SIGTERM');
+      expect(killSpy).toHaveBeenCalledWith(-43_001, 'SIGKILL');
+      expect(child.kill).not.toHaveBeenCalled();
+      expect(observation.status).toBe('rejected');
+      expect(observation.error).toMatchObject({
+        errorCode: 'E_TIMEOUT',
+        diagnostics: {
+          timed_out: true,
+          spawn_error: 'post-spawn stream failure',
+        },
+      });
+    });
+
+    test('reports a standalone post-spawn error only after POSIX tree exit', async () => {
+      if (process.platform === 'win32') return;
+
+      jest.useFakeTimers();
+      const child = createFakeChildProcess(43_007);
+      const internals = workerInternals();
+      internals.spawnGhidraProcess = jest.fn(() => child as unknown as ChildProcess);
+      internals.processTerminationGraceMs = 25;
+
+      let groupAlive = true;
+      const killSpy = jest.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+        expect(pid).toBe(-43_007);
+        if (signal === 'SIGKILL') groupAlive = false;
+        return true;
+      });
+      internals.isPosixProcessGroupAlive = jest.fn(() => groupAlive);
+
+      const promise = internals.runGhidraCommand(
+        'fake-ghidra',
+        [],
+        testWorkspaceRoot,
+        60_000,
+        undefined,
+        'timed out',
+        'failed'
+      );
+      const observation = observePromise(promise);
+
+      child.emit('error', new Error('post-spawn IPC failure'));
+      child.emit('close', null, 'SIGTERM');
+      await flushPromiseCallbacks();
+      const statusBeforeEscalation = observation.status;
+
+      await jest.advanceTimersByTimeAsync(25);
+      await flushPromiseCallbacks();
+
+      expect(statusBeforeEscalation).toBe('pending');
+      expect(killSpy).toHaveBeenCalledWith(-43_007, 'SIGTERM');
+      expect(killSpy).toHaveBeenCalledWith(-43_007, 'SIGKILL');
+      expect(observation.status).toBe('rejected');
+      expect(observation.error).toMatchObject({
+        errorCode: 'E_SPAWN',
+        diagnostics: { spawn_error: 'post-spawn IPC failure' },
+      });
+    });
+
+    test('does not settle cancellation while a POSIX descendant group remains alive', async () => {
+      if (process.platform === 'win32') return;
+
+      jest.useFakeTimers();
+      const child = createFakeChildProcess(43_002);
+      const internals = workerInternals();
+      internals.spawnGhidraProcess = jest.fn(() => child as unknown as ChildProcess);
+      internals.processTerminationGraceMs = 25;
+
+      let groupAlive = true;
+      const killSpy = jest.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+        expect(pid).toBe(-43_002);
+        if (signal === 'SIGKILL') groupAlive = false;
+        return true;
+      });
+      internals.isPosixProcessGroupAlive = jest.fn(() => groupAlive);
+      const abortController = new AbortController();
+
+      const promise = workerInternals().runGhidraCommand(
+        'fake-ghidra',
+        [],
+        testWorkspaceRoot,
+        60_000,
+        abortController.signal,
+        'timed out',
+        'failed'
+      );
+      const observation = observePromise(promise);
+
+      abortController.abort();
+      child.emit('close', null, 'SIGTERM');
+      await flushPromiseCallbacks();
+      const statusBeforeEscalation = observation.status;
+
+      await jest.advanceTimersByTimeAsync(25);
+      await flushPromiseCallbacks();
+
+      expect(statusBeforeEscalation).toBe('pending');
+      expect(killSpy).toHaveBeenCalledWith(-43_002, 'SIGTERM');
+      expect(killSpy).toHaveBeenCalledWith(-43_002, 'SIGKILL');
+      expect(observation.status).toBe('rejected');
+      expect(observation.error).toMatchObject({
+        errorCode: 'E_CANCELLED',
+        diagnostics: { cancelled: true },
+      });
+    });
+
+    test('waits for Windows taskkill tree completion as well as direct child close', async () => {
+      jest.useFakeTimers();
+      Object.defineProperty(process, 'platform', {
+        ...originalPlatformDescriptor,
+        value: 'win32',
+      });
+      const child = createFakeChildProcess(43_003);
+      const taskkill = createFakeChildProcess();
+      const internals = workerInternals();
+      internals.spawnGhidraProcess = jest.fn(() => child as unknown as ChildProcess);
+      internals.spawnWindowsTreeKiller = jest.fn(() => taskkill as unknown as ChildProcess);
+
+      const promise = workerInternals().runGhidraCommand(
+        'fake-ghidra.exe',
+        [],
+        testWorkspaceRoot,
+        10,
+        undefined,
+        'timed out',
+        'failed'
+      );
+      const observation = observePromise(promise);
+
+      await jest.advanceTimersByTimeAsync(10);
+      child.emit('close', null, 'SIGTERM');
+      await flushPromiseCallbacks();
+      const statusBeforeTaskkillExit = observation.status;
+
+      taskkill.emit('close', 0, null);
+      await flushPromiseCallbacks();
+
+      expect(internals.spawnWindowsTreeKiller).toHaveBeenCalledWith(43_003);
+      expect(statusBeforeTaskkillExit).toBe('pending');
+      expect(observation.status).toBe('rejected');
+      expect(observation.error).toMatchObject({ errorCode: 'E_TIMEOUT' });
+    });
+
+    test('boundedly rejects when Windows taskkill cannot spawn on both attempts', async () => {
+      jest.useFakeTimers();
+      Object.defineProperty(process, 'platform', {
+        ...originalPlatformDescriptor,
+        value: 'win32',
+      });
+      const child = createFakeChildProcess(43_005);
+      const taskkillAttempts = [createFakeChildProcess(), createFakeChildProcess()];
+      let taskkillIndex = 0;
+      const internals = workerInternals();
+      internals.spawnGhidraProcess = jest.fn(() => child as unknown as ChildProcess);
+      internals.spawnWindowsTreeKiller = jest.fn(
+        () => taskkillAttempts[taskkillIndex++] as unknown as ChildProcess
+      );
+      internals.processTerminationGraceMs = 25;
+
+      const promise = internals.runGhidraCommand(
+        'fake-ghidra.exe',
+        [],
+        testWorkspaceRoot,
+        10,
+        undefined,
+        'timed out',
+        'failed'
+      );
+      const observation = observePromise(promise);
+
+      await jest.advanceTimersByTimeAsync(10);
+      child.emit('close', null, 'SIGTERM');
+      taskkillAttempts[0].emit('error', new Error('spawn taskkill ENOENT'));
+      await jest.advanceTimersByTimeAsync(25);
+      taskkillAttempts[1].emit('error', new Error('spawn taskkill ENOENT again'));
+      await jest.advanceTimersByTimeAsync(25);
+      await flushPromiseCallbacks();
+
+      expect(internals.spawnWindowsTreeKiller).toHaveBeenCalledTimes(2);
+      expect(observation.status).toBe('rejected');
+      expect(observation.error).toMatchObject({
+        errorCode: 'E_TIMEOUT',
+        diagnostics: {
+          timed_out: true,
+          tree_termination_error: expect.stringContaining('spawn taskkill ENOENT again'),
+        },
+      });
+    });
+
+    test('boundedly rejects after repeated non-zero Windows taskkill exits', async () => {
+      jest.useFakeTimers();
+      Object.defineProperty(process, 'platform', {
+        ...originalPlatformDescriptor,
+        value: 'win32',
+      });
+      const child = createFakeChildProcess(43_006);
+      const taskkillAttempts = [createFakeChildProcess(), createFakeChildProcess()];
+      let taskkillIndex = 0;
+      const internals = workerInternals();
+      internals.spawnGhidraProcess = jest.fn(() => child as unknown as ChildProcess);
+      internals.spawnWindowsTreeKiller = jest.fn(
+        () => taskkillAttempts[taskkillIndex++] as unknown as ChildProcess
+      );
+      internals.processTerminationGraceMs = 25;
+
+      const promise = internals.runGhidraCommand(
+        'fake-ghidra.exe',
+        [],
+        testWorkspaceRoot,
+        10,
+        undefined,
+        'timed out',
+        'failed'
+      );
+      const observation = observePromise(promise);
+
+      await jest.advanceTimersByTimeAsync(10);
+      child.emit('close', null, 'SIGTERM');
+      taskkillAttempts[0].emit('close', 1, null);
+      await jest.advanceTimersByTimeAsync(25);
+      taskkillAttempts[1].emit('close', 1, null);
+      await jest.advanceTimersByTimeAsync(25);
+      await flushPromiseCallbacks();
+
+      expect(internals.spawnWindowsTreeKiller).toHaveBeenCalledTimes(2);
+      expect(observation.status).toBe('rejected');
+      expect(observation.error).toMatchObject({
+        errorCode: 'E_TIMEOUT',
+        diagnostics: {
+          timed_out: true,
+          tree_termination_error: expect.stringContaining('taskkill exited with code 1'),
+        },
+      });
+    });
+
+    test('rejects with preserved diagnostics when synchronous command-log persistence fails', async () => {
+      const child = createFakeChildProcess(43_004);
+      workerInternals().spawnGhidraProcess = jest.fn(
+        () => child as unknown as ChildProcess
+      );
+      jest.spyOn(fs, 'writeFileSync').mockImplementation(() => {
+        throw Object.assign(new Error('ENOSPC: command log disk full'), { code: 'ENOSPC' });
+      });
+
+      const promise = workerInternals().runGhidraCommand(
+        'fake-ghidra',
+        [],
+        testWorkspaceRoot,
+        60_000,
+        undefined,
+        'timed out',
+        'failed',
+        path.join(testWorkspaceRoot, 'logs', 'command.log')
+      );
+      const observation = observePromise(promise);
+      child.stdout.emit('data', Buffer.from('diagnostic stdout'));
+
+      let emittedError: unknown;
+      try {
+        child.emit('close', 0, null);
+      } catch (error) {
+        emittedError = error;
+      }
+      await flushPromiseCallbacks();
+
+      expect(emittedError).toBeUndefined();
+      expect(observation.status).toBe('rejected');
+      expect(observation.error).toMatchObject({
+        errorCode: 'E_GHIDRA_PROCESS',
+        diagnostics: {
+          exit_code: 0,
+          stdout: 'diagnostic stdout',
+          log_persistence_error: 'ENOSPC: command log disk full',
+        },
+      });
+    });
+
+    test(
+      'kills a real launcher and TERM-ignoring descendant before timeout rejection settles',
+      async () => {
+        if (process.platform === 'win32') return;
+
+        const descendantPidPath = path.join(testWorkspaceRoot, 'descendant.pid');
+        const descendantTermPath = path.join(testWorkspaceRoot, 'descendant.term');
+        const descendantScript = [
+          "const fs = require('node:fs');",
+          `fs.writeFileSync(${JSON.stringify(descendantPidPath)}, String(process.pid));`,
+          `process.on('SIGTERM', () => fs.writeFileSync(${JSON.stringify(descendantTermPath)}, 'received'));`,
+          'setInterval(() => {}, 1000);',
+        ].join('\n');
+        const launcherScript = [
+          "const { spawn } = require('node:child_process');",
+          `const child = spawn(process.execPath, ['-e', ${JSON.stringify(descendantScript)}], { stdio: 'ignore' });`,
+          'if (!child.pid) process.exit(2);',
+          "process.on('SIGTERM', () => {});",
+          'setInterval(() => {}, 1000);',
+        ].join('\n');
+        let launcher: ChildProcess | undefined;
+        let descendantPid: number | undefined;
+        let launcherCloseObserved = false;
+
+        const internals = workerInternals();
+        const spawnGhidraProcess = internals.spawnGhidraProcess.bind(internals);
+        const isPosixProcessGroupAlive = internals.isPosixProcessGroupAlive.bind(internals);
+        const groupLivenessChecks: boolean[] = [];
+        internals.spawnGhidraProcess = jest.fn((invocation, cwd) => {
+          launcher = spawnGhidraProcess(invocation, cwd);
+          launcher.once('close', () => {
+            launcherCloseObserved = true;
+          });
+          return launcher;
+        });
+        internals.isPosixProcessGroupAlive = jest.fn((pid) => {
+          const alive = isPosixProcessGroupAlive(pid);
+          groupLivenessChecks.push(alive);
+          return alive;
+        });
+        internals.processTerminationGraceMs = 100;
+
+        try {
+          const promise = workerInternals().runGhidraCommand(
+            process.execPath,
+            ['-e', launcherScript],
+            testWorkspaceRoot,
+            1_500,
+            undefined,
+            'timed out',
+            'failed'
+          );
+
+          const readyDeadline = Date.now() + 2_000;
+          while (!fs.existsSync(descendantPidPath) && Date.now() < readyDeadline) {
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+          expect(fs.existsSync(descendantPidPath)).toBe(true);
+          descendantPid = Number(fs.readFileSync(descendantPidPath, 'utf8'));
+          expect(Number.isInteger(descendantPid)).toBe(true);
+
+          let monitorTimer: NodeJS.Timeout | undefined;
+          const outcome = await Promise.race([
+            promise.then(
+              () => ({ status: 'resolved' as const }),
+              (error: unknown) => ({ status: 'rejected' as const, error })
+            ),
+            new Promise<{ status: 'monitor-timeout' }>((resolve) => {
+              monitorTimer = setTimeout(
+                () => resolve({ status: 'monitor-timeout' }),
+                4_000
+              );
+            }),
+          ]);
+          if (monitorTimer) clearTimeout(monitorTimer);
+          if (outcome.status === 'monitor-timeout') {
+            throw new Error(
+              `process-tree supervisor did not settle: launcher_close=${launcherCloseObserved} group_checks=${groupLivenessChecks.join(',')} members=${listLinuxProcessGroupMembers(launcher?.pid as number).join(',')}`
+            );
+          }
+          expect(outcome).toMatchObject({
+            status: 'rejected',
+            error: { errorCode: 'E_TIMEOUT' },
+          });
+
+          expect(fs.readFileSync(descendantTermPath, 'utf8')).toBe('received');
+          expect(internals.isPosixProcessGroupAlive(launcher?.pid)).toBe(false);
+          if (isProcessRunnable(descendantPid as number)) {
+            throw new Error(
+              `descendant remained runnable: launcher=${String(launcher?.pid)} descendant=${String(descendantPid)} stat=${readLinuxProcessRecord(descendantPid as number)} group_members=${listLinuxProcessGroupMembers(launcher?.pid as number).join(',')}`
+            );
+          }
+        } finally {
+          if (launcher?.pid) {
+            try {
+              process.kill(-launcher.pid, 'SIGKILL');
+            } catch {
+              try {
+                launcher.kill('SIGKILL');
+              } catch {
+                // already exited
+              }
+            }
+          }
+          if (descendantPid) {
+            try {
+              process.kill(descendantPid, 'SIGKILL');
+            } catch {
+              // already exited
+            }
+          }
+        }
+      },
+      10_000
+    );
   });
 
   describe('createJobResult', () => {
@@ -1065,7 +1621,7 @@ describe('DecompilerWorker', () => {
       const sampleId = 'sha256:' + 'd'.repeat(64);
 
       // Insert sample without functions
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: 'd'.repeat(64),
         md5: 'e'.repeat(32),
@@ -1084,7 +1640,7 @@ describe('DecompilerWorker', () => {
       const sampleId = 'sha256:' + 'f'.repeat(64);
 
       // Insert sample
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: 'f'.repeat(64),
         md5: '7'.repeat(32),
@@ -1179,7 +1735,7 @@ describe('DecompilerWorker', () => {
       const sampleId = 'sha256:' + '8'.repeat(64);
 
       // Insert sample
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: '8'.repeat(64),
         md5: '9'.repeat(32),
@@ -1248,7 +1804,7 @@ describe('DecompilerWorker', () => {
       const sampleId = 'sha256:' + 'a'.repeat(64);
 
       // Insert sample
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: 'a'.repeat(64),
         md5: 'b'.repeat(32),
@@ -1288,7 +1844,7 @@ describe('DecompilerWorker', () => {
       const sampleId = 'sha256:' + 'm'.repeat(64);
 
       // Insert sample without functions
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: 'm'.repeat(64),
         md5: 'n'.repeat(32),
@@ -1307,7 +1863,7 @@ describe('DecompilerWorker', () => {
       const sampleId = 'sha256:' + 'o'.repeat(64);
 
       // Insert sample
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: 'o'.repeat(64),
         md5: 'p'.repeat(32),
@@ -1361,7 +1917,7 @@ describe('DecompilerWorker', () => {
       const sampleId = 'sha256:' + 'q'.repeat(64);
 
       // Insert sample
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: 'q'.repeat(64),
         md5: 'r'.repeat(32),
@@ -1415,7 +1971,7 @@ describe('DecompilerWorker', () => {
       const sampleId = 'sha256:' + 's'.repeat(64);
 
       // Insert sample
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: 's'.repeat(64),
         md5: 't'.repeat(32),
@@ -1468,7 +2024,7 @@ describe('DecompilerWorker', () => {
     test('should include heuristic xref provenance summary for sensitive APIs', async () => {
       const sampleId = 'sha256:' + 'p'.repeat(64);
 
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: 'p'.repeat(64),
         md5: 'q'.repeat(32),
@@ -1507,7 +2063,7 @@ describe('DecompilerWorker', () => {
       const sampleId = 'sha256:' + 'u'.repeat(64);
 
       // Insert sample
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: 'u'.repeat(64),
         md5: 'v'.repeat(32),
@@ -1577,7 +2133,7 @@ describe('DecompilerWorker', () => {
       const sampleId = 'sha256:' + 'w'.repeat(64);
 
       // Insert sample
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: 'w'.repeat(64),
         md5: 'x'.repeat(32),
@@ -1616,7 +2172,7 @@ describe('DecompilerWorker', () => {
       const sampleId = 'sha256:' + 'y'.repeat(64);
 
       // Insert sample
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: 'y'.repeat(64),
         md5: 'z'.repeat(32),
@@ -1660,7 +2216,7 @@ describe('DecompilerWorker', () => {
     test('should reverse-search API calls from indexed function metadata', () => {
       const sampleId = 'sha256:' + '1'.repeat(64);
 
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: '1'.repeat(64),
         md5: '2'.repeat(32),
@@ -1790,7 +2346,7 @@ describe('DecompilerWorker', () => {
       const sha256 = 'c'.repeat(64);
       const sampleId = `sha256:${sha256}`;
 
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256,
         md5: 'd'.repeat(32),
@@ -1815,7 +2371,7 @@ describe('DecompilerWorker', () => {
       const sha256 = 'e'.repeat(64);
       const sampleId = `sha256:${sha256}`;
 
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256,
         md5: 'f'.repeat(32),
@@ -1867,7 +2423,7 @@ describe('DecompilerWorker', () => {
       const sha256 = '7'.repeat(64);
       const sampleId = `sha256:${sha256}`;
 
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256,
         md5: '8'.repeat(32),
@@ -1919,7 +2475,7 @@ describe('DecompilerWorker', () => {
       const sha256 = '9'.repeat(64);
       const sampleId = `sha256:${sha256}`;
 
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256,
         md5: 'a'.repeat(32),
@@ -1999,7 +2555,7 @@ describe('DecompilerWorker', () => {
       const sha256 = 'c'.repeat(64);
       const sampleId = `sha256:${sha256}`;
 
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256,
         md5: 'd'.repeat(32),
@@ -2024,7 +2580,7 @@ describe('DecompilerWorker', () => {
       const sha256 = 'e'.repeat(64);
       const sampleId = `sha256:${sha256}`;
 
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256,
         md5: 'f'.repeat(32),
@@ -2076,7 +2632,7 @@ describe('DecompilerWorker', () => {
       const sha256 = '7'.repeat(64);
       const sampleId = `sha256:${sha256}`;
 
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256,
         md5: '8'.repeat(32),
@@ -2128,7 +2684,7 @@ describe('DecompilerWorker', () => {
       const sha256 = '9'.repeat(64);
       const sampleId = `sha256:${sha256}`;
 
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256,
         md5: 'a'.repeat(32),
@@ -2180,7 +2736,7 @@ describe('DecompilerWorker', () => {
       const sha256 = 'b'.repeat(64);
       const sampleId = `sha256:${sha256}`;
 
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256,
         md5: 'c'.repeat(32),

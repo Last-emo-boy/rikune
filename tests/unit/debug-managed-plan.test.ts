@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 /**
  * Unit tests for debug.managed.plan.
  */
@@ -47,7 +48,7 @@ describe('debug.managed.plan tool', () => {
     const sampleId = `sha256:${sampleHash}`
 
     try {
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: sampleHash,
         md5: '7'.repeat(32),

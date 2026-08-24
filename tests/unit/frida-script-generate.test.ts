@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals'
 import fs from 'fs/promises'
 import path from 'path'
@@ -19,7 +20,7 @@ describe('frida.script.generate', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'frida-script-generate-test-'))
     workspaceManager = new WorkspaceManager(path.join(tempDir, 'workspaces'))
     database = new DatabaseManager(path.join(tempDir, 'test.db'))
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'f'.repeat(64),
       md5: 'f'.repeat(32),

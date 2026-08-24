@@ -24,6 +24,7 @@ import {
   type DynamicEvidenceScope,
 } from '../../../artifacts/dynamic-trace.js'
 import { dedupeStrings } from '../../../utils/shared-helpers.js'
+import { throwIfAnalysisAborted } from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'static.behavior.classify'
 const TOOL_VERSION = '0.1.0'
@@ -396,11 +397,12 @@ const RULES: BehaviorRule[] = [
   },
 ]
 
-function extractAsciiStrings(
+async function extractAsciiStrings(
   buffer: Buffer,
   minLength: number,
-  maxStrings: number
-): ExtractedString[] {
+  maxStrings: number,
+  abortSignal?: AbortSignal
+): Promise<ExtractedString[]> {
   const strings: ExtractedString[] = []
   let start = -1
   let chars: number[] = []
@@ -418,6 +420,11 @@ function extractAsciiStrings(
   }
 
   for (let offset = 0; offset < buffer.length; offset += 1) {
+    if (offset % 65_536 === 0) {
+      throwIfAnalysisAborted(abortSignal)
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      throwIfAnalysisAborted(abortSignal)
+    }
     const byte = buffer[offset]
     if (byte >= 0x20 && byte <= 0x7e) {
       if (start < 0) start = offset
@@ -425,21 +432,28 @@ function extractAsciiStrings(
       if (chars.length >= 240) flush(offset)
     } else {
       flush(offset)
+      if (strings.length >= maxStrings) break
     }
   }
   flush(buffer.length)
   return strings
 }
 
-function extractUtf16Strings(
+async function extractUtf16Strings(
   buffer: Buffer,
   minLength: number,
-  maxStrings: number
-): ExtractedString[] {
+  maxStrings: number,
+  abortSignal?: AbortSignal
+): Promise<ExtractedString[]> {
   const strings: ExtractedString[] = []
   let start = -1
   let value = ''
   for (let offset = 0; offset + 1 < buffer.length; offset += 2) {
+    if (offset % 65_536 === 0) {
+      throwIfAnalysisAborted(abortSignal)
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      throwIfAnalysisAborted(abortSignal)
+    }
     const lo = buffer[offset]
     const hi = buffer[offset + 1]
     if (hi === 0 && lo >= 0x20 && lo <= 0x7e) {
@@ -729,9 +743,10 @@ export function createStaticBehaviorClassifyHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager
 ) {
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const started = Date.now()
     try {
+      throwIfAnalysisAborted(abortSignal)
       const input = StaticBehaviorClassifyInputSchema.parse(args || {})
       const sample = database.findSample(input.sample_id)
       if (!sample) {
@@ -744,10 +759,22 @@ export function createStaticBehaviorClassifyHandler(
 
       const { samplePath } = await resolvePrimarySamplePath(workspaceManager, input.sample_id)
       const buffer = await fs.readFile(samplePath)
+      throwIfAnalysisAborted(abortSignal)
       const strings = dedupeExtractedStrings([
-        ...extractAsciiStrings(buffer, input.min_string_length, input.max_strings),
-        ...extractUtf16Strings(buffer, input.min_string_length, Math.floor(input.max_strings / 2)),
+        ...(await extractAsciiStrings(
+          buffer,
+          input.min_string_length,
+          input.max_strings,
+          abortSignal
+        )),
+        ...(await extractUtf16Strings(
+          buffer,
+          input.min_string_length,
+          Math.floor(input.max_strings / 2),
+          abortSignal
+        )),
       ])
+      throwIfAnalysisAborted(abortSignal)
       const stringCorpusApis = dedupeStrings(
         RULES.flatMap((rule) =>
           strings.flatMap((item) =>
@@ -768,6 +795,7 @@ export function createStaticBehaviorClassifyHandler(
           sessionTag: input.static_artifact_session_tag,
         }
       )
+      throwIfAnalysisAborted(abortSignal)
       const configPayloads = configSelection.artifacts.map((item) => item.payload)
       const dynamicSummary = input.include_dynamic_evidence
         ? await loadDynamicTraceEvidence(workspaceManager, database, input.sample_id, {
@@ -775,6 +803,7 @@ export function createStaticBehaviorClassifyHandler(
             sessionTag: input.runtime_evidence_session_tag,
           })
         : null
+      throwIfAnalysisAborted(abortSignal)
 
       const findings = RULES.map((rule) => {
         const evidence = [
@@ -897,6 +926,7 @@ export function createStaticBehaviorClassifyHandler(
 
       const artifacts: ArtifactRef[] = []
       if (input.persist_artifact) {
+        throwIfAnalysisAborted(abortSignal)
         artifacts.push(
           await persistStaticAnalysisJsonArtifact(
             workspaceManager,
@@ -918,6 +948,7 @@ export function createStaticBehaviorClassifyHandler(
         metrics: { elapsed_ms: Date.now() - started, tool: TOOL_NAME },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [error instanceof Error ? error.message : String(error)],

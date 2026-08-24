@@ -5,11 +5,18 @@ import {
   AnalysisIntentGoalSchema,
   BackendPolicySchema,
 } from '../intent-routing.js'
-import { AnalysisPipelineStageSchema } from '../analysis/analysis-run-state.js'
+import {
+  AnalysisExecutionStateSchema,
+  AnalysisPipelineStageSchema,
+  AnalysisRecoveryStateSchema,
+  AnalysisStageStatusSchema,
+} from '../analysis/analysis-run-state.js'
 import { toStringArray } from '../utils/shared-helpers.js'
+import { isStaticDockerProfile } from '../core/static-profile-lock.js'
 
 const TOOL_NAME = 'workflow.run'
 const ARTIFACT_SELECTOR_LIMIT = 12
+const STAGE_STATUS_LIMIT = 16
 const WorkflowRunActionSchema = z.enum(['request_upload', 'start', 'status', 'promote'])
 const RoutedToolSchema = z.enum([
   'sample.request_upload',
@@ -45,6 +52,16 @@ const ArtifactSelectorSummarySchema = z.object({
   by_type: z.record(z.number().int().nonnegative()),
   by_stage: z.record(z.number().int().nonnegative()),
 })
+
+const CompactStageStatusSchema = z
+  .object({
+    stage: AnalysisPipelineStageSchema,
+    status: AnalysisStageStatusSchema,
+    execution_state: AnalysisExecutionStateSchema.nullable().optional(),
+    recovery_state: AnalysisRecoveryStateSchema,
+    job_id: z.string().nullable().optional(),
+  })
+  .strict()
 
 export const workflowRunInputSchema = z
   .object({
@@ -138,6 +155,8 @@ export const workflowRunOutputSchema = z.object({
       upgrade_paths: z.array(z.any()).optional(),
       deferred_jobs: z.array(z.any()).optional(),
       recoverable_stages: z.array(z.any()).optional(),
+      stage_statuses: z.array(CompactStageStatusSchema).max(STAGE_STATUS_LIMIT).optional(),
+      function_index_ready: z.boolean().optional(),
       artifact_selectors: z.array(ArtifactReadSelectorSchema).optional(),
       artifact_selector_summary: ArtifactSelectorSummarySchema.optional(),
       recommended_workflow_tools: z.array(z.string()),
@@ -487,6 +506,40 @@ function buildArtifactSelectorPayload(params: {
   }
 }
 
+function buildCompactStagePayload(run: Record<string, unknown>): {
+  stage_statuses?: z.infer<typeof CompactStageStatusSchema>[]
+  function_index_ready?: boolean
+} {
+  const stageStatuses: z.infer<typeof CompactStageStatusSchema>[] = []
+  let functionIndexReady: boolean | undefined
+
+  for (const stage of recordArray(run.stages).slice(0, STAGE_STATUS_LIMIT)) {
+    const parsed = CompactStageStatusSchema.safeParse({
+      stage: stage.stage,
+      status: stage.status,
+      execution_state:
+        typeof stage.execution_state === 'string' || stage.execution_state === null
+          ? stage.execution_state
+          : undefined,
+      recovery_state: typeof stage.recovery_state === 'string' ? stage.recovery_state : 'none',
+      job_id: typeof stage.job_id === 'string' || stage.job_id === null ? stage.job_id : undefined,
+    })
+    if (parsed.success) stageStatuses.push(parsed.data)
+
+    if (stage.stage === 'function_map') {
+      const metadata = asRecord(stage.metadata)
+      if (typeof metadata.function_index_ready === 'boolean') {
+        functionIndexReady = metadata.function_index_ready
+      }
+    }
+  }
+
+  return {
+    ...(stageStatuses.length > 0 ? { stage_statuses: stageStatuses } : {}),
+    ...(functionIndexReady !== undefined ? { function_index_ready: functionIndexReady } : {}),
+  }
+}
+
 function compactWorkflowRunData(params: {
   input: z.infer<typeof workflowRunInputSchema>
   routedTool: z.infer<typeof RoutedToolSchema>
@@ -501,6 +554,7 @@ function compactWorkflowRunData(params: {
   const status = stringValue(data.status) ?? stringValue(run.status)
   const latestStage = stringValue(run.latest_stage)
   const artifactSelectorPayload = buildArtifactSelectorPayload({ run, sampleId, latestStage })
+  const compactStagePayload = buildCompactStagePayload(run)
 
   return {
     result_mode: 'workflow_run' as const,
@@ -523,6 +577,7 @@ function compactWorkflowRunData(params: {
     upgrade_paths: arrayValue(data.upgrade_paths),
     deferred_jobs: arrayValue(data.deferred_jobs),
     recoverable_stages: arrayValue(data.recoverable_stages),
+    ...compactStagePayload,
     ...artifactSelectorPayload,
     recommended_workflow_tools: normalizeRecommendedWorkflowTools(data.recommended_next_tools),
     next_actions: toStringArray(data.next_actions).map(normalizeWorkflowNextAction),
@@ -540,6 +595,27 @@ export function createWorkflowRunHandler(handlers: WorkflowRunHandlers) {
     const startTime = Date.now()
     try {
       const input = workflowRunInputSchema.parse(args)
+      if (isStaticDockerProfile()) {
+        if (
+          input.action === 'start' &&
+          (input.goal !== 'static' || input.allow_transformations || input.allow_live_execution)
+        ) {
+          throw new Error(
+            'E_STATIC_PROFILE_CONTRACT: start requires goal=static, allow_transformations=false, allow_live_execution=false'
+          )
+        }
+        if (
+          input.action === 'promote' &&
+          (input.stages !== undefined ||
+            input.through_stage !== 'function_map' ||
+            input.allow_transformations ||
+            input.allow_live_execution)
+        ) {
+          throw new Error(
+            'E_STATIC_PROFILE_CONTRACT: promote requires exactly through_stage=function_map and forbids stages/live execution/transformations'
+          )
+        }
+      }
       const routedTool = routedToolFor(input.action)
       const handler =
         input.action === 'request_upload'

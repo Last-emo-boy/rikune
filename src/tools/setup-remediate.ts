@@ -10,6 +10,7 @@ import type { DatabaseManager } from '../database.js'
 import type { CacheManager } from '../cache-manager.js'
 import { createSystemHealthHandler } from './system-health.js'
 import { createSystemSetupGuideHandler } from './system-setup-guide.js'
+import { getBaselinePythonInstallCommand } from '../setup-guidance.js'
 
 const TOOL_NAME = 'setup.remediate'
 const TOOL_VERSION = '0.1.0'
@@ -281,10 +282,11 @@ function buildSetupActions(
     })
   }
   if (rootCause.includes('Python')) {
+    const command = getBaselinePythonInstallCommand()
     actions.push({
       action_type: 'pip_install',
-      command: 'pip install -r requirements.txt',
-      description: 'Install Python dependencies from requirements.txt',
+      command,
+      description: 'Install hash-locked Python dependencies from the Rikune package root',
       required: true,
       platform: 'all',
     })

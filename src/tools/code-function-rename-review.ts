@@ -14,6 +14,11 @@ import type { SamplingClient } from '../core/registrar.js'
 import { createCodeFunctionRenamePrepareHandler } from '../plugins/code-analysis/tools/code-function-rename-prepare.js'
 import { createCodeFunctionRenameApplyHandler } from '../plugins/code-analysis/tools/code-function-rename-apply.js'
 import { createCodeFunctionsReconstructHandler } from '../plugins/code-analysis/tools/code-functions-reconstruct.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'code.function.rename.review'
 
@@ -274,7 +279,10 @@ interface CodeFunctionRenameReviewDependencies {
   prepareHandler?: (args: ToolArgs) => Promise<WorkerResult>
   applyHandler?: (args: ToolArgs) => Promise<WorkerResult>
   reconstructHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  samplingRequester?: (params: CreateMessageRequest['params']) => Promise<SamplingResult>
+  samplingRequester?: (
+    params: CreateMessageRequest['params'],
+    options?: { signal?: AbortSignal }
+  ) => Promise<SamplingResult>
   clientCapabilitiesProvider?: () => ClientCapabilities | undefined
   clientVersionProvider?: () => Implementation | undefined
 }
@@ -326,25 +334,30 @@ function parseSamplingSuggestions(rawText: string): z.infer<typeof ReviewSuggest
 }
 
 async function runPrepare(
-  prepareHandler: (args: ToolArgs) => Promise<WorkerResult>,
+  prepareHandler: AbortableHandler<ToolArgs, WorkerResult>,
   input: z.infer<typeof codeFunctionRenameReviewInputSchema>,
-  includeResolved: boolean
+  includeResolved: boolean,
+  abortSignal?: AbortSignal
 ) {
-  return prepareHandler({
-    sample_id: input.sample_id,
-    address: input.address,
-    symbol: input.symbol,
-    topk: input.topk,
-    max_functions: input.max_functions,
-    include_resolved: includeResolved,
-    analysis_goal: input.analysis_goal,
-    persist_artifact: input.persist_artifact,
-    session_tag: input.session_tag,
-    evidence_scope: input.evidence_scope,
-    evidence_session_tag: input.evidence_session_tag,
-    semantic_scope: input.semantic_scope,
-    semantic_session_tag: input.semantic_session_tag,
-  })
+  return invokeAbortable(
+    prepareHandler,
+    {
+      sample_id: input.sample_id,
+      address: input.address,
+      symbol: input.symbol,
+      topk: input.topk,
+      max_functions: input.max_functions,
+      include_resolved: includeResolved,
+      analysis_goal: input.analysis_goal,
+      persist_artifact: input.persist_artifact,
+      session_tag: input.session_tag,
+      evidence_scope: input.evidence_scope,
+      evidence_session_tag: input.evidence_session_tag,
+      semantic_scope: input.semantic_scope,
+      semantic_session_tag: input.semantic_session_tag,
+    },
+    abortSignal
+  )
 }
 
 function buildSamplingRequest(
@@ -414,7 +427,8 @@ export function createCodeFunctionRenameReviewHandler(
   const samplingRequester =
     dependencies?.samplingRequester ||
     (mcpServer
-      ? (params: CreateMessageRequest['params']) => mcpServer.createMessage(params)
+      ? (params: CreateMessageRequest['params'], options?: { signal?: AbortSignal }) =>
+          mcpServer.createMessage(params, options)
       : undefined)
   const clientCapabilitiesProvider =
     dependencies?.clientCapabilitiesProvider ||
@@ -423,7 +437,10 @@ export function createCodeFunctionRenameReviewHandler(
     dependencies?.clientVersionProvider ||
     (mcpServer ? () => mcpServer.getClientVersion() : undefined)
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
+    throwIfAnalysisAborted(abortSignal)
+    const runHandler = (handler: AbortableHandler<ToolArgs, WorkerResult>, handlerArgs: ToolArgs) =>
+      invokeAbortable(handler, handlerArgs, abortSignal)
     const startTime = Date.now()
     const warnings: string[] = []
     const artifacts: ArtifactRef[] = []
@@ -431,7 +448,7 @@ export function createCodeFunctionRenameReviewHandler(
     try {
       const input = codeFunctionRenameReviewInputSchema.parse(args)
       let usedIncludeResolved = input.include_resolved
-      let prepareResult = await runPrepare(prepareHandler, input, usedIncludeResolved)
+      let prepareResult = await runPrepare(prepareHandler, input, usedIncludeResolved, abortSignal)
 
       if (
         prepareResult.ok &&
@@ -443,7 +460,7 @@ export function createCodeFunctionRenameReviewHandler(
           'Initial unresolved-only review set was empty; automatically retried in audit mode with include_resolved=true.'
         )
         usedIncludeResolved = true
-        prepareResult = await runPrepare(prepareHandler, input, usedIncludeResolved)
+        prepareResult = await runPrepare(prepareHandler, input, usedIncludeResolved, abortSignal)
       }
 
       if (!prepareResult.ok) {
@@ -590,7 +607,10 @@ export function createCodeFunctionRenameReviewHandler(
         }
       }
 
-      const samplingResult = await samplingRequester(buildSamplingRequest(input, taskPrompt))
+      const samplingResult = await samplingRequester(buildSamplingRequest(input, taskPrompt), {
+        signal: abortSignal,
+      })
+      throwIfAnalysisAborted(abortSignal)
       const responseText = extractTextBlocks(samplingResult)
       const samplingModel = (samplingResult as any)?.model || null
       const stopReason = (samplingResult as any)?.stopReason || null
@@ -716,7 +736,7 @@ export function createCodeFunctionRenameReviewHandler(
         evidence_used: suggestion.evidence_used || [],
       }))
 
-      const applyResult = await applyHandler({
+      const applyResult = await runHandler(applyHandler, {
         sample_id: input.sample_id,
         suggestions: applySuggestions,
         client_name: clientVersion?.name,
@@ -758,7 +778,7 @@ export function createCodeFunctionRenameReviewHandler(
         const rerunSemanticScope =
           input.semantic_scope === 'all' && input.session_tag ? 'session' : input.semantic_scope
         const rerunSemanticSessionTag = input.semantic_session_tag || input.session_tag
-        const reconstructResult = await reconstructHandler({
+        const reconstructResult = await runHandler(reconstructHandler, {
           sample_id: input.sample_id,
           address: input.address,
           symbol: input.symbol,
@@ -862,6 +882,7 @@ export function createCodeFunctionRenameReviewHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [error instanceof Error ? error.message : String(error)],

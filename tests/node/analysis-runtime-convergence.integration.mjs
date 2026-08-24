@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 const { WorkspaceManager } = await import('../../dist/workspace-manager.js')
-const { DatabaseManager } = await import('../../dist/database.js')
+const { DATABASE_FIXTURE_CAPABILITY, DatabaseManager } = await import('../../dist/database.js')
 const { CacheManager } = await import('../../dist/cache-manager.js')
 const { PolicyGuard } = await import('../../dist/policy-guard.js')
 const { JobQueue } = await import('../../dist/job-queue.js')
@@ -15,9 +15,11 @@ const {
 } = await import('../../dist/workflows/analyze-pipeline.js')
 const { upsertAnalysisRunStage } = await import('../../dist/analysis/analysis-run-state.js')
 const { createTriageWorkflowHandler } = await import('../../dist/workflows/triage.js')
-const { createReportSummarizeHandler } = await import('../../dist/plugins/reporting/tools/report-summarize.js')
+const { createReportSummarizeHandler } =
+  await import('../../dist/plugins/reporting/tools/report-summarize.js')
 const { createWorkflowSummarizeHandler } = await import('../../dist/workflows/summarize.js')
-const { createRizinAnalyzeHandler } = await import('../../dist/plugins/dynamic/tools/docker-backend-tools.js')
+const { createRizinAnalyzeHandler } =
+  await import('../../dist/plugins/dynamic/tools/docker-backend-tools.js')
 
 const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'analysis-runtime-convergence-'))
 const workspaceRoot = path.join(tempRoot, 'workspaces')
@@ -33,25 +35,116 @@ const jobQueue = new JobQueue(database)
 
 function readyBackends() {
   return {
-    capa_cli: { available: false, source: 'none', path: null, version: null, checked_candidates: [], error: null },
+    capa_cli: {
+      available: false,
+      source: 'none',
+      path: null,
+      version: null,
+      checked_candidates: [],
+      error: null,
+    },
     capa_rules: { available: false, source: 'none', path: null, error: null },
-    die: { available: false, source: 'none', path: null, version: null, checked_candidates: [], error: null },
-    graphviz: { available: true, source: 'path', path: '/tool/dot', version: '1', checked_candidates: ['dot'], error: null },
-    rizin: { available: true, source: 'path', path: '/tool/rizin', version: '1', checked_candidates: ['rizin'], error: null },
-    upx: { available: true, source: 'path', path: '/tool/upx', version: '1', checked_candidates: ['upx'], error: null },
-    wine: { available: true, source: 'path', path: '/tool/wine', version: '1', checked_candidates: ['wine'], error: null },
-    winedbg: { available: true, source: 'path', path: '/tool/winedbg', version: '1', checked_candidates: ['winedbg'], error: null },
-    frida_cli: { available: true, source: 'path', path: '/tool/frida-ps', version: '1', checked_candidates: ['frida-ps'], error: null },
-    yara_x: { available: true, source: 'path', path: '/tool/python', version: '1', checked_candidates: ['python3'], error: null },
-    qiling: { available: true, source: 'path', path: '/tool/qiling', version: '1', checked_candidates: ['python3'], error: null },
-    angr: { available: true, source: 'path', path: '/tool/angr', version: '1', checked_candidates: ['python3'], error: null },
-    panda: { available: true, source: 'path', path: '/tool/panda', version: '1', checked_candidates: ['python3'], error: null },
-    retdec: { available: true, source: 'path', path: '/tool/retdec', version: '1', checked_candidates: ['retdec'], error: null },
+    die: {
+      available: false,
+      source: 'none',
+      path: null,
+      version: null,
+      checked_candidates: [],
+      error: null,
+    },
+    graphviz: {
+      available: true,
+      source: 'path',
+      path: '/tool/dot',
+      version: '1',
+      checked_candidates: ['dot'],
+      error: null,
+    },
+    rizin: {
+      available: true,
+      source: 'path',
+      path: '/tool/rizin',
+      version: '1',
+      checked_candidates: ['rizin'],
+      error: null,
+    },
+    upx: {
+      available: true,
+      source: 'path',
+      path: '/tool/upx',
+      version: '1',
+      checked_candidates: ['upx'],
+      error: null,
+    },
+    wine: {
+      available: true,
+      source: 'path',
+      path: '/tool/wine',
+      version: '1',
+      checked_candidates: ['wine'],
+      error: null,
+    },
+    winedbg: {
+      available: true,
+      source: 'path',
+      path: '/tool/winedbg',
+      version: '1',
+      checked_candidates: ['winedbg'],
+      error: null,
+    },
+    frida_cli: {
+      available: true,
+      source: 'path',
+      path: '/tool/frida-ps',
+      version: '1',
+      checked_candidates: ['frida-ps'],
+      error: null,
+    },
+    yara_x: {
+      available: true,
+      source: 'path',
+      path: '/tool/python',
+      version: '1',
+      checked_candidates: ['python3'],
+      error: null,
+    },
+    qiling: {
+      available: true,
+      source: 'path',
+      path: '/tool/qiling',
+      version: '1',
+      checked_candidates: ['python3'],
+      error: null,
+    },
+    angr: {
+      available: true,
+      source: 'path',
+      path: '/tool/angr',
+      version: '1',
+      checked_candidates: ['python3'],
+      error: null,
+    },
+    panda: {
+      available: true,
+      source: 'path',
+      path: '/tool/panda',
+      version: '1',
+      checked_candidates: ['python3'],
+      error: null,
+    },
+    retdec: {
+      available: true,
+      source: 'path',
+      path: '/tool/retdec',
+      version: '1',
+      checked_candidates: ['retdec'],
+      error: null,
+    },
   }
 }
 
 async function seedSample(sampleId, fillChar, size = 8192) {
-  database.insertSample({
+  database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
     id: sampleId,
     sha256: fillChar.repeat(64),
     md5: fillChar.repeat(32),
@@ -132,7 +225,10 @@ async function verifyRunReuseAndFacadeBehavior() {
       },
       runtimeDetect: async () => {
         callCounts.runtimeDetect += 1
-        return { ok: true, data: { suspected: [{ runtime: 'native', confidence: 0.7, evidence: ['imports'] }] } }
+        return {
+          ok: true,
+          data: { suspected: [{ runtime: 'native', confidence: 0.7, evidence: ['imports'] }] },
+        }
       },
       peImportsExtract: async () => {
         callCounts.peImportsExtract += 1
@@ -140,7 +236,10 @@ async function verifyRunReuseAndFacadeBehavior() {
       },
       stringsExtract: async () => {
         callCounts.stringsExtract += 1
-        return { ok: true, data: { strings: [{ string: 'http://example.invalid', offset: 16, encoding: 'ascii' }] } }
+        return {
+          ok: true,
+          data: { strings: [{ string: 'http://example.invalid', offset: 16, encoding: 'ascii' }] },
+        }
       },
       yaraScan: async () => {
         callCounts.yaraScan += 1
@@ -215,7 +314,11 @@ async function verifyRunReuseAndFacadeBehavior() {
   assert.equal(second.data.reused, true)
   assert.equal(second.data.execution_state, 'reused')
   assert.ok(Array.isArray(first.data.stage_backend_roles))
-  assert.ok(first.data.stage_backend_roles.some((item) => item.stage === 'fast_profile' && item.backend === 'rizin'))
+  assert.ok(
+    first.data.stage_backend_roles.some(
+      (item) => item.stage === 'fast_profile' && item.backend === 'rizin'
+    )
+  )
   assert.ok(first.data.provenance_visibility)
   assert.ok(typeof first.data.provenance_visibility.evidence_counts.reused === 'number')
   assert.equal(callCounts.peFingerprint, 1)
@@ -250,10 +353,22 @@ async function verifyPromoteStatusAndPersistedSummaries() {
     policyGuard,
     undefined,
     {
-      peFingerprint: async () => ({ ok: true, data: { machine_name: 'IMAGE_FILE_MACHINE_AMD64', sections: [] } }),
-      runtimeDetect: async () => ({ ok: true, data: { suspected: [{ runtime: 'native', confidence: 0.7, evidence: ['imports'] }] } }),
-      peImportsExtract: async () => ({ ok: true, data: { imports: { 'kernel32.dll': ['CreateRemoteThread'] } } }),
-      stringsExtract: async () => ({ ok: true, data: { strings: [{ string: 'cmd.exe /c calc', offset: 32, encoding: 'ascii' }] } }),
+      peFingerprint: async () => ({
+        ok: true,
+        data: { machine_name: 'IMAGE_FILE_MACHINE_AMD64', sections: [] },
+      }),
+      runtimeDetect: async () => ({
+        ok: true,
+        data: { suspected: [{ runtime: 'native', confidence: 0.7, evidence: ['imports'] }] },
+      }),
+      peImportsExtract: async () => ({
+        ok: true,
+        data: { imports: { 'kernel32.dll': ['CreateRemoteThread'] } },
+      }),
+      stringsExtract: async () => ({
+        ok: true,
+        data: { strings: [{ string: 'cmd.exe /c calc', offset: 32, encoding: 'ascii' }] },
+      }),
       yaraScan: async () => ({ ok: true, data: { matches: [{ rule: 'suspicious_cli' }] } }),
       packerDetect: async () => ({ ok: true, data: { packed: false } }),
       compilerPackerDetect: async () => ({
@@ -319,7 +434,11 @@ async function verifyPromoteStatusAndPersistedSummaries() {
   assert.equal(promote.data.execution_state, 'queued')
   assert.ok(promote.data.deferred_jobs.some((item) => item.stage === 'enrich_static'))
 
-  const statusHandler = createAnalyzeWorkflowStatusHandler(database, { resolveBackends: readyBackends }, jobQueue)
+  const statusHandler = createAnalyzeWorkflowStatusHandler(
+    database,
+    { resolveBackends: readyBackends },
+    jobQueue
+  )
   const status = await statusHandler({ run_id: start.data.run_id })
   assert.equal(status.ok, true)
   assert.equal(status.data.execution_state, 'queued')
@@ -380,9 +499,18 @@ async function verifyInterruptedStageRecovery() {
     policyGuard,
     undefined,
     {
-      peFingerprint: async () => ({ ok: true, data: { machine_name: 'IMAGE_FILE_MACHINE_AMD64', sections: [] } }),
-      runtimeDetect: async () => ({ ok: true, data: { suspected: [{ runtime: 'native', confidence: 0.7, evidence: ['imports'] }] } }),
-      peImportsExtract: async () => ({ ok: true, data: { imports: { 'kernel32.dll': ['CreateRemoteThread'] } } }),
+      peFingerprint: async () => ({
+        ok: true,
+        data: { machine_name: 'IMAGE_FILE_MACHINE_AMD64', sections: [] },
+      }),
+      runtimeDetect: async () => ({
+        ok: true,
+        data: { suspected: [{ runtime: 'native', confidence: 0.7, evidence: ['imports'] }] },
+      }),
+      peImportsExtract: async () => ({
+        ok: true,
+        data: { imports: { 'kernel32.dll': ['CreateRemoteThread'] } },
+      }),
       stringsExtract: async () => ({
         ok: true,
         data: {
@@ -405,7 +533,16 @@ async function verifyInterruptedStageRecovery() {
       packerDetect: async () => ({ ok: true, data: { packed: false } }),
       compilerPackerDetect: async () => ({
         ok: true,
-        data: { status: 'ready', summary: { compiler_count: 1, packer_count: 0, protector_count: 0, file_type_count: 1, likely_primary_file_type: 'PE32+' } },
+        data: {
+          status: 'ready',
+          summary: {
+            compiler_count: 1,
+            packer_count: 0,
+            protector_count: 0,
+            file_type_count: 1,
+            likely_primary_file_type: 'PE32+',
+          },
+        },
       }),
       binaryRoleProfile: async () => ({
         ok: true,
@@ -430,7 +567,15 @@ async function verifyInterruptedStageRecovery() {
       }),
       rizinAnalyze: async () => ({
         ok: true,
-        data: { status: 'ready', operation: 'info', item_count: 1, preview: { core: { format: 'pe' } }, summary: 'Rizin preview complete.', recommended_next_tools: [], next_actions: [] },
+        data: {
+          status: 'ready',
+          operation: 'info',
+          item_count: 1,
+          preview: { core: { format: 'pe' } },
+          summary: 'Rizin preview complete.',
+          recommended_next_tools: [],
+          next_actions: [],
+        },
       }),
       resolveBackends: readyBackends,
     },
@@ -451,7 +596,11 @@ async function verifyInterruptedStageRecovery() {
     startedAt: new Date().toISOString(),
   })
 
-  const statusHandler = createAnalyzeWorkflowStatusHandler(database, { resolveBackends: readyBackends }, jobQueue)
+  const statusHandler = createAnalyzeWorkflowStatusHandler(
+    database,
+    { resolveBackends: readyBackends },
+    jobQueue
+  )
   const status = await statusHandler({ run_id: start.data.run_id })
   assert.equal(status.ok, true)
   assert.equal(status.data.recovery_state, 'recoverable')
@@ -466,6 +615,7 @@ try {
   await verifyInterruptedStageRecovery()
   console.log('analysis runtime convergence integration checks passed')
 } finally {
+  jobQueue.close()
   database.close()
   await fs.rm(tempRoot, { recursive: true, force: true })
 }

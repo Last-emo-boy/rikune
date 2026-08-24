@@ -296,6 +296,65 @@ describe('workflow.run', () => {
     )
   })
 
+  test('returns bounded stage statuses and explicit function-index readiness', async () => {
+    const status = jest.fn<Promise<WorkerResult>, [Record<string, unknown>]>().mockResolvedValue(
+      okRunResult({
+        run: {
+          id: 'plan-static',
+          sample_id: 'sha256:abc',
+          status: 'partial',
+          latest_stage: 'function_map',
+          stages: [
+            {
+              stage: 'fast_profile',
+              status: 'completed',
+              execution_state: 'completed',
+              recovery_state: 'none',
+              job_id: null,
+            },
+            {
+              stage: 'function_map',
+              status: 'partial',
+              execution_state: 'partial',
+              recovery_state: 'recoverable',
+              job_id: 'job-ghidra',
+              metadata: { function_index_ready: false },
+            },
+          ],
+        },
+      })
+    )
+    const handler = createWorkflowRunHandler({
+      requestUpload: jest.fn() as any,
+      start: jest.fn() as any,
+      status,
+      promote: jest.fn() as any,
+    })
+
+    const result = await handler({ action: 'status', plan_id: 'plan-static' })
+
+    expect(result.ok).toBe(true)
+    const data = result.data as any
+    expect(data.stage_statuses).toEqual([
+      {
+        stage: 'fast_profile',
+        status: 'completed',
+        execution_state: 'completed',
+        recovery_state: 'none',
+        job_id: null,
+      },
+      {
+        stage: 'function_map',
+        status: 'partial',
+        execution_state: 'partial',
+        recovery_state: 'recoverable',
+        job_id: 'job-ghidra',
+      },
+    ])
+    expect(data.function_index_ready).toBe(false)
+    expect(workflowRunToolDefinition.outputSchema?.safeParse(result).success).toBe(true)
+  })
+
   test('prioritizes function-map artifacts over noisy string chunks in selectors', async () => {
     const status = jest.fn<Promise<WorkerResult>, [Record<string, unknown>]>().mockResolvedValue(
       okRunResult({

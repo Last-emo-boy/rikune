@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 /**
  * Unit tests for system.health tool
  */
@@ -214,7 +215,7 @@ describe('system.health tool', () => {
 
   test('should report cache sample-state consistency when sample_id is provided', async () => {
     const sampleId = 'sha256:' + 'a'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'a'.repeat(64),
       md5: 'a'.repeat(32),

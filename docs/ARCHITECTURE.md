@@ -254,7 +254,7 @@ Important endpoints:
 | `/api/v1/artifacts` | Artifact listing |
 | `/api/v1/artifacts/:id` | Artifact read/delete |
 
-The API layer includes optional API key authentication, rate limiting, security headers, and CORS constraints.
+When the HTTP API is enabled, the API layer requires a non-empty API key and also applies rate limiting, security headers, and CORS constraints.
 
 ## Safe Command Execution
 

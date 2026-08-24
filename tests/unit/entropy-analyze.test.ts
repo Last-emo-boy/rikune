@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals'
 import fs from 'fs/promises'
 import path from 'path'
@@ -68,7 +69,7 @@ describe('entropy.analyze', () => {
     workspaceManager = new WorkspaceManager(path.join(tempDir, 'workspaces'))
     database = new DatabaseManager(path.join(tempDir, 'test.db'))
     cacheManager = new CacheManager(path.join(tempDir, 'cache'), database)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '5'.repeat(64),
       md5: '5'.repeat(32),

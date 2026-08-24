@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 const { WorkspaceManager } = await import('../../dist/workspace-manager.js')
-const { DatabaseManager } = await import('../../dist/database.js')
+const { DATABASE_FIXTURE_CAPABILITY, DatabaseManager } = await import('../../dist/database.js')
 const { CacheManager } = await import('../../dist/cache-manager.js')
 const { createTriageWorkflowHandler } = await import('../../dist/workflows/triage.js')
 const { createTraceConditionHandler } = await import('../../dist/plugins/static-triage/tools/trace-condition.js')
@@ -41,7 +41,7 @@ function createUnavailableBackends() {
 
 async function setupSample(sampleId) {
   const hashChar = sampleId.at(-1) || 'a'
-  database.insertSample({
+  database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
     id: sampleId,
     sha256: hashChar.repeat(64),
     md5: hashChar.repeat(32),

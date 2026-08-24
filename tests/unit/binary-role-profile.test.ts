@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { describe, test, expect, beforeEach, afterEach, jest } from '@jest/globals'
 import fs from 'fs'
 import path from 'path'
@@ -35,7 +36,7 @@ describe('binary.role.profile tool', () => {
     cacheManager = new CacheManager(testCachePath, database)
 
     const sampleId = 'sha256:' + 'b'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'b'.repeat(64),
       md5: 'b'.repeat(32),
@@ -154,7 +155,7 @@ describe('binary.role.profile tool', () => {
 
   test('should return unified remediation when workspace/original is missing', async () => {
     const sampleId = 'sha256:' + 'c'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'c'.repeat(64),
       md5: 'c'.repeat(32),
@@ -190,7 +191,7 @@ describe('binary.role.profile tool', () => {
 
     try {
       const sampleId = 'sha256:' + 'd'.repeat(64)
-      localDatabase.insertSample({
+      localDatabase.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: 'd'.repeat(64),
         md5: 'd'.repeat(32),

@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 /**
  * Unit tests for packer.detect tool
  */
@@ -250,7 +251,7 @@ async function ingestTestSample(
   await fs.writeFile(path.join(workspace.original, 'sample.exe'), data)
 
   // Insert into database
-  database.insertSample({
+  database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
     id: sampleId,
     sha256,
     md5,

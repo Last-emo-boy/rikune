@@ -1,10 +1,17 @@
-import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { PolicyGuard } from '../policy-guard.js'
 import { logWarning } from '../logger.js'
+import type { SampleOperationGate } from './sample-operation-gate.js'
+import {
+  secureCleanupIngestTemp,
+  secureFindMatchingFile,
+  secureIngestPublish,
+  secureInspectFile,
+  secureRemoveIdentity,
+} from './secure-filesystem.js'
 
 export const MAX_SAMPLE_SIZE = 500 * 1024 * 1024
 
@@ -22,6 +29,16 @@ export interface FinalizeSampleResult {
   existed?: boolean
   sha256: string
   md5: string
+}
+
+export type SampleFinalizationPhase = 'temp_written' | 'db_committed' | 'fs_committed'
+
+export interface SampleFinalizationOptions {
+  /** Deterministic commit-boundary hook used by race/crash regression tests. */
+  onPhase?: (
+    phase: SampleFinalizationPhase,
+    context: { sampleId: string; tempPath: string; finalPath: string }
+  ) => void | Promise<void>
 }
 
 function computeSHA256(data: Buffer): string {
@@ -950,15 +967,213 @@ export function detectFileType(data: Buffer, filename?: string): string {
 function normalizeFilename(filename?: string): string {
   const candidate = typeof filename === 'string' ? filename.replace(/\\/g, '/') : ''
   const basename = path.posix.basename(candidate || 'sample.bin').trim()
-  return basename.length > 0 ? basename : 'sample.bin'
+  if (basename.length === 0 || basename.startsWith('.rikune-')) return 'sample.bin'
+  return basename
 }
 
 export class SampleFinalizationService {
   constructor(
     private readonly workspaceManager: WorkspaceManager,
     private readonly database: DatabaseManager,
-    private readonly policyGuard: PolicyGuard
+    private readonly policyGuard: PolicyGuard,
+    private readonly sampleOperationGate: SampleOperationGate,
+    private readonly options: SampleFinalizationOptions = {}
   ) {}
+
+  private ingestOwnerUntil(): string {
+    return new Date(Date.now() + this.sampleOperationGate.instanceTtlMs).toISOString()
+  }
+
+  private secureWorkspaceContext(originalPath: string): {
+    root: string
+    rootDevice: number
+    rootInode: number
+    directoryRelative: string
+  } {
+    const trusted = this.workspaceManager.getTrustedRootIdentity()
+    const relative = path.relative(trusted.root, originalPath).replaceAll(path.sep, '/')
+    if (!relative || relative === '..' || relative.startsWith('../') || path.isAbsolute(relative)) {
+      throw new Error('E_SAMPLE_WORKSPACE_ESCAPE: original directory is outside trusted root.')
+    }
+    return {
+      root: trusted.root,
+      rootDevice: trusted.device,
+      rootInode: trusted.inode,
+      directoryRelative: relative,
+    }
+  }
+
+  async recoverPendingIngests(): Promise<{ recovered: number; cleaned: number; failed: number }> {
+    let recovered = 0
+    let cleaned = 0
+    let failed = 0
+    for (const pending of this.database.listPendingSampleIngests()) {
+      let lease: ReturnType<SampleOperationGate['acquireIngestLease']> | undefined
+      let ownerHeartbeat: NodeJS.Timeout | undefined
+      let claimedOwnerToken: string | undefined
+      let claimedFence: { leaseToken: string; instanceId: string; generation: number } | undefined
+      try {
+        lease = this.sampleOperationGate.acquireIngestLease(pending.sample_id)
+        const generation = lease.generations.get(pending.sample_id)
+        if (generation === undefined) {
+          throw new Error('E_SAMPLE_LEASE_LOST: recovery lease has no generation.')
+        }
+        const fence = {
+          leaseToken: lease.token,
+          instanceId: lease.instanceId,
+          generation,
+        }
+        const ownerToken = crypto.randomUUID()
+        if (
+          !this.database.claimSampleIngestJournal(pending.id, fence, {
+            token: ownerToken,
+            until: this.ingestOwnerUntil(),
+          })
+        ) {
+          continue
+        }
+        claimedOwnerToken = ownerToken
+        claimedFence = fence
+        const heartbeat = (): void => {
+          lease?.heartbeat()
+          if (
+            !this.database.heartbeatSampleIngestJournal(
+              pending.id,
+              ownerToken,
+              fence,
+              this.ingestOwnerUntil()
+            )
+          ) {
+            throw new Error('E_SAMPLE_INGEST_OWNER_LOST: recovery journal ownership was lost.')
+          }
+        }
+        ownerHeartbeat = setInterval(
+          () => {
+            try {
+              heartbeat()
+            } catch {
+              // Commit boundaries below remain authoritative.
+            }
+          },
+          Math.max(100, Math.floor(this.sampleOperationGate.sharedLeaseTtlMs / 3))
+        )
+        ownerHeartbeat.unref()
+        const journal = this.database.findSampleIngestJournal(pending.id)
+        if (!journal || journal.owner_token !== ownerToken) {
+          throw new Error('E_SAMPLE_INGEST_OWNER_LOST: claimed journal disappeared.')
+        }
+        const workspace = await this.workspaceManager.createWorkspace(journal.sample_id)
+        const secure = this.secureWorkspaceContext(workspace.original)
+        const matching = secureFindMatchingFile({
+          ...secure,
+          expectedSha256: journal.sha256,
+          expectedSize: journal.size,
+        })
+        const existing = this.database.findSample(journal.sample_id)
+        if (matching.status === 'matched') {
+          if (
+            journal.phase === 'fs_committed' &&
+            journal.file_device !== null &&
+            journal.file_inode !== null &&
+            (matching.device !== journal.file_device || matching.inode !== journal.file_inode)
+          ) {
+            throw new Error('E_SAMPLE_STORAGE_MISMATCH: recovered payload identity changed.')
+          }
+          if (!existing) {
+            heartbeat()
+            if (journal.phase !== 'fs_committed') {
+              this.database.markSampleIngestFilesystemCommitted(
+                journal.id,
+                journal.sample_id,
+                { device: matching.device!, inode: matching.inode! },
+                fence,
+                ownerToken
+              )
+            }
+            this.database.insertSample(
+              {
+                id: journal.sample_id,
+                sha256: journal.sha256,
+                md5: journal.md5,
+                size: journal.size,
+                file_type: journal.file_type,
+                created_at: journal.created_at,
+                source: journal.source,
+              },
+              {
+                ...fence,
+                journalId: journal.id,
+                journalOwnerToken: ownerToken,
+              }
+            )
+          } else if (existing.sha256 !== journal.sha256 || existing.size !== journal.size) {
+            throw new Error('E_SAMPLE_STORAGE_MISMATCH: persisted sample differs from journal.')
+          }
+          secureCleanupIngestTemp({
+            ...secure,
+            tempName: journal.temp_name,
+            expectedSha256: journal.sha256,
+            expectedSize: journal.size,
+          })
+          this.policyGuard.auditLogFailClosed({
+            timestamp: new Date().toISOString(),
+            operation: 'sample.ingest.recovery',
+            sampleId: journal.sample_id,
+            decision: 'allow',
+            reason: 'Crash-safe ingest journal recovered',
+            metadata: { journal_id: journal.id, phase: journal.phase },
+          })
+          heartbeat()
+          this.database.closeSampleIngestJournal(
+            journal.id,
+            journal.sample_id,
+            ownerToken,
+            fence,
+            true
+          )
+          recovered += 1
+          continue
+        }
+
+        if (existing) {
+          throw new Error('E_SAMPLE_STORAGE_MISMATCH: database row has no matching payload.')
+        }
+        const finalEntry = secureInspectFile({ ...secure, name: journal.filename })
+        if (finalEntry.status === 'found') {
+          throw new Error('E_SAMPLE_STORAGE_MISMATCH: journal final path contains other bytes.')
+        }
+        secureCleanupIngestTemp({
+          ...secure,
+          tempName: journal.temp_name,
+          expectedSha256: journal.sha256,
+          expectedSize: journal.size,
+        })
+        heartbeat()
+        this.database.closeSampleIngestJournal(
+          journal.id,
+          journal.sample_id,
+          ownerToken,
+          fence,
+          false
+        )
+        cleaned += 1
+      } catch (error) {
+        failed += 1
+        logWarning('Failed to recover pending sample ingest', {
+          journalId: pending.id,
+          sampleId: pending.sample_id,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      } finally {
+        if (ownerHeartbeat) clearInterval(ownerHeartbeat)
+        if (claimedOwnerToken && claimedFence) {
+          this.database.abandonSampleIngestJournal(pending.id, claimedOwnerToken, claimedFence)
+        }
+        lease?.release()
+      }
+    }
+    return { recovered, cleaned, failed }
+  }
 
   async finalizeBuffer(input: FinalizeSampleInput): Promise<FinalizeSampleResult> {
     if (input.data.length > MAX_SAMPLE_SIZE) {
@@ -970,80 +1185,161 @@ export class SampleFinalizationService {
     const sha256 = computeSHA256(input.data)
     const md5 = computeMD5(input.data)
     const sampleId = `sha256:${sha256}`
-    const source = input.source || 'upload'
-    const filename = normalizeFilename(input.filename)
-    const existingSample = this.database.findSampleBySha256(sha256)
+    const operationLease = this.sampleOperationGate.acquireIngestLease(sampleId)
+    const generation = operationLease.generations.get(sampleId)
+    if (generation === undefined) {
+      operationLease.release()
+      throw new Error('E_SAMPLE_LEASE_LOST: ingest lease has no generation fence.')
+    }
+    const fence = {
+      leaseToken: operationLease.token,
+      instanceId: operationLease.instanceId,
+      generation,
+    }
+    const journalId = crypto.randomUUID()
+    const journalOwnerToken = crypto.randomUUID()
+    let journalPrepared = false
+    const heartbeatTimer = setInterval(
+      () => {
+        try {
+          operationLease.heartbeat()
+          if (
+            journalPrepared &&
+            !this.database.heartbeatSampleIngestJournal(
+              journalId,
+              journalOwnerToken,
+              fence,
+              this.ingestOwnerUntil()
+            )
+          ) {
+            throw new Error('E_SAMPLE_INGEST_OWNER_LOST: ingest journal heartbeat failed.')
+          }
+        } catch {
+          // Commit-boundary assertions below report ownership loss.
+        }
+      },
+      Math.max(100, Math.floor(this.sampleOperationGate.sharedLeaseTtlMs / 3))
+    )
+    heartbeatTimer?.unref()
+    const tempName = `.rikune-ingest-${crypto.randomUUID()}.tmp`
+    let tempPath = ''
+    let finalPath = ''
+    let finalIdentity: { dev: number; ino: number } | undefined
+    let finalCreated = false
+    let databaseInserted = false
+    try {
+      const source = input.source || 'upload'
+      const filename = normalizeFilename(input.filename)
+      const existingSample = this.database.findSampleBySha256(sha256)
 
-    if (existingSample) {
-      await this.policyGuard.auditLog({
-        timestamp: new Date().toISOString(),
-        operation: input.auditOperation || 'sample.ingest',
-        sampleId: existingSample.id,
-        decision: 'allow',
-        reason: 'Sample already exists (SHA256 match)',
-        metadata: {
-          size: input.data.length,
-          source,
+      if (existingSample) {
+        operationLease.assertOwned()
+        const existingWorkspace = await this.workspaceManager.createWorkspace(existingSample.id)
+        const existingSecure = this.secureWorkspaceContext(existingWorkspace.original)
+        const matching = secureFindMatchingFile({
+          ...existingSecure,
+          expectedSha256: sha256,
+          expectedSize: input.data.length,
+        })
+        if (matching.status !== 'matched') {
+          throw new Error(
+            `E_SAMPLE_STORAGE_MISMATCH: ${existingSample.id} has no securely verified payload.`
+          )
+        }
+        this.policyGuard.auditLogFailClosed({
+          timestamp: new Date().toISOString(),
+          operation: input.auditOperation || 'sample.ingest',
+          sampleId: existingSample.id,
+          decision: 'allow',
+          reason: 'Sample already exists (SHA256 match)',
+          metadata: {
+            size: input.data.length,
+            source,
+            existed: true,
+          },
+        })
+
+        return {
+          sample_id: existingSample.id,
+          size: existingSample.size,
+          file_type: existingSample.file_type || 'unknown',
           existed: true,
-        },
-      })
+          sha256,
+          md5,
+        }
+      }
 
-      return {
-        sample_id: existingSample.id,
-        size: existingSample.size,
-        file_type: existingSample.file_type || 'unknown',
-        existed: true,
+      const workspace = await this.workspaceManager.createWorkspace(sampleId)
+      const secure = this.secureWorkspaceContext(workspace.original)
+      finalPath = path.join(workspace.original, filename)
+      tempPath = path.join(workspace.original, tempName)
+
+      const fileType = detectFileType(input.data, filename)
+      const sample = {
+        id: sampleId,
         sha256,
         md5,
+        size: input.data.length,
+        file_type: fileType,
+        created_at: new Date().toISOString(),
+        source,
       }
-    }
 
-    const workspace = await this.workspaceManager.createWorkspace(sampleId)
-    const samplePath = path.join(workspace.original, filename)
-    fs.writeFileSync(samplePath, input.data)
-
-    try {
-      fs.chmodSync(samplePath, 0o444)
-    } catch (error) {
-      logWarning('Failed to set file permissions', {
-        path: samplePath,
-        error: (error as Error).message,
-      })
-    }
-
-    const fileType = detectFileType(input.data, filename)
-    const sample = {
-      id: sampleId,
-      sha256,
-      md5,
-      size: input.data.length,
-      file_type: fileType,
-      created_at: new Date().toISOString(),
-      source,
-    }
-
-    try {
-      this.database.insertSample(sample)
-    } catch (error: any) {
-      if (
-        error.code === 'SQLITE_CONSTRAINT_UNIQUE' ||
-        error.message?.includes('UNIQUE constraint')
-      ) {
-        const concurrentSample = this.database.findSampleBySha256(sha256)
-        if (concurrentSample) {
-          await this.policyGuard.auditLog({
+      operationLease.assertOwned()
+      const prepareDeadline =
+        Date.now() + Math.min(30_000, this.sampleOperationGate.instanceTtlMs * 2)
+      for (;;) {
+        try {
+          this.database.prepareSampleIngestJournal(
+            {
+              id: journalId,
+              sample_id: sampleId,
+              sha256,
+              md5,
+              size: input.data.length,
+              file_type: fileType,
+              filename,
+              temp_name: tempName,
+              source,
+            },
+            fence,
+            { token: journalOwnerToken, until: this.ingestOwnerUntil() }
+          )
+          journalPrepared = true
+          break
+        } catch (error: any) {
+          const unique =
+            error?.code === 'SQLITE_CONSTRAINT_UNIQUE' ||
+            error?.message?.includes('UNIQUE constraint')
+          if (!unique) throw error
+          while (
+            this.database.findSampleIngestJournalBySampleId(sampleId) &&
+            Date.now() < prepareDeadline
+          ) {
+            operationLease.assertOwned()
+            await new Promise((resolve) => setTimeout(resolve, 10))
+          }
+          if (this.database.findSampleIngestJournalBySampleId(sampleId)) {
+            throw new Error('E_SAMPLE_INGEST_BUSY: another owner is finalizing this sample.')
+          }
+          const concurrentSample = this.database.findSampleBySha256(sha256)
+          if (!concurrentSample) continue
+          const matching = secureFindMatchingFile({
+            ...secure,
+            expectedSha256: sha256,
+            expectedSize: input.data.length,
+          })
+          if (matching.status !== 'matched') {
+            throw new Error('E_SAMPLE_STORAGE_MISMATCH: coalesced sample payload is missing.')
+          }
+          this.policyGuard.auditLogFailClosed({
             timestamp: new Date().toISOString(),
             operation: input.auditOperation || 'sample.ingest',
             sampleId: concurrentSample.id,
             decision: 'allow',
-            reason: 'Sample already exists (concurrent insert race condition)',
-            metadata: {
-              size: input.data.length,
-              source,
-              existed: true,
-            },
+            reason: 'Sample already exists (coalesced ingest owner)',
+            metadata: { size: input.data.length, source, existed: true },
           })
-
           return {
             sample_id: concurrentSample.id,
             size: concurrentSample.size,
@@ -1055,27 +1351,222 @@ export class SampleFinalizationService {
         }
       }
 
-      throw error
-    }
+      try {
+        const published = secureIngestPublish({
+          ...secure,
+          tempName,
+          finalName: filename,
+          expectedSha256: sha256,
+          data: input.data,
+        })
+        finalIdentity = { dev: published.device, ino: published.inode }
+        finalCreated = published.status === 'published'
+        await this.options.onPhase?.('temp_written', { sampleId, tempPath, finalPath })
+        operationLease.assertOwned()
+        this.database.markSampleIngestFilesystemCommitted(
+          journalId,
+          sampleId,
+          { device: published.device, inode: published.inode },
+          fence,
+          journalOwnerToken
+        )
+        await this.options.onPhase?.('fs_committed', { sampleId, tempPath, finalPath })
+        operationLease.assertOwned()
+        this.database.insertSample(sample, {
+          ...fence,
+          journalId,
+          journalOwnerToken,
+        })
+        databaseInserted = true
+        await this.options.onPhase?.('db_committed', { sampleId, tempPath, finalPath })
+      } catch (error: any) {
+        if (
+          !databaseInserted &&
+          (error.code === 'SQLITE_CONSTRAINT_UNIQUE' ||
+            error.message?.includes('UNIQUE constraint'))
+        ) {
+          const concurrentSample = this.database.findSampleBySha256(sha256)
+          if (concurrentSample) {
+            const matching = secureFindMatchingFile({
+              ...secure,
+              expectedSha256: sha256,
+              expectedSize: input.data.length,
+            })
+            if (matching.status !== 'matched') throw error
+            this.policyGuard.auditLogFailClosed({
+              timestamp: new Date().toISOString(),
+              operation: input.auditOperation || 'sample.ingest',
+              sampleId: concurrentSample.id,
+              decision: 'allow',
+              reason: 'Sample already exists (concurrent insert race condition)',
+              metadata: {
+                size: input.data.length,
+                source,
+                existed: true,
+              },
+            })
+            operationLease.assertOwned()
+            if (
+              !this.database.heartbeatSampleIngestJournal(
+                journalId,
+                journalOwnerToken,
+                fence,
+                this.ingestOwnerUntil()
+              )
+            ) {
+              throw new Error('E_SAMPLE_INGEST_OWNER_LOST: concurrent ingest owner was lost.')
+            }
+            this.database.closeSampleIngestJournal(
+              journalId,
+              sampleId,
+              journalOwnerToken,
+              fence,
+              true
+            )
+            journalPrepared = false
+            finalCreated = false
 
-    await this.policyGuard.auditLog({
-      timestamp: new Date().toISOString(),
-      operation: input.auditOperation || 'sample.ingest',
-      sampleId: sample.id,
-      decision: 'allow',
-      metadata: {
+            return {
+              sample_id: concurrentSample.id,
+              size: concurrentSample.size,
+              file_type: concurrentSample.file_type || 'unknown',
+              existed: true,
+              sha256,
+              md5,
+            }
+          }
+        }
+
+        throw error
+      }
+
+      this.policyGuard.auditLogFailClosed({
+        timestamp: new Date().toISOString(),
+        operation: input.auditOperation || 'sample.ingest',
+        sampleId: sample.id,
+        decision: 'allow',
+        metadata: {
+          size: input.data.length,
+          source,
+          file_type: fileType,
+        },
+      })
+      operationLease.assertOwned()
+      if (
+        !this.database.heartbeatSampleIngestJournal(
+          journalId,
+          journalOwnerToken,
+          fence,
+          this.ingestOwnerUntil()
+        )
+      ) {
+        throw new Error('E_SAMPLE_INGEST_OWNER_LOST: ingest journal close ownership was lost.')
+      }
+      this.database.closeSampleIngestJournal(journalId, sampleId, journalOwnerToken, fence, true)
+      journalPrepared = false
+
+      return {
+        sample_id: sampleId,
         size: input.data.length,
-        source,
         file_type: fileType,
-      },
-    })
-
-    return {
-      sample_id: sampleId,
-      size: input.data.length,
-      file_type: fileType,
-      sha256,
-      md5,
+        sha256,
+        md5,
+      }
+    } catch (error) {
+      if (
+        journalPrepared &&
+        error instanceof Error &&
+        error.message.startsWith('E_AUDIT_DURABILITY:')
+      ) {
+        throw error
+      }
+      if (
+        journalPrepared &&
+        !this.database.heartbeatSampleIngestJournal(
+          journalId,
+          journalOwnerToken,
+          fence,
+          this.ingestOwnerUntil()
+        )
+      ) {
+        logWarning('Ingest cleanup skipped after journal owner fencing loss', { sampleId })
+        throw error
+      }
+      let mayRemoveFinal = !databaseInserted && !this.database.findSample(sampleId)
+      if (databaseInserted) {
+        const rolledBack = this.database.rollbackInsertedSample(sampleId, {
+          leaseToken: fence.leaseToken,
+          generation: fence.generation,
+        })
+        if (!rolledBack && this.database.findSample(sampleId)) {
+          logWarning('Ingest rollback was fenced by a newer sample generation', { sampleId })
+        }
+        mayRemoveFinal = rolledBack
+        if (rolledBack) databaseInserted = false
+      }
+      if (mayRemoveFinal && finalCreated && finalIdentity) {
+        try {
+          const workspace = await this.workspaceManager.resolveWorkspaceForWrite(sampleId)
+          secureRemoveIdentity({
+            ...this.secureWorkspaceContext(workspace.original),
+            sourceName: path.basename(finalPath),
+            quarantineName: `.rikune-rollback-final-${journalId}`,
+            expectedDevice: finalIdentity.dev,
+            expectedInode: finalIdentity.ino,
+          })
+          finalCreated = false
+        } catch (cleanupError) {
+          logWarning('Secure ingest rollback left its journal for startup recovery', {
+            sampleId,
+            error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+          })
+          throw error
+        }
+      }
+      if (journalPrepared) {
+        try {
+          const workspace = await this.workspaceManager.resolveWorkspaceForWrite(sampleId)
+          const secure = this.secureWorkspaceContext(workspace.original)
+          secureCleanupIngestTemp({
+            ...secure,
+            tempName,
+            expectedSha256: sha256,
+            expectedSize: input.data.length,
+          })
+          if (!this.database.findSample(sampleId)) {
+            if (
+              !this.database.heartbeatSampleIngestJournal(
+                journalId,
+                journalOwnerToken,
+                fence,
+                this.ingestOwnerUntil()
+              )
+            ) {
+              throw new Error('E_SAMPLE_INGEST_OWNER_LOST: cleanup journal owner was lost.')
+            }
+            this.database.closeSampleIngestJournal(
+              journalId,
+              sampleId,
+              journalOwnerToken,
+              fence,
+              false
+            )
+            journalPrepared = false
+          }
+        } catch (cleanupError) {
+          logWarning('Ingest journal retained after fail-closed cleanup error', {
+            sampleId,
+            error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+          })
+        }
+      }
+      throw error
+    } finally {
+      clearInterval(heartbeatTimer)
+      if (journalPrepared) {
+        this.database.abandonSampleIngestJournal(journalId, journalOwnerToken, fence)
+      }
+      operationLease.release()
     }
   }
 }
@@ -1083,7 +1574,15 @@ export class SampleFinalizationService {
 export function createSampleFinalizationService(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
-  policyGuard: PolicyGuard
+  policyGuard: PolicyGuard,
+  sampleOperationGate: SampleOperationGate,
+  options: SampleFinalizationOptions = {}
 ): SampleFinalizationService {
-  return new SampleFinalizationService(workspaceManager, database, policyGuard)
+  return new SampleFinalizationService(
+    workspaceManager,
+    database,
+    policyGuard,
+    sampleOperationGate,
+    options
+  )
 }

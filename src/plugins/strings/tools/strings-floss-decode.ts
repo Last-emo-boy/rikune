@@ -30,6 +30,7 @@ import {
 } from '../../../analysis/nonblocking-analysis.js'
 import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
 import { getPythonCommand } from '../../../utils/shared-helpers.js'
+import { throwIfAnalysisAborted } from '../../../analysis/analysis-cancellation.js'
 
 // ============================================================================
 // Constants
@@ -721,7 +722,8 @@ export function createStringsFlossDecodeHandler(
   jobQueue?: JobQueue,
   options: { allowDeferred?: boolean } = {}
 ) {
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
+    throwIfAnalysisAborted(abortSignal)
     const input = StringsFlossDecodeInputSchema.parse(args)
     const startTime = Date.now()
 
@@ -749,6 +751,7 @@ export function createStringsFlossDecodeHandler(
       // 2. Check cache
       if (!input.force_refresh) {
         const cachedLookup = await lookupCachedResult(cacheManager, cacheKey)
+        throwIfAnalysisAborted(abortSignal)
         if (cachedLookup) {
           const normalizedCachedData = normalizeStringsFlossDecodeData(cachedLookup.data, input)
           const warnings = ['Result from cache', formatCacheWarning(cachedLookup.metadata)]
@@ -814,10 +817,12 @@ export function createStringsFlossDecodeHandler(
 
       // 3. Get sample path from workspace
       const workspace = await workspaceManager.getWorkspace(input.sample_id)
+      throwIfAnalysisAborted(abortSignal)
 
       // Find the sample file in the original directory
       const fs = await import('fs/promises')
       const files = await fs.readdir(workspace.original)
+      throwIfAnalysisAborted(abortSignal)
       if (files.length === 0) {
         return {
           ok: false,
@@ -844,7 +849,9 @@ export function createStringsFlossDecodeHandler(
       const workerResponse = await callPooledStaticWorker(workerRequest, {
         database,
         family: 'static_python.full',
+        abortSignal,
       })
+      throwIfAnalysisAborted(abortSignal)
 
       if (!workerResponse.ok) {
         return {
@@ -886,6 +893,7 @@ export function createStringsFlossDecodeHandler(
         next_actions: structured.nextActions,
       }
       if (input.persist_artifact !== false) {
+        throwIfAnalysisAborted(abortSignal)
         const artifact = await persistStringXrefJsonArtifact(
           workspaceManager,
           database,
@@ -914,7 +922,9 @@ export function createStringsFlossDecodeHandler(
         partial_results?: boolean
       }
       if (!responseData.timeout_occurred && !responseData.partial_results) {
+        throwIfAnalysisAborted(abortSignal)
         await cacheManager.setCachedResult(cacheKey, normalizedData, CACHE_TTL_MS, sample.sha256)
+        throwIfAnalysisAborted(abortSignal)
       }
 
       // 8. Return result
@@ -937,6 +947,7 @@ export function createStringsFlossDecodeHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [(error as Error).message],

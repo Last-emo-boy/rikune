@@ -494,6 +494,91 @@ describe('createDelegatingServer', () => {
     )
   })
 
+  test('threads one AbortSignal through upload, execute, and download', async () => {
+    runtimeClient.execute = jest.fn().mockResolvedValue(
+      makeRuntimeResponse({
+        result: { ok: true, data: {} },
+        artifactRefs: [{ name: 'report.json', path: 'C:\\outbox\\report.json' }],
+      })
+    )
+    const server = createServer(runtimeClient)
+    let wrappedHandler: any
+    inner.registerTool = jest.fn((_def, handler) => {
+      wrappedHandler = handler
+    })
+    server.registerTool(remoteDynamicTool, async () => ({ ok: true }) as WorkerResult)
+    const controller = new AbortController()
+
+    await wrappedHandler({ sample_id: 'sha256:abc123' }, controller.signal)
+
+    expect(runtimeClient.uploadSample).toHaveBeenCalledWith(
+      expect.any(String),
+      '/tmp/sample.exe',
+      expect.stringContaining('inbox'),
+      expect.objectContaining({ signal: controller.signal })
+    )
+    expect(runtimeClient.execute).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ signal: controller.signal })
+    )
+    expect(runtimeClient.downloadArtifacts).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining('outbox'),
+      ['report.json'],
+      { signal: controller.signal }
+    )
+  })
+
+  test('waits for delegated execute teardown and never downloads or persists after abort', async () => {
+    let resolveStarted!: (signal: AbortSignal) => void
+    const started = new Promise<AbortSignal>((resolve) => {
+      resolveStarted = resolve
+    })
+    let resolveTeardown!: () => void
+    const teardown = new Promise<void>((resolve) => {
+      resolveTeardown = resolve
+    })
+    runtimeClient.execute = jest.fn(async (_request, options) => {
+      const signal = options?.signal
+      if (!signal) throw new Error('missing AbortSignal')
+      resolveStarted(signal)
+      await new Promise<void>((resolve) => {
+        signal.addEventListener('abort', () => resolve(), { once: true })
+      })
+      await teardown
+      return makeRuntimeResponse({
+        artifactRefs: [{ name: 'late.json', path: 'C:\\outbox\\late.json' }],
+      })
+    })
+    const server = createServer(runtimeClient)
+    let wrappedHandler: any
+    inner.registerTool = jest.fn((_def, handler) => {
+      wrappedHandler = handler
+    })
+    server.registerTool(remoteDynamicTool, async () => ({ ok: true }) as WorkerResult)
+    const controller = new AbortController()
+
+    let settled = false
+    const running = wrappedHandler({ sample_id: 'sha256:abc123' }, controller.signal).finally(
+      () => {
+        settled = true
+      }
+    )
+    const receivedSignal = await started
+    controller.abort(new Error('cancel delegated runtime'))
+    await Promise.resolve()
+
+    expect(receivedSignal).toBe(controller.signal)
+    expect(settled).toBe(false)
+    expect(runtimeClient.downloadArtifacts).not.toHaveBeenCalled()
+
+    resolveTeardown()
+    await expect(running).rejects.toMatchObject({ name: 'AbortError' })
+    expect(runtimeClient.downloadArtifacts).not.toHaveBeenCalled()
+    expect((workspaceManager as any).createWorkspace).toBeUndefined()
+    expect(runtimeClient.recover).not.toHaveBeenCalled()
+  })
+
   test('should classify persisted Frida JSON artifacts as dynamic traces', async () => {
     const insertArtifact = jest.fn()
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'rikune-delegation-artifacts-'))

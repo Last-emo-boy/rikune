@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { describe, test, expect, beforeEach, afterEach, jest } from '@jest/globals'
 import fs from 'fs'
 import path from 'path'
@@ -113,7 +114,7 @@ describe('pe.symbols.recover tool', () => {
     database = new DatabaseManager(testDbPath)
     cacheManager = new CacheManager(testCachePath, database)
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '7'.repeat(64),
       md5: '7'.repeat(32),

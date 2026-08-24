@@ -23,6 +23,7 @@ import {
   resolveSampleFile,
   resolveAnalysisBackends,
 } from '../../docker-shared.js'
+import { throwIfAnalysisAborted } from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'retdec.decompile'
 const TOOL_VERSION = '0.2.0'
@@ -428,9 +429,10 @@ export function createRetDecDecompileHandler(
   database: DatabaseManager,
   dependencies?: SharedBackendDependencies
 ) {
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const startTime = Date.now()
     try {
+      throwIfAnalysisAborted(abortSignal)
       const input = retdecDecompileInputSchema.parse(args)
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
       const backends = (dependencies?.resolveBackends || resolveAnalysisBackends)()
@@ -448,8 +450,10 @@ export function createRetDecDecompileHandler(
         const result = await runner(
           backend.path,
           ['--cleanup', '--output-format', input.output_format, '--output', outputPath, samplePath],
-          input.timeout_sec * 1000
+          input.timeout_sec * 1000,
+          { abortSignal }
         )
+        throwIfAnalysisAborted(abortSignal)
 
         if (result.timedOut) {
           return {
@@ -499,6 +503,7 @@ export function createRetDecDecompileHandler(
         }
 
         const mainOutput = await fs.readFile(outputPath, 'utf8')
+        throwIfAnalysisAborted(abortSignal)
         const preview = truncateText(mainOutput, 3000)
         const semanticCompleteness = buildRetDecSemanticCompleteness({
           output: mainOutput,
@@ -521,6 +526,7 @@ export function createRetDecDecompileHandler(
               sessionTag: input.session_tag,
             }
           )
+          throwIfAnalysisAborted(abortSignal)
           artifacts.push(artifact)
         }
 
@@ -573,6 +579,7 @@ export function createRetDecDecompileHandler(
         }
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [normalizeError(error)],

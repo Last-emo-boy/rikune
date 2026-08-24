@@ -96,7 +96,11 @@ def verify_with_qiling(request: dict) -> dict:
     try:
         from qiling import Qiling
     except ImportError:
-        return {'ok': False, 'error': 'qiling not installed', 'setup_hint': 'pip install qiling'}
+        return {
+            'ok': False,
+            'error': 'qiling not installed',
+            'setup_hint': 'Provide an independently audited Qiling environment via QILING_PYTHON',
+        }
 
     file_path = request.get('file_path', '')
     serial = request.get('serial', '')

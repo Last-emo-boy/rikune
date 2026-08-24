@@ -27,7 +27,15 @@ function roundToWholeSeconds(ms: number): number {
 
 export function buildPollingGuidance(input: {
   tool?: string | null
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
+  status:
+    | 'queued'
+    | 'retry_wait'
+    | 'running'
+    | 'cancelling'
+    | 'completed'
+    | 'failed'
+    | 'cancelled'
+    | 'interrupted'
   progress?: number | null
   timeout_ms?: number | null
 }): PollingGuidance | null {
@@ -44,7 +52,8 @@ export function buildPollingGuidance(input: {
   const progress = typeof input.progress === 'number' ? input.progress : null
   const timeoutMs = typeof input.timeout_ms === 'number' ? input.timeout_ms : null
 
-  let recommendedWaitMs = input.status === 'queued' ? 10_000 : 12_000
+  let recommendedWaitMs =
+    input.status === 'queued' || input.status === 'retry_wait' ? 10_000 : 12_000
 
   let reason = 'Background analysis is still active.'
 

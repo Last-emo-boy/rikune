@@ -23,9 +23,17 @@ SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_rsa}"
 DATA_ROOT="${RIKUNE_DATA_ROOT:-$HOME/.rikune}"
 HOST_AGENT_PORT="${HOST_AGENT_PORT:-18082}"
 HOST_AGENT_ENDPOINT="${RUNTIME_HOST_AGENT_ENDPOINT:-}"
-HOST_AGENT_API_KEY="${RUNTIME_HOST_AGENT_API_KEY:-}"
-RUNTIME_API_KEY="${RUNTIME_API_KEY:-}"
+HOST_AGENT_API_KEY="${RUNTIME_HOST_AGENT_API_KEY:-${RIKUNE_HOST_AGENT_API_KEY:-${HOST_AGENT_API_KEY:-}}}"
+RUNTIME_API_KEY="${RUNTIME_API_KEY:-${RIKUNE_RUNTIME_NODE_API_KEY:-${HOST_AGENT_RUNTIME_API_KEY:-}}}"
+ANALYZER_API_KEY="${RIKUNE_API_KEY:-${RIKUNE_ANALYZER_API_KEY:-}}"
+export -n HOST_AGENT_API_KEY RUNTIME_API_KEY ANALYZER_API_KEY 2>/dev/null || true
+unset RUNTIME_HOST_AGENT_API_KEY RIKUNE_HOST_AGENT_API_KEY HOST_AGENT_RUNTIME_API_KEY
+unset RIKUNE_RUNTIME_NODE_API_KEY RIKUNE_RUNTIME_API_KEY
+unset RIKUNE_API_KEY RIKUNE_ANALYZER_API_KEY
+HOST_AGENT_ENDPOINT_EXPLICIT=false
+[ -n "$HOST_AGENT_ENDPOINT" ] && HOST_AGENT_ENDPOINT_EXPLICIT=true
 SKIP_WINDOWS_SETUP=false
+ALLOW_INSECURE_RUNTIME_HTTP=false
 
 usage() {
   cat <<EOF
@@ -37,29 +45,32 @@ Options:
   -k KEY       SSH private key path (default: $SSH_KEY)
   -d DIR       Linux data root (default: $DATA_ROOT)
   -p PORT      Windows Host Agent port (default: $HOST_AGENT_PORT)
-  -e URL       Windows Host Agent endpoint (default: http://HOST:PORT)
-  -a KEY       Host Agent API key; passed to Windows installer when setup is not skipped
-  -r KEY       Runtime Node API key; defaults to the Host Agent key
+  -e URL       Windows Host Agent endpoint (default: http://HOST:PORT, requires -i)
+  -i           Allow remote plaintext HTTP only on an isolated trusted network
   -s           Skip Windows setup and only configure/start the Linux analyzer
   -h           Show this help
 
+Credentials:
+  Provide distinct RUNTIME_HOST_AGENT_API_KEY and RUNTIME_API_KEY through a
+  protected process environment or secret manager. Secrets are not accepted
+  as command-line arguments.
+
 Examples:
-  $0 -w 192.168.1.100 -u admin
-  $0 -w 192.168.1.100 -s -a existing-host-agent-key
+  $0 -w runtime.example.internal -u admin -e https://runtime.example.internal
+  $0 -w 192.168.1.100 -u admin -i
 EOF
   exit 1
 }
 
-while getopts ":w:u:k:d:p:e:a:r:sh" opt; do
+while getopts ":w:u:k:d:p:e:ish" opt; do
   case "$opt" in
     w) WINDOWS_HOST="$OPTARG" ;;
     u) WINDOWS_USER="$OPTARG" ;;
     k) SSH_KEY="$OPTARG" ;;
     d) DATA_ROOT="$OPTARG" ;;
     p) HOST_AGENT_PORT="$OPTARG" ;;
-    e) HOST_AGENT_ENDPOINT="$OPTARG" ;;
-    a) HOST_AGENT_API_KEY="$OPTARG" ;;
-    r) RUNTIME_API_KEY="$OPTARG" ;;
+    e) HOST_AGENT_ENDPOINT="$OPTARG"; HOST_AGENT_ENDPOINT_EXPLICIT=true ;;
+    i) ALLOW_INSECURE_RUNTIME_HTTP=true ;;
     s) SKIP_WINDOWS_SETUP=true ;;
     h|*) usage ;;
   esac
@@ -74,8 +85,79 @@ if [ -z "$HOST_AGENT_ENDPOINT" ]; then
   HOST_AGENT_ENDPOINT="http://${WINDOWS_HOST}:${HOST_AGENT_PORT}"
 fi
 
-if [ -n "$HOST_AGENT_API_KEY" ] && printf "%s" "$HOST_AGENT_API_KEY" | grep -q "'"; then
-  err "Host Agent API key must not contain a single quote for SSH bootstrap"
+if [ -n "$WINDOWS_HOST" ] && ! [[ "$WINDOWS_HOST" =~ ^[A-Za-z0-9.-]+$ ]]; then
+  err "Windows host must be a DNS name or IPv4 address containing only letters, digits, dots, and hyphens"
+  exit 1
+fi
+
+assert_secure_runtime_endpoint() {
+  local endpoint="$1"
+  local authority="${endpoint#*://}"
+  authority="${authority%%/*}"
+  authority="${authority%%\?*}"
+  authority="${authority%%\#*}"
+  if [ -z "$authority" ] || [[ "$authority" == *"@"* ]] || [[ "$endpoint" =~ [[:space:]] ]]; then
+    err "Host Agent endpoint must contain a valid authority and no URL credentials"
+    exit 1
+  fi
+  if [[ "$endpoint" =~ ^https:// ]]; then
+    return 0
+  fi
+  if [[ "$endpoint" =~ ^http://(localhost|127\.0\.0\.1|host\.docker\.internal|\[::1\])(:[0-9]+)?(/|$) ]]; then
+    return 0
+  fi
+  if [[ "$endpoint" =~ ^http:// ]] && [ "$ALLOW_INSECURE_RUNTIME_HTTP" = true ]; then
+    warn "Remote runtime HTTP was explicitly enabled. Restrict it to an isolated trusted network or VPN."
+    return 0
+  fi
+  if [[ "$endpoint" =~ ^http:// ]]; then
+    err "Remote Host Agent endpoints must use HTTPS. Use -i only for an isolated trusted network."
+  else
+    err "Host Agent endpoint must use http:// or https://"
+  fi
+  exit 1
+}
+
+assert_runtime_api_key() {
+  local name="$1"
+  local value="$2"
+  if ! printf '%s' "$value" | LC_ALL=C grep -Eq '^[!-~]{32,}$'; then
+    err "$name must contain at least 32 printable non-space ASCII characters"
+    exit 1
+  fi
+}
+
+assert_secret_environment_cleared() {
+  local name declaration
+  for name in \
+    RIKUNE_API_KEY RIKUNE_ANALYZER_API_KEY RUNTIME_HOST_AGENT_API_KEY \
+    HOST_AGENT_API_KEY HOST_AGENT_RUNTIME_API_KEY RUNTIME_API_KEY \
+    RIKUNE_HOST_AGENT_API_KEY RIKUNE_RUNTIME_API_KEY RIKUNE_RUNTIME_NODE_API_KEY; do
+    declaration="$(declare -p "$name" 2>/dev/null || true)"
+    if [[ "$declaration" == "declare -x"* ]]; then
+      err "Secret environment alias must be cleared before dependency or build commands: $name"
+      exit 1
+    fi
+  done
+}
+
+remove_existing_env_file() {
+  local target="$PROJECT_ROOT/.docker-runtime.env"
+  RIKUNE_REMOVE_PRIVATE_ENV_PATH="$target" \
+    node "$PROJECT_ROOT/scripts/write-docker-runtime-env.mjs"
+  info "Any prior protected Compose env was removed before dependency lifecycle commands; credentials will be rotated after build."
+}
+
+provision_analyzer_api_key() {
+  if [ -z "$ANALYZER_API_KEY" ]; then
+    ANALYZER_API_KEY="$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")"
+  fi
+  assert_runtime_api_key "Analyzer API key" "$ANALYZER_API_KEY"
+}
+
+assert_secure_runtime_endpoint "$HOST_AGENT_ENDPOINT"
+if [ "$SKIP_WINDOWS_SETUP" = false ] && [ "$ALLOW_INSECURE_RUNTIME_HTTP" != true ]; then
+  err "Remote Windows Sandbox runtime ports use plaintext HTTP on the trusted network. Re-run with -i only behind a VPN/isolated network, or use -s with a separately secured runtime."
   exit 1
 fi
 
@@ -98,6 +180,9 @@ command -v npm >/dev/null 2>&1 || { err "npm not found"; exit 1; }
 ok "Node.js: $(node --version)"
 ok "npm: $(npm --version)"
 
+remove_existing_env_file
+assert_secret_environment_cleared
+
 if [ -n "$WINDOWS_HOST" ]; then
   command -v ssh >/dev/null 2>&1 || { err "ssh client not found"; exit 1; }
   ok "SSH client available"
@@ -118,35 +203,29 @@ else
   ssh_win "echo ok" >/dev/null
   ok "SSH connectivity verified"
 
+  info "Checking PowerShell 7 on the Windows host..."
+  ssh_win "pwsh -NoProfile -NonInteractive -Command \"if (\$PSVersionTable.PSVersion.Major -lt 7) { exit 1 }\"" >/dev/null
+  ok "PowerShell 7 available"
+
   info "Creating C:/rikune on Windows..."
   ssh_win "powershell -NoProfile -Command \"New-Item -ItemType Directory -Path C:/rikune -Force | Out-Null\"" >/dev/null
 
   info "Syncing project to Windows host..."
-  if command -v rsync >/dev/null 2>&1; then
-    rsync -az \
-      --exclude node_modules \
-      --exclude .git \
-      --exclude dist \
-      --exclude .docker-runtime.env \
-      -e "ssh -i $SSH_KEY" \
-      "$PROJECT_ROOT/" "${WINDOWS_USER}@${WINDOWS_HOST}:/C:/rikune/"
-    ok "Project synced with rsync"
-  else
-    warn "rsync not found; using tar over ssh"
-    tar czf - \
-      --exclude=node_modules \
-      --exclude=.git \
-      --exclude=dist \
-      --exclude=.docker-runtime.env \
-      -C "$PROJECT_ROOT" . | ssh -i "$SSH_KEY" "${WINDOWS_USER}@${WINDOWS_HOST}" \
-        "powershell -NoProfile -Command \"tar -xzf - -C C:/rikune\""
-    ok "Project synced with tar"
-  fi
+  command -v rsync >/dev/null 2>&1 || {
+    err "rsync is required for exact remote synchronization; refusing a stale-file-prone tar overlay"
+    exit 1
+  }
+  rsync -az --delete \
+    --exclude node_modules \
+    --exclude .git \
+    --exclude dist \
+    --exclude .docker-runtime.env \
+    --exclude .env.runtime-windows \
+    -e "ssh -i $SSH_KEY" \
+    "$PROJECT_ROOT/" "${WINDOWS_USER}@${WINDOWS_HOST}:/C:/rikune/"
+  ok "Project synced exactly with rsync"
 
-  remote_install="powershell -ExecutionPolicy Bypass -File C:/rikune/install-runtime-windows.ps1 -ProjectRoot C:/rikune -Headless -Service -WorkspaceRoot C:/rikune-runtime"
-  if [ -n "$HOST_AGENT_API_KEY" ]; then
-    remote_install="$remote_install -ApiKey '$HOST_AGENT_API_KEY'"
-  fi
+  remote_install="pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/rikune/install-runtime-windows.ps1 -ProjectRoot C:/rikune -Headless -Service -WorkspaceRoot C:/rikune-runtime -BindHost 0.0.0.0 -RuntimeBindHost 0.0.0.0 -RuntimeAdvertisedHost ${WINDOWS_HOST} -AllowInsecureRuntimeHttp"
 
   info "Installing Windows Runtime Host Agent..."
   ssh_win "$remote_install"
@@ -156,33 +235,61 @@ fi
 step "Resolving Host Agent credentials"
 
 if [ -n "$WINDOWS_HOST" ]; then
-  remote_env="$(ssh_win "powershell -NoProfile -Command \"Get-Content -Path C:/rikune/.env.runtime-windows -ErrorAction SilentlyContinue\"" 2>/dev/null || true)"
+  remote_env="$(ssh_win "pwsh -NoProfile -NonInteractive -Command \"Get-Content -Path C:/rikune/.env.runtime-windows -ErrorAction SilentlyContinue\"" 2>/dev/null || true)"
 else
   remote_env=""
 fi
 
-if [ -z "$HOST_AGENT_API_KEY" ] && [ -n "$remote_env" ]; then
-  HOST_AGENT_API_KEY="$(printf "%s\n" "$remote_env" | awk -F= '/^HOST_AGENT_API_KEY=/{print substr($0, index($0,$2))}' | tail -n 1)"
+if [ -n "$remote_env" ]; then
+  remote_host_key="$(printf "%s\n" "$remote_env" | awk -F= '/^HOST_AGENT_API_KEY=/{print substr($0, index($0,$2))}' | tail -n 1)"
+  remote_runtime_key="$(printf "%s\n" "$remote_env" | awk -F= '/^HOST_AGENT_RUNTIME_API_KEY=/{print substr($0, index($0,$2))}' | tail -n 1)"
+  [ -n "$remote_host_key" ] && HOST_AGENT_API_KEY="$remote_host_key"
+  [ -n "$remote_runtime_key" ] && RUNTIME_API_KEY="$remote_runtime_key"
+  remote_host_key=""
+  remote_runtime_key=""
 fi
 
 if [ -n "$remote_env" ]; then
   remote_port="$(printf "%s\n" "$remote_env" | awk -F= '/^HOST_AGENT_PORT=/{print $2}' | tail -n 1)"
   if [ -n "$remote_port" ]; then
     HOST_AGENT_PORT="$remote_port"
-    if [ -z "${RUNTIME_HOST_AGENT_ENDPOINT:-}" ]; then
+    if [ "$HOST_AGENT_ENDPOINT_EXPLICIT" = false ]; then
       HOST_AGENT_ENDPOINT="http://${WINDOWS_HOST}:${HOST_AGENT_PORT}"
     fi
   fi
 fi
 
 if [ -z "$HOST_AGENT_API_KEY" ]; then
-  err "Host Agent API key is missing. Pass -a KEY or run Windows setup so .env.runtime-windows can be read."
-  exit 1
+  if [ -t 0 ]; then
+    read -r -s -p "Windows Host Agent API key: " HOST_AGENT_API_KEY
+    printf '\n'
+  fi
+  if [ -z "$HOST_AGENT_API_KEY" ]; then
+    err "Host Agent API key is missing. Provide RUNTIME_HOST_AGENT_API_KEY through a protected environment or run Windows setup."
+    exit 1
+  fi
 fi
 
 if [ -z "$RUNTIME_API_KEY" ]; then
-  RUNTIME_API_KEY="$HOST_AGENT_API_KEY"
+  if [ -t 0 ]; then
+    read -r -s -p "Distinct Runtime Node API key: " RUNTIME_API_KEY
+    printf '\n'
+  fi
+  if [ -z "$RUNTIME_API_KEY" ]; then
+    err "Runtime Node API key is missing. Provide a distinct RUNTIME_API_KEY or run Windows setup."
+    exit 1
+  fi
 fi
+remote_env=""
+
+assert_runtime_api_key "Host Agent API key" "$HOST_AGENT_API_KEY"
+assert_runtime_api_key "Runtime Node API key" "$RUNTIME_API_KEY"
+if [ "$HOST_AGENT_API_KEY" = "$RUNTIME_API_KEY" ]; then
+  err "Host Agent and Runtime Node API keys must be distinct"
+  exit 1
+fi
+
+assert_secure_runtime_endpoint "$HOST_AGENT_ENDPOINT"
 
 ok "Host Agent endpoint: $HOST_AGENT_ENDPOINT"
 ok "Host Agent API key resolved"
@@ -194,7 +301,7 @@ ok "Data directories ready"
 
 cd "$PROJECT_ROOT"
 info "Installing npm dependencies..."
-npm install
+npm ci --include=dev
 ok "npm dependencies installed"
 
 info "Building project..."
@@ -203,19 +310,24 @@ ok "Project built"
 
 info "Generating hybrid Docker files..."
 node scripts/generate-docker.mjs --profile=hybrid
-ok "Generated docker-compose.hybrid.yml and docker/Dockerfile.analyzer"
+ok "Generated docker-compose.hybrid.yml and docker/Dockerfile.hybrid"
 
+assert_secret_environment_cleared
+provision_analyzer_api_key
 ENV_FILE="$PROJECT_ROOT/.docker-runtime.env"
-cat > "$ENV_FILE" <<EOF
-# Rikune hybrid Docker runtime environment - generated by deploy-hybrid.sh
-RIKUNE_DATA_ROOT=$DATA_ROOT
-RIKUNE_BUILD_HTTP_PROXY=${RIKUNE_BUILD_HTTP_PROXY:-}
-RIKUNE_BUILD_HTTPS_PROXY=${RIKUNE_BUILD_HTTPS_PROXY:-}
-RIKUNE_BUILD_NO_PROXY=${RIKUNE_BUILD_NO_PROXY:-localhost,127.0.0.1,deb.debian.org,security.debian.org,mirrors.aliyun.com,archive.ubuntu.com,security.ubuntu.com,aliyuncs.com}
-RUNTIME_HOST_AGENT_ENDPOINT=$HOST_AGENT_ENDPOINT
-RUNTIME_HOST_AGENT_API_KEY=$HOST_AGENT_API_KEY
-RUNTIME_API_KEY=$RUNTIME_API_KEY
-EOF
+RIKUNE_DOCKER_ENV_PATH="$ENV_FILE" \
+RIKUNE_DOCKER_ENV_DATA_ROOT="$DATA_ROOT" \
+RIKUNE_DOCKER_ENV_PROFILE="hybrid" \
+RIKUNE_BUILD_HTTP_PROXY="${RIKUNE_BUILD_HTTP_PROXY:-}" \
+RIKUNE_BUILD_HTTPS_PROXY="${RIKUNE_BUILD_HTTPS_PROXY:-}" \
+RIKUNE_BUILD_NO_PROXY="${RIKUNE_BUILD_NO_PROXY:-localhost,127.0.0.1,deb.debian.org,security.debian.org,mirrors.aliyun.com,archive.ubuntu.com,security.ubuntu.com,aliyuncs.com}" \
+RIKUNE_API_KEY="$ANALYZER_API_KEY" \
+RUNTIME_HOST_AGENT_ENDPOINT="$HOST_AGENT_ENDPOINT" \
+RUNTIME_HOST_AGENT_API_KEY="$HOST_AGENT_API_KEY" \
+RUNTIME_API_KEY="$RUNTIME_API_KEY" \
+RIKUNE_ALLOW_INSECURE_RUNTIME_HTTP="$ALLOW_INSECURE_RUNTIME_HTTP" \
+  node scripts/write-docker-runtime-env.mjs
+chmod 600 "$ENV_FILE"
 ok "Compose env file written: $ENV_FILE"
 
 step "Building and starting Linux analyzer"
@@ -227,13 +339,23 @@ step "Connectivity tests"
 if curl -sf http://localhost:18080/api/v1/health >/dev/null 2>&1; then
   ok "Analyzer API responds on localhost:18080"
 else
-  warn "Analyzer API health check failed. Check: docker logs rikune-analyzer"
+  err "Analyzer API health check failed. Check: docker logs rikune-analyzer"
+  exit 1
 fi
 
-if curl -sf -H "Authorization: Bearer $HOST_AGENT_API_KEY" "$HOST_AGENT_ENDPOINT/sandbox/health" >/dev/null 2>&1; then
+if printf 'Authorization: Bearer %s\n' "$HOST_AGENT_API_KEY" | curl -sf --header @- "$HOST_AGENT_ENDPOINT/sandbox/health" >/dev/null 2>&1; then
   ok "Windows Host Agent responds"
 else
-  warn "Windows Host Agent did not respond. Check firewall, endpoint, and API key."
+  err "Windows Host Agent did not respond. Check firewall, endpoint, and API key."
+  exit 1
+fi
+
+info "Verifying the full sandbox lifecycle from the analyzer container..."
+if docker exec rikune-analyzer node /app/scripts/verify-hybrid-runtime.mjs; then
+  ok "Hybrid Host Agent and Runtime Node lifecycle verified"
+else
+  err "Hybrid runtime lifecycle verification failed; sandbox cleanup is required before retrying."
+  exit 1
 fi
 
 header "Hybrid Deployment Complete"

@@ -32,6 +32,11 @@ import {
   resolveCanonicalEvidenceOrCache,
 } from '../../../analysis/analysis-evidence.js'
 import { CACHE_TTL_7_DAYS } from '../../../constants/cache-ttl.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'binary.role.profile'
 const TOOL_VERSION = '0.2.0'
@@ -388,7 +393,10 @@ export function createBinaryRoleProfileHandler(
     dependencies?.packerHandler ||
     createPackerDetectHandler(workspaceManager, database, cacheManager)
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
+    throwIfAnalysisAborted(abortSignal)
+    const runHandler = (handler: AbortableHandler<ToolArgs, WorkerResult>, handlerArgs: ToolArgs) =>
+      invokeAbortable(handler, handlerArgs, abortSignal)
     const input = BinaryRoleProfileInputSchema.parse(args)
     const startTime = Date.now()
 
@@ -406,8 +414,10 @@ export function createBinaryRoleProfileHandler(
       }
 
       const originalFilename = await getOriginalFilename(workspaceManager, input.sample_id)
+      throwIfAnalysisAborted(abortSignal)
       if (!originalFilename) {
         const integrity = await inspectSampleWorkspace(workspaceManager, input.sample_id)
+        throwIfAnalysisAborted(abortSignal)
         return {
           ok: false,
           errors: [formatMissingOriginalError(input.sample_id, integrity)],
@@ -441,6 +451,7 @@ export function createBinaryRoleProfileHandler(
             original_filename: originalFilename,
           },
         })
+        throwIfAnalysisAborted(abortSignal)
         if (resolved) {
           return {
             ok: true,
@@ -511,13 +522,16 @@ export function createBinaryRoleProfileHandler(
 
       const [exportsResult, importsResult, stringsResult, runtimeResult, packerResult] =
         await Promise.all([
-          exportsHandler({ sample_id: input.sample_id, force_refresh: input.force_refresh }),
-          importsHandler({
+          runHandler(exportsHandler, {
+            sample_id: input.sample_id,
+            force_refresh: input.force_refresh,
+          }),
+          runHandler(importsHandler, {
             sample_id: input.sample_id,
             group_by_dll: true,
             force_refresh: input.force_refresh,
           }),
-          stringsHandler({
+          runHandler(stringsHandler, {
             sample_id: input.sample_id,
             mode: input.mode === 'fast' ? 'preview' : 'full',
             category_filter: 'all',
@@ -525,8 +539,14 @@ export function createBinaryRoleProfileHandler(
             force_refresh: input.force_refresh,
             defer_if_slow: false,
           }),
-          runtimeHandler({ sample_id: input.sample_id, force_refresh: input.force_refresh }),
-          packerHandler({ sample_id: input.sample_id, force_refresh: input.force_refresh }),
+          runHandler(runtimeHandler, {
+            sample_id: input.sample_id,
+            force_refresh: input.force_refresh,
+          }),
+          runHandler(packerHandler, {
+            sample_id: input.sample_id,
+            force_refresh: input.force_refresh,
+          }),
         ])
 
       const warnings = [
@@ -859,7 +879,9 @@ export function createBinaryRoleProfileHandler(
         strings_considered: stringValues.length,
       }
 
+      throwIfAnalysisAborted(abortSignal)
       await cacheManager.setCachedResult(cacheKey, payload, CACHE_TTL_MS, sample.sha256)
+      throwIfAnalysisAborted(abortSignal)
       persistCanonicalEvidence(database, {
         sample,
         evidenceFamily: 'binary_role',
@@ -904,6 +926,7 @@ export function createBinaryRoleProfileHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [error instanceof Error ? error.message : String(error)],

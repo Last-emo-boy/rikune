@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals'
 import { execFileSync } from 'child_process'
 import { deflateSync } from 'zlib'
@@ -92,7 +93,7 @@ describe('pdf-analysis plugin', () => {
     workspaceManager = new WorkspaceManager(path.join(tempDir, 'workspaces'))
     database = new DatabaseManager(path.join(tempDir, 'test.db'))
     const pdf = minimalPdf()
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'd'.repeat(64),
       md5: 'd'.repeat(32),

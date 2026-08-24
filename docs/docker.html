@@ -132,10 +132,7 @@
         <section id="quickstart" class="reveal">
           <h2><span data-lang-en>Quick Start</span><span data-lang-zh>快速开始</span></h2>
 
-          <h3>
-            <span data-lang-en>Guided installer</span
-            ><span data-lang-zh>向导式安装</span>
-          </h3>
+          <h3><span data-lang-en>Guided installer</span><span data-lang-zh>向导式安装</span></h3>
           <div class="code-block">
             <div class="code-block__header">
               <span>Terminal</span><button class="code-block__copy">Copy</button>
@@ -155,14 +152,16 @@
               Windows runtime when you choose the hybrid path.</span
             >
             <span data-lang-zh
-              >顶层脚本是普通用户的入口。它们负责安装、启动、停止、状态查询、日志、健康检查、
-              Docker 文件生成，以及在选择 hybrid 方案时初始化 Windows 运行时。</span
+              >顶层脚本是普通用户的入口。它们负责安装、启动、停止、状态查询、日志、健康检查、 Docker
+              文件生成，以及在选择 hybrid 方案时初始化 Windows 运行时。</span
             >
           </p>
           <table class="doc-table">
             <thead>
               <tr>
-                <th><span data-lang-en>Windows menu</span><span data-lang-zh>Windows 菜单</span></th>
+                <th>
+                  <span data-lang-en>Windows menu</span><span data-lang-zh>Windows 菜单</span>
+                </th>
                 <th><span data-lang-en>Meaning</span><span data-lang-zh>含义</span></th>
               </tr>
             </thead>
@@ -178,8 +177,8 @@
                 <td><code>2</code></td>
                 <td>
                   <span data-lang-en
-                    >Install Docker analyzer, Windows Host Agent, and Windows Sandbox support on
-                    the same host</span
+                    >Install Docker analyzer, Windows Host Agent, and Windows Sandbox support on the
+                    same host</span
                   ><span data-lang-zh
                     >在同一台 Windows 主机上安装 Docker analyzer、Windows Host Agent 和 Windows
                     Sandbox 支持</span
@@ -230,31 +229,35 @@
   -RuntimeBackend hyperv-vm `
   -HyperVVmName "rikune-runtime" `
   -HyperVSnapshotName "clean-runtime" `
-  -HyperVRuntimeEndpoint "http://192.168.1.50:18081" `
+  -HyperVRuntimeEndpoint "https://runtime-vm.example.internal:18081" `
   -HyperVRestoreOnRelease
 
 <span class="comment"># Linux analyzer + remote Windows Host Agent</span>
-./rikune.sh install --profile hybrid --windows-host &lt;windows-host&gt; --windows-user &lt;windows-user&gt;</pre>
+./rikune.sh install --profile hybrid --windows-host &lt;windows-host&gt; --windows-user &lt;windows-user&gt; \
+  --host-agent-endpoint https://runtime.example.internal</pre>
           </div>
           <p>
             <span data-lang-en
-              >In the single-host Windows hybrid path, the script installs or starts the Host
-              Agent, checks the selected runtime backend, writes <code>.docker-runtime.env</code>,
-              builds the analyzer image, and starts <code>rikune-analyzer</code>. The runtime is
-              launched on demand by dynamic/sandbox tools, not as a permanently open GUI during
-              installation. The default Windows Sandbox backend must run from a logged-on user
-              session; the Host Agent binds to <code>0.0.0.0</code> by default and the installer adds
-              best-effort Hyper-V firewall rules so Docker can reach it through
-              <code>host.docker.internal:18082</code> and the runtime portproxy range; the Hyper-V VM backend can be used for checkpoint-based debugging.</span
+              >In the single-host Windows hybrid path, the script installs or starts the Host Agent,
+              checks the selected runtime backend, writes <code>.docker-runtime.env</code>, builds
+              the analyzer image, and starts <code>rikune-analyzer</code>. The runtime is launched
+              on demand by dynamic/sandbox tools, not as a permanently open GUI during installation.
+              The default Windows Sandbox backend must run from a logged-on user session; the
+              top-level same-host wrapper explicitly binds the Host Agent beyond loopback and warns
+              that Windows Firewall must remain restricted to Docker/WSL virtual networks, so Docker
+              can reach it through <code>host.docker.internal:18082</code> and the runtime portproxy
+              range; the Hyper-V VM backend can be used for checkpoint-based debugging.</span
             >
             <span data-lang-zh
               >在单机 Windows hybrid 方案中，脚本会安装或启动 Host Agent、检查所选运行时后端、写入
               <code>.docker-runtime.env</code>、构建 analyzer 镜像并启动
-              <code>rikune-analyzer</code>。运行时由动态/沙箱工具按需启动，安装时不会要求一直打开一个
-              Sandbox 窗口。默认 Windows Sandbox 后端必须运行在已登录用户会话里；Host Agent
-              默认绑定 <code>0.0.0.0</code>，并 best-effort 添加 Hyper-V firewall 规则，让 Docker 可以通过 <code>host.docker.internal:18082</code>
-              和 runtime portproxy 端口访问；Hyper-V VM
-              后端可用于基于 checkpoint 的调试，并可选择退出时回滚、关机保留或保留脏现场。</span
+              <code>rikune-analyzer</code
+              >。运行时由动态/沙箱工具按需启动，安装时不会要求一直打开一个 Sandbox 窗口。默认
+              Windows Sandbox 后端必须运行在已登录用户会话里；Host Agent 默认 installer 只绑定
+              loopback；同机顶层 wrapper 会显式启用非 loopback 绑定，并要求 Windows Firewall 仅允许
+              Docker/WSL 虚拟网络，让 Docker 可以通过 <code>host.docker.internal:18082</code> 和
+              runtime portproxy 端口访问；Hyper-V VM 后端可用于基于 checkpoint
+              的调试，并可选择退出时回滚、关机保留或保留脏现场。</span
             >
           </p>
 
@@ -277,62 +280,72 @@
             <div class="code-block__header">
               <span>PowerShell</span><button class="code-block__copy">Copy</button>
             </div>
-            <pre>.\install-runtime-windows.ps1 -Headless -ApiKey &lt;host-agent-key&gt;
+            <pre><span class="comment"># Omit both keys to generate and rotate two distinct protected keys; never put them in argv.</span>
+.\install-runtime-windows.ps1 -Headless
 
 <span class="comment"># Hyper-V VM backend</span>
-.\install-runtime-windows.ps1 -Headless -ApiKey &lt;host-agent-key&gt; `
+.\install-runtime-windows.ps1 -Headless `
   -RuntimeBackend hyperv-vm `
   -HyperVVmName "rikune-runtime" `
   -HyperVSnapshotName "clean-runtime" `
-  -HyperVRuntimeEndpoint "http://192.168.1.50:18081" `
+  -HyperVRuntimeEndpoint "https://runtime-vm.example.internal:18081" `
   -HyperVRestoreOnRelease</pre>
           </div>
 
           <blockquote>
             <span data-lang-en
               ><strong>Auth split:</strong> use <code>RUNTIME_HOST_AGENT_API_KEY</code> for Analyzer
-              → Host Agent control requests, and use <code>RUNTIME_API_KEY</code> only when the
-              Windows Runtime Node itself requires a separate API key.</span
+              → Host Agent control requests, and use a required, distinct
+              <code>RUNTIME_API_KEY</code> for Windows Runtime Node requests.</span
             >
             <span data-lang-zh
               ><strong>鉴权分层：</strong><code>RUNTIME_HOST_AGENT_API_KEY</code> 仅用于 Analyzer →
-              Host Agent 控制请求；<code>RUNTIME_API_KEY</code> 仅在 Windows Runtime Node
-              自身需要单独鉴权时使用。</span
+              Host Agent 控制请求；Windows Runtime Node 请求必须使用独立且必需的
+              <code>RUNTIME_API_KEY</code>，不得复用 Host Agent key。</span
             >
           </blockquote>
           <blockquote>
             <span data-lang-en
               ><strong>Runtime debug flow:</strong> MCP clients should call
-              <code>dynamic.runtime.status</code> first to inspect configured Runtime Node and Host Agent capabilities,
-              <code>dynamic.toolkit.status</code> to inspect runtime-side CDB/ProcDump/ProcMon/Sysmon/TTD/x64dbg/dnSpy/Frida/dotnet readiness,
-              <code>dynamic.deep_plan</code> to pick a bounded behavior/debugger/memory/network/.NET profile,
-              <code>debug.network.plan</code>, <code>debug.managed.plan</code>, and <code>debug.gui.handoff</code> for network lab, .NET runtime, and manual GUI handoff detail,
-              <code>dynamic.persona.plan</code> to prepare a planning-only Sandbox/Hyper-V persona checklist,
-              <code>dynamic.behavior.diff</code>, <code>analysis.evidence.graph</code>, and
-              <code>crypto.lifecycle.graph</code> to correlate runtime observations with static expectations,
-              <code>runtime.hyperv.control</code> when a Hyper-V VM checkpoint must be listed, created, restored, or stopped,
-              <code>runtime.debug.session.start</code> to start or attach a Windows runtime and choose
-              <code>hyperv_retention_policy</code> as <code>clean_rollback</code>, <code>stop_only</code>, or <code>preserve_dirty</code>,
+              <code>dynamic.runtime.status</code> first to inspect configured Runtime Node and Host
+              Agent capabilities, <code>dynamic.toolkit.status</code> to inspect runtime-side
+              CDB/ProcDump/ProcMon/Sysmon/TTD/x64dbg/dnSpy/Frida/dotnet readiness,
+              <code>dynamic.deep_plan</code> to pick a bounded behavior/debugger/memory/network/.NET
+              profile, <code>debug.network.plan</code>, <code>debug.managed.plan</code>, and
+              <code>debug.gui.handoff</code> for network lab, .NET runtime, and manual GUI handoff
+              detail, <code>dynamic.persona.plan</code> to prepare a planning-only Sandbox/Hyper-V
+              persona checklist, <code>dynamic.behavior.diff</code>,
+              <code>analysis.evidence.graph</code>, and <code>crypto.lifecycle.graph</code> to
+              correlate runtime observations with static expectations,
+              <code>runtime.hyperv.control</code> when a Hyper-V VM checkpoint must be listed,
+              created, restored, or stopped, <code>runtime.debug.session.start</code> to start or
+              attach a Windows runtime and choose <code>hyperv_retention_policy</code> as
+              <code>clean_rollback</code>, <code>stop_only</code>, or <code>preserve_dirty</code>,
               <code>runtime.debug.command</code> to dispatch <code>debug.session.*</code>,
-              <code>sandbox.execute</code>, <code>dynamic.behavior.capture</code>, telemetry, ProcDump, managed safe-run, or dump work, then
+              <code>sandbox.execute</code>, <code>dynamic.behavior.capture</code>, telemetry,
+              ProcDump, managed safe-run, or dump work, then
               <code>runtime.debug.session.stop</code> to release the backend.</span
             >
             <span data-lang-zh
               ><strong>运行时调试流程：</strong>MCP 客户端应先调用
               <code>dynamic.runtime.status</code> 检查 Runtime Node 和 Host Agent 能力，用
-              <code>dynamic.toolkit.status</code> 查询 runtime 内 CDB/ProcDump/ProcMon/Sysmon/TTD/x64dbg/dnSpy/Frida/dotnet 就绪状态，用
+              <code>dynamic.toolkit.status</code> 查询 runtime 内
+              CDB/ProcDump/ProcMon/Sysmon/TTD/x64dbg/dnSpy/Frida/dotnet 就绪状态，用
               <code>dynamic.deep_plan</code> 选择受限的行为、调试器、内存、网络或 .NET profile，用
-              <code>debug.network.plan</code>、<code>debug.managed.plan</code> 和 <code>debug.gui.handoff</code> 查看网络实验、.NET runtime 和手动 GUI handoff 细节，用
+              <code>debug.network.plan</code>、<code>debug.managed.plan</code> 和
+              <code>debug.gui.handoff</code> 查看网络实验、.NET runtime 和手动 GUI handoff 细节，用
               <code>dynamic.persona.plan</code> 准备只规划不启动的 Sandbox/Hyper-V persona 清单，用
               <code>dynamic.behavior.diff</code>、<code>analysis.evidence.graph</code> 和
               <code>crypto.lifecycle.graph</code> 把运行时观察关联回静态预期，再调用
-              <code>runtime.hyperv.control</code> 列出、创建、恢复或停止 Hyper-V VM checkpoint，然后调用
-              <code>runtime.debug.session.start</code> 启动或附着 Windows runtime，并用
-              <code>hyperv_retention_policy</code> 选择 <code>clean_rollback</code>、<code>stop_only</code> 或
-              <code>preserve_dirty</code>，再用
-              <code>runtime.debug.command</code> 分发 <code>debug.session.*</code>、
-              <code>sandbox.execute</code>、<code>dynamic.behavior.capture</code>、遥测、ProcDump、managed safe-run 或转储任务，最后用
-              <code>runtime.debug.session.stop</code> 释放后端。</span
+              <code>runtime.hyperv.control</code> 列出、创建、恢复或停止 Hyper-V VM
+              checkpoint，然后调用 <code>runtime.debug.session.start</code> 启动或附着 Windows
+              runtime，并用 <code>hyperv_retention_policy</code> 选择
+              <code>clean_rollback</code>、<code>stop_only</code> 或
+              <code>preserve_dirty</code>，再用 <code>runtime.debug.command</code> 分发
+              <code>debug.session.*</code>、
+              <code>sandbox.execute</code
+              >、<code>dynamic.behavior.capture</code>、遥测、ProcDump、managed safe-run
+              或转储任务，最后用 <code>runtime.debug.session.stop</code> 释放后端。</span
             >
           </blockquote>
         </section>
@@ -402,9 +415,7 @@
                     ><span data-lang-zh>全量 Docker</span></strong
                   >
                 </td>
-                <td>
-                  <code>docker-compose.yml</code> with <code>rikune</code>
-                </td>
+                <td><code>docker-compose.yml</code> with <code>rikune</code></td>
                 <td><span data-lang-en>None by default</span><span data-lang-zh>默认无</span></td>
                 <td>
                   <span data-lang-en>Heavy Linux-side toolchain experiments</span
@@ -436,8 +447,8 @@
           <blockquote>
             <span data-lang-en
               ><strong>Important:</strong> Docker or WSL analyzers cannot use
-              <code>auto-sandbox</code>. For Linux-side analyzers, use the <code>hybrid</code>
-              profile when you need a Windows runtime.</span
+              <code>auto-sandbox</code>. For Linux-side analyzers, use the
+              <code>hybrid</code> profile when you need a Windows runtime.</span
             >
             <span data-lang-zh
               ><strong>重要：</strong>Docker 或 WSL 中的 analyzer 不能使用
@@ -597,13 +608,18 @@
             </div>
             <pre><span class="comment"># @if ghidra</span>
 FROM eclipse-temurin:21-jdk AS ghidra-stage
-ARG GHIDRA_VERSION=11.3.2
-RUN curl -L ... | unzip ...
+ARG GHIDRA_VERSION=12.1.3
+ARG GHIDRA_SHA256=&lt;release-pinned-sha256&gt;
+RUN curl --fail --location ... --output /tmp/ghidra.zip &amp;&amp; \
+    echo "$GHIDRA_SHA256  /tmp/ghidra.zip" | sha256sum --check --strict &amp;&amp; \
+    unzip /tmp/ghidra.zip
 <span class="comment"># @endif ghidra</span>
 
 <span class="comment"># @if angr</span>
-RUN python -m venv /opt/angr-venv &amp;&amp; \
-    /opt/angr-venv/bin/pip install angr
+COPY src/plugins/angr/requirements.lock.txt /tmp/angr-requirements.lock.txt
+RUN python3.12 -m venv /opt/angr-venv &amp;&amp; \
+    /opt/angr-venv/bin/python -m pip install --require-hashes \
+      --requirement /tmp/angr-requirements.lock.txt
 <span class="comment"># @endif angr</span></pre>
           </div>
 
@@ -646,7 +662,9 @@ RUN python -m venv /opt/angr-venv &amp;&amp; \
                   <span data-lang-en
                     >Dynamic-imports each plugin and reads its <code>systemDeps</code> plus runtime
                     execution domain</span
-                  ><span data-lang-zh>动态导入每个插件并读取其 <code>systemDeps</code> 与运行域</span>
+                  ><span data-lang-zh
+                    >动态导入每个插件并读取其 <code>systemDeps</code> 与运行域</span
+                  >
                 </td>
               </tr>
               <tr>
@@ -683,10 +701,11 @@ RUN python -m venv /opt/angr-venv &amp;&amp; \
                 <td><code>generateCompose()</code></td>
                 <td>
                   <span data-lang-en
-                    >Emits the selected profile's Compose file with matching volumes, env,
-                    build args, runtime mode, and plugin list</span
+                    >Emits the selected profile's Compose file with matching volumes, env, build
+                    args, runtime mode, and plugin list</span
                   ><span data-lang-zh
-                    >输出所选 profile 的 Compose 文件，包含匹配的卷、环境变量、构建参数、运行时模式和插件列表</span
+                    >输出所选 profile 的 Compose
+                    文件，包含匹配的卷、环境变量、构建参数、运行时模式和插件列表</span
                   >
                 </td>
               </tr>
@@ -732,9 +751,10 @@ node scripts/generate-docker.mjs --profile=full --backend-profile=research --dry
               backends require explicit opt-in.</span
             >
             <span data-lang-zh
-              >Docker 生成器会分类每个插件 backend 的安装路线。Backend 要么真实安装，要么被
-              profile gate 控制，要么仅做 validation/readiness，要么是 BYO 或 sidecar。默认镜像只安装低风险静态
-              backend；heavy、runtime、GPU 和 license-sensitive backend 必须显式 opt-in。</span
+              >Docker 生成器会分类每个插件 backend 的安装路线。Backend 要么真实安装，要么被 profile
+              gate 控制，要么仅做 validation/readiness，要么是 BYO 或
+              sidecar。默认镜像只安装低风险静态 backend；heavy、runtime、GPU 和 license-sensitive
+              backend 必须显式 opt-in。</span
             >
           </p>
           <table class="doc-table">
@@ -749,40 +769,64 @@ node scripts/generate-docker.mjs --profile=full --backend-profile=research --dry
               <tr>
                 <td><code>default</code></td>
                 <td>
-                  <span data-lang-en>Installed in normal analyzer images when static and low risk.</span
+                  <span data-lang-en
+                    >Installed in normal analyzer images when static and low risk.</span
                   ><span data-lang-zh>低风险静态 backend 会进入普通 analyzer 镜像。</span>
                 </td>
-                <td><code>restringer</code>, <code>jsimplifier</code>, <code>manifold</code>, <code>wabt</code></td>
+                <td>
+                  <code>restringer</code>, <code>jsimplifier</code>, <code>manifold</code>,
+                  <code>wabt</code>
+                </td>
               </tr>
               <tr>
                 <td><code>optional</code></td>
                 <td>
-                  <span data-lang-en>Enabled when <code>--backend-profile=optional</code> or broader profiles are selected.</span
-                  ><span data-lang-zh>使用 <code>--backend-profile=optional</code> 或更宽 profile 时启用。</span>
+                  <span data-lang-en
+                    >Enabled when <code>--backend-profile=optional</code> or broader profiles are
+                    selected.</span
+                  ><span data-lang-zh
+                    >使用 <code>--backend-profile=optional</code> 或更宽 profile 时启用。</span
+                  >
                 </td>
-                <td><code>jsir-cascade</code>, <code>jsvmp-analysis</code>, <code>gtirb</code>, <code>radare2</code></td>
+                <td>
+                  <code>jsir-cascade</code>, <code>jsvmp-analysis</code>, <code>gtirb</code>,
+                  <code>radare2</code>
+                </td>
               </tr>
               <tr>
                 <td><code>research</code></td>
                 <td>
-                  <span data-lang-en>Includes optional, heavy-profile, and license-gated Python routes where declared.</span
-                  ><span data-lang-zh>包含 optional、heavy-profile 和声明为 license-gated 的 Python 路线。</span>
+                  <span data-lang-en
+                    >Includes optional, heavy-profile, and license-gated Python routes where
+                    declared.</span
+                  ><span data-lang-zh
+                    >包含 optional、heavy-profile 和声明为 license-gated 的 Python 路线。</span
+                  >
                 </td>
                 <td><code>miasm</code>, <code>triton</code></td>
               </tr>
               <tr>
                 <td><code>runtime</code> / <code>gpu</code></td>
                 <td>
-                  <span data-lang-en>Reports delegated or BYO routes; analyzer images do not start instrumentation or GPU drivers.</span
-                  ><span data-lang-zh>报告 delegated/BYO 路线；analyzer 镜像不启动 instrumentation 或 GPU driver。</span>
+                  <span data-lang-en
+                    >Reports delegated or BYO routes; analyzer images do not start instrumentation
+                    or GPU drivers.</span
+                  ><span data-lang-zh
+                    >报告 delegated/BYO 路线；analyzer 镜像不启动 instrumentation 或 GPU
+                    driver。</span
+                  >
                 </td>
                 <td><code>qbdi</code>, <code>culifter</code></td>
               </tr>
               <tr>
                 <td><code>heavy</code> / <code>all</code></td>
                 <td>
-                  <span data-lang-en>Used for explicit research builds; BYO and sidecar backends remain opt-in even here.</span
-                  ><span data-lang-zh>用于显式 research 构建；即使在这里 BYO 和 sidecar backend 仍保持 opt-in。</span>
+                  <span data-lang-en
+                    >Used for explicit research builds; BYO and sidecar backends remain opt-in even
+                    here.</span
+                  ><span data-lang-zh
+                    >用于显式 research 构建；即使在这里 BYO 和 sidecar backend 仍保持 opt-in。</span
+                  >
                 </td>
                 <td><code>remill</code>, <code>revng</code></td>
               </tr>
@@ -792,14 +836,15 @@ node scripts/generate-docker.mjs --profile=full --backend-profile=research --dry
           <blockquote>
             <span data-lang-en
               >💡 <strong>Tip:</strong> <code>rikune.ps1</code>, <code>rikune.sh</code>, and
-              <code>install-docker.ps1</code> run the generator automatically before Compose
-              build. They discover all plugins, write the selected profile files, then build the
-              selected service — no manual step needed.</span
+              <code>install-docker.ps1</code> run the generator automatically before Compose build.
+              They discover all plugins, write the selected profile files, then build the selected
+              service — no manual step needed.</span
             >
             <span data-lang-zh
               >💡 <strong>提示</strong>：<code>rikune.ps1</code>、<code>rikune.sh</code> 和
-              <code>install-docker.ps1</code> 会在 Compose 构建前自动运行生成器。它们发现所有插件、写入所选
-              profile 文件、然后构建所选服务 — 无需手动操作。</span
+              <code>install-docker.ps1</code> 会在 Compose
+              构建前自动运行生成器。它们发现所有插件、写入所选 profile 文件、然后构建所选服务 —
+              无需手动操作。</span
             >
           </blockquote>
 
@@ -908,7 +953,8 @@ node scripts/generate-docker.mjs --profile=full --backend-profile=research --dry
           <p>
             <span data-lang-en
               ><code>/api/v1/health</code> is a liveness check. <code>/api/v1/ready</code> is
-              profile-aware readiness and checks only dependencies required by enabled plugins.</span
+              profile-aware readiness and checks only dependencies required by enabled
+              plugins.</span
             ><span data-lang-zh
               ><code>/api/v1/health</code> 是进程存活检查；<code>/api/v1/ready</code> 是
               profile-aware readiness，只检查当前启用插件真正需要的依赖。</span
@@ -934,12 +980,12 @@ node scripts/generate-docker.mjs --profile=full --backend-profile=research --dry
   -RuntimeBackend hyperv-vm `
   -HyperVVmName "rikune-runtime" `
   -HyperVSnapshotName "clean-runtime" `
-  -HyperVRuntimeEndpoint "http://192.168.1.50:18081" `
+  -HyperVRuntimeEndpoint "https://runtime-vm.example.internal:18081" `
   -HyperVRestoreOnRelease
 
 <span class="comment"># Linux analyzer + remote Windows Host Agent</span>
-./rikune.sh install --profile hybrid --windows-host &lt;windows-host&gt; --windows-user &lt;windows-user&gt;</pre
-            >
+./rikune.sh install --profile hybrid --windows-host &lt;windows-host&gt; --windows-user &lt;windows-user&gt; \
+  --host-agent-endpoint https://runtime.example.internal</pre>
           </div>
         </section>
 
@@ -952,6 +998,12 @@ node scripts/generate-docker.mjs --profile=full --backend-profile=research --dry
             </div>
             <pre><span class="comment"># Generate all profile files</span>
 npm run docker:generate:all
+
+	<span class="comment"># Create/rotate a strong analyzer API key; never commit this file</span>
+RIKUNE_DOCKER_ENV_PATH="$PWD/.docker-runtime.env" \
+RIKUNE_DOCKER_ENV_DATA_ROOT="${RIKUNE_DATA_ROOT:-$HOME/.rikune}" \
+RIKUNE_DOCKER_ENV_PROFILE=static \
+  node scripts/write-docker-runtime-env.mjs
 
 <span class="comment"># Static-only Linux analyzer (safe default)</span>
 docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d --build analyzer
@@ -996,15 +1048,13 @@ docker compose --env-file .docker-runtime.env -f docker-compose.hybrid.yml down<
               <code>docker exec -i</code>.</span
             >
             <span data-lang-zh
-              >Docker profile 会先运行一个长期存在的 analyzer 容器，用于 Dashboard 和 HTTP API。
-              MCP 客户端应通过 <code>docker exec -i</code> 在这个已运行容器中启动独立的 stdio
+              >Docker profile 会先运行一个长期存在的 analyzer 容器，用于 Dashboard 和 HTTP API。 MCP
+              客户端应通过 <code>docker exec -i</code> 在这个已运行容器中启动独立的 stdio
               进程。</span
             >
           </p>
 
-          <h3>
-            <span data-lang-en>JSON clients</span><span data-lang-zh>JSON 客户端</span>
-          </h3>
+          <h3><span data-lang-en>JSON clients</span><span data-lang-zh>JSON 客户端</span></h3>
           <div class="code-block">
             <div class="code-block__header">
               <span>mcp.json</span><button class="code-block__copy">Copy</button>
@@ -1039,7 +1089,8 @@ docker compose --env-file .docker-runtime.env -f docker-compose.hybrid.yml down<
               <span>%USERPROFILE%\.codex\config.toml</span
               ><button class="code-block__copy">Copy</button>
             </div>
-            <pre>[mcp_servers.rikune]
+            <pre>
+[mcp_servers.rikune]
 command = "docker"
 startup_timeout_sec = 180
 args = [
@@ -1055,7 +1106,8 @@ args = [
 
 [mcp_servers.rikune.env]
 NODE_ENV = "production"
-PYTHONUNBUFFERED = "1"</pre>
+PYTHONUNBUFFERED = "1"</pre
+            >
           </div>
 
           <blockquote>
@@ -1136,8 +1188,8 @@ PYTHONUNBUFFERED = "1"</pre>
                 <td><code>API_KEY</code></td>
                 <td>—</td>
                 <td>
-                  <span data-lang-en>API key for the HTTP file server / dashboard (optional)</span
-                  ><span data-lang-zh>HTTP 文件服务 / Dashboard 的 API 密钥（可选）</span>
+                  <span data-lang-en>Required whenever the HTTP file server is enabled</span
+                  ><span data-lang-zh>启用 HTTP 文件服务时必填</span>
                 </td>
               </tr>
               <tr>
@@ -1158,13 +1210,15 @@ PYTHONUNBUFFERED = "1"</pre>
                 <td><code>default</code></td>
                 <td>
                   <span data-lang-en
-                    >Backend install tier selected during Docker generation:
-                    <code>default</code>, <code>optional</code>, <code>heavy</code>,
-                    <code>research</code>, <code>runtime</code>, <code>gpu</code>, or
-                    <code>all</code></span
+                    >Backend install tier selected during Docker generation: <code>default</code>,
+                    <code>optional</code>, <code>heavy</code>, <code>research</code>,
+                    <code>runtime</code>, <code>gpu</code>, or <code>all</code></span
                   ><span data-lang-zh
                     >Docker 生成时选择的 backend 安装层级：
-                    <code>default</code>、<code>optional</code>、<code>heavy</code>、<code>research</code>、<code>runtime</code>、<code>gpu</code>
+                    <code>default</code
+                    >、<code>optional</code>、<code>heavy</code>、<code>research</code>、<code>runtime</code>、<code
+                      >gpu</code
+                    >
                     或 <code>all</code></span
                   >
                 </td>
@@ -1196,7 +1250,8 @@ PYTHONUNBUFFERED = "1"</pre>
               <tr>
                 <td><code>JSIR_WORKER_PATH</code> / <code>JSVMP_WORKER_PATH</code></td>
                 <td>
-                  <span data-lang-en>Profile-gated</span><span data-lang-zh>由 profile gate 控制</span>
+                  <span data-lang-en>Profile-gated</span
+                  ><span data-lang-zh>由 profile gate 控制</span>
                 </td>
                 <td>
                   <span data-lang-en>Optional JavaScript IR and JSVMP static workers</span
@@ -1235,8 +1290,11 @@ PYTHONUNBUFFERED = "1"</pre>
                 <td>—</td>
                 <td>
                   <span data-lang-en
-                    >Analyzer → Runtime Node API key when runtime auth is enabled</span
-                  ><span data-lang-zh>启用运行时鉴权时的 Analyzer → Runtime Node API 密钥</span>
+                    >Required strong Analyzer → Runtime Node API key; it must be distinct from the
+                    Host Agent key</span
+                  ><span data-lang-zh
+                    >必需的 Analyzer → Runtime Node 强密钥；必须与 Host Agent key 不同</span
+                  >
                 </td>
               </tr>
               <tr>
@@ -1245,7 +1303,9 @@ PYTHONUNBUFFERED = "1"</pre>
                 <td>
                   <span data-lang-en
                     >Optional Qiling Windows rootfs mount; set only when you provide one</span
-                  ><span data-lang-zh>可选 Qiling Windows rootfs 挂载点；仅在你提供 rootfs 时设置</span>
+                  ><span data-lang-zh
+                    >可选 Qiling Windows rootfs 挂载点；仅在你提供 rootfs 时设置</span
+                  >
                 </td>
               </tr>
               <tr>
@@ -1329,10 +1389,12 @@ PYTHONUNBUFFERED = "1"</pre>
               </tr>
               <tr>
                 <td><code>QILING_PYTHON</code></td>
-                <td><code>/opt/qiling-venv/bin/python</code></td>
+                <td>—</td>
                 <td>
-                  <span data-lang-en>Isolated Qiling interpreter</span
-                  ><span data-lang-zh>隔离的 Qiling 解释器</span>
+                  <span data-lang-en
+                    >Optional independently audited BYO Qiling interpreter; automatic image
+                    installation is disabled</span
+                  ><span data-lang-zh>可选、独立审计的 BYO Qiling 解释器；镜像自动安装已禁用</span>
                 </td>
               </tr>
               <tr>
@@ -1398,7 +1460,7 @@ PYTHONUNBUFFERED = "1"</pre>
             "
           >
             <div class="feature-card" style="padding: 16px">
-              <strong>Ghidra 12.0.4</strong><br /><span
+              <strong>Ghidra 12.1.3</strong><br /><span
                 style="color: var(--text-dim); font-size: 0.82rem"
                 ><span data-lang-en>Decompilation &amp; analysis</span
                 ><span data-lang-zh>反编译分析</span></span
@@ -1441,8 +1503,8 @@ PYTHONUNBUFFERED = "1"</pre>
             </div>
             <div class="feature-card" style="padding: 16px">
               <strong>Qiling</strong><br /><span style="color: var(--text-dim); font-size: 0.82rem"
-                ><span data-lang-en>Emulation framework</span
-                ><span data-lang-zh>仿真框架</span></span
+                ><span data-lang-en>BYO emulation framework</span
+                ><span data-lang-zh>BYO 仿真框架</span></span
               >
             </div>
             <div class="feature-card" style="padding: 16px">
@@ -1570,7 +1632,8 @@ PYTHONUNBUFFERED = "1"</pre>
                     <code>-NoProxy</code>.</span
                   ><span data-lang-zh
                     ><code>/api/v1/health</code> 用于进程存活，<code>/api/v1/ready</code>
-                    用于依赖就绪。运行 <code>.\rikune.ps1 health -Profile hybrid</code>。如果系统配置了代理，本地
+                    用于依赖就绪。运行
+                    <code>.\rikune.ps1 health -Profile hybrid</code>。如果系统配置了代理，本地
                     健康检查应通过 <code>--noproxy</code> / <code>-NoProxy</code> 绕过代理。</span
                   >
                 </td>
@@ -1636,8 +1699,8 @@ PYTHONUNBUFFERED = "1"</pre>
                 </td>
                 <td>
                   <span data-lang-en
-                    >Add <code>-e API_ENABLED=false</code> to the <code>docker exec</code> MCP
-                    args. The daemon container keeps the dashboard running.</span
+                    >Add <code>-e API_ENABLED=false</code> to the <code>docker exec</code> MCP args.
+                    The daemon container keeps the dashboard running.</span
                   ><span data-lang-zh
                     >在 MCP 的 <code>docker exec</code> 参数中加入
                     <code>-e API_ENABLED=false</code>。长期运行的 daemon 容器仍会提供

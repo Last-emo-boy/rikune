@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 const { WorkspaceManager } = await import('../../dist/workspace-manager.js')
-const { DatabaseManager } = await import('../../dist/database.js')
+const { DATABASE_FIXTURE_CAPABILITY, DatabaseManager } = await import('../../dist/database.js')
 const { CacheManager } = await import('../../dist/cache-manager.js')
 const { createReportSummarizeHandler } = await import('../../dist/plugins/reporting/tools/report-summarize.js')
 const { createAnalyzeWorkflowStatusHandler } = await import('../../dist/workflows/analyze-pipeline.js')
@@ -64,7 +64,7 @@ try {
     source: 'integration-test',
   }
 
-  database.insertSample(sample)
+  database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, sample)
   const workspace = await workspaceManager.createWorkspace(sampleId)
   await fs.writeFile(path.join(workspace.original, 'packed.exe'), Buffer.from('MZUPX'))
 

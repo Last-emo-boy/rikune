@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 /**
  * Unit tests for frida.runtime.instrument tool
  */
@@ -119,7 +120,7 @@ describe('createFridaRuntimeInstrumentHandler', () => {
     const sampleId = 'sha256:' + 'b'.repeat(64)
     const createdAt = new Date().toISOString()
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'b'.repeat(64),
       md5: 'b'.repeat(32),
@@ -158,7 +159,7 @@ describe('createFridaRuntimeInstrumentHandler', () => {
     const sampleId = 'sha256:' + 'c'.repeat(64)
     const createdAt = new Date().toISOString()
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'c'.repeat(64),
       md5: 'c'.repeat(32),
@@ -185,7 +186,7 @@ describe('createFridaRuntimeInstrumentHandler', () => {
     const sampleId = 'sha256:' + 'd'.repeat(64)
     const createdAt = new Date().toISOString()
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'd'.repeat(64),
       md5: 'd'.repeat(32),
@@ -217,7 +218,7 @@ describe('createFridaRuntimeInstrumentHandler', () => {
     const sampleId = 'sha256:' + 'e'.repeat(64)
     const createdAt = new Date().toISOString()
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'e'.repeat(64),
       md5: 'e'.repeat(32),
@@ -253,7 +254,7 @@ describe('createFridaRuntimeInstrumentHandler', () => {
     const sampleId = 'sha256:' + 'f'.repeat(64)
     const createdAt = new Date().toISOString()
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'f'.repeat(64),
       md5: 'f'.repeat(32),
@@ -313,7 +314,7 @@ describe('createFridaRuntimeInstrumentHandler', () => {
     const sampleId = 'sha256:' + '0'.repeat(64)
     const createdAt = new Date().toISOString()
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '0'.repeat(64),
       md5: '0'.repeat(32),
@@ -363,7 +364,7 @@ describe('createFridaRuntimeInstrumentHandler', () => {
     const sampleId = 'sha256:' + '1'.repeat(64)
     const createdAt = new Date().toISOString()
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '1'.repeat(64),
       md5: '1'.repeat(32),
@@ -403,7 +404,7 @@ describe('createFridaRuntimeInstrumentHandler', () => {
     const sampleId = 'sha256:' + '2'.repeat(64)
     const createdAt = new Date().toISOString()
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '2'.repeat(64),
       md5: '2'.repeat(32),
@@ -460,7 +461,7 @@ describe('createFridaRuntimeInstrumentHandler', () => {
     const sampleId = 'sha256:' + '3'.repeat(64)
     const createdAt = new Date().toISOString()
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '3'.repeat(64),
       md5: '3'.repeat(32),
@@ -508,7 +509,7 @@ describe('createFridaRuntimeInstrumentHandler', () => {
     const sampleId = 'sha256:' + '4'.repeat(64)
     const createdAt = new Date().toISOString()
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '4'.repeat(64),
       md5: '4'.repeat(32),

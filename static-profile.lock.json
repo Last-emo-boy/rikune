@@ -1,0 +1,324 @@
+{
+  "schema_version": 1,
+  "profile": "static",
+  "plugins": [
+    "android",
+    "android-package",
+    "angr",
+    "api-hash",
+    "apk-smali",
+    "apple-container",
+    "apple-objc-swift",
+    "apple-signing",
+    "batch",
+    "binary-diff",
+    "binary-hardening",
+    "btf",
+    "bytecode",
+    "capstone",
+    "code-analysis",
+    "compiler-codegen",
+    "container-analysis",
+    "cpp-abi-layout",
+    "crackme",
+    "cross-module",
+    "cuda-binary",
+    "culifter",
+    "deep-unpack",
+    "die",
+    "dotnet-decompile",
+    "dotnet-managed",
+    "dotnet-reactor",
+    "ebpf-bytecode",
+    "elf-macho",
+    "external-re-bridge",
+    "firmware",
+    "ghidra",
+    "go-analysis",
+    "graphviz",
+    "gtirb",
+    "host-correlation",
+    "javascript-deobfuscation",
+    "jsimplifier",
+    "jsir-cascade",
+    "jsvmp-analysis",
+    "jvm",
+    "jvm-decompile",
+    "kb-collaboration",
+    "kernel-driver-surface",
+    "lib-identify",
+    "lief",
+    "linux-binary",
+    "linux-package",
+    "llvm-bitcode",
+    "malware",
+    "managed-il-xrefs",
+    "manifold",
+    "memory-forensics",
+    "metadata",
+    "miasm",
+    "ml-model",
+    "native-debug-types",
+    "native-object",
+    "observability",
+    "office-analysis",
+    "pcap-analysis",
+    "pdf-analysis",
+    "pe-analysis",
+    "pe-signature",
+    "python-decompile",
+    "qbdi",
+    "radare2",
+    "remill",
+    "reporting",
+    "restringer",
+    "retdec",
+    "revng",
+    "rizin",
+    "rust-binary",
+    "sbom",
+    "serialization-format",
+    "shader-ir",
+    "similarity",
+    "static-triage",
+    "strings",
+    "syscall-abi-surface",
+    "tee-enclave",
+    "threat-intel",
+    "triton",
+    "uefi-smm-surface",
+    "unity-managed",
+    "unpacking",
+    "upx",
+    "visualization",
+    "vm-analysis",
+    "vuln-scanner",
+    "wabt",
+    "wasm",
+    "wasm-component",
+    "windows-debug-symbols",
+    "windows-installer",
+    "windows-interface-surface",
+    "yara",
+    "yara-x",
+    "zig-binary"
+  ],
+  "ordered_csv_sha256": "d5bff99b4f0543f6fa89ba5f7f8b88dfe0c0f3de2f02814d61dac0d3df73862e",
+  "static_workflow_stages": [
+    "fast_profile",
+    "enrich_static",
+    "function_map"
+  ],
+  "required_backends": [
+    {
+      "name": "java",
+      "path": "/opt/java/openjdk/bin/java",
+      "environment": [
+        {
+          "name": "JAVA_HOME",
+          "value": "/opt/java/openjdk",
+          "required": true
+        },
+        {
+          "name": "PATH",
+          "value": "/opt/java/openjdk/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin",
+          "required": true
+        },
+        {
+          "name": "PYTHON_PATH",
+          "value": "/usr/local/bin/python3.12",
+          "required": true
+        },
+        {
+          "name": "PYTHONPATH",
+          "value": "/app/workers",
+          "required": true
+        },
+        {
+          "name": "HOME",
+          "value": "/tmp/rikune-home",
+          "required": true
+        },
+        {
+          "name": "XDG_CONFIG_HOME",
+          "value": "/tmp/rikune-home/.config",
+          "required": true
+        },
+        {
+          "name": "XDG_CACHE_HOME",
+          "value": "/tmp/rikune-home/.cache",
+          "required": true
+        },
+        {
+          "name": "CONFIG_PATH",
+          "must_be_unset": true
+        },
+        {
+          "name": "NODE_OPTIONS",
+          "must_be_unset": true
+        },
+        {
+          "name": "NODE_PATH",
+          "must_be_unset": true
+        },
+        {
+          "name": "LD_PRELOAD",
+          "must_be_unset": true
+        },
+        {
+          "name": "PYTHONHOME",
+          "must_be_unset": true
+        }
+      ],
+      "version_args": [
+        "-version"
+      ],
+      "allowed_exit_codes": [
+        0
+      ],
+      "version_pattern": "(?:openjdk|java) version \"(?:2[1-9]|[3-9][0-9])(?:\\.|\")"
+    },
+    {
+      "name": "ghidra-analyze-headless",
+      "path": "/opt/ghidra/support/analyzeHeadless",
+      "environment": [
+        {
+          "name": "GHIDRA_INSTALL_DIR",
+          "value": "/opt/ghidra",
+          "required": true
+        },
+        {
+          "name": "GHIDRA_PATH",
+          "value": "/opt/ghidra",
+          "required": true
+        }
+      ],
+      "version_args": [],
+      "allowed_exit_codes": [
+        1
+      ],
+      "version_file": "/opt/ghidra/Ghidra/application.properties",
+      "version_pattern": "(?:^|\\n)application\\.version=12\\.1\\.3(?:\\r?\\n|$)"
+    },
+    {
+      "name": "rizin",
+      "path": "/opt/rizin/bin/rizin",
+      "environment": [
+        {
+          "name": "RIZIN_PATH",
+          "value": "/opt/rizin/bin/rizin",
+          "required": true
+        }
+      ],
+      "version_args": [
+        "-v"
+      ],
+      "allowed_exit_codes": [
+        0
+      ],
+      "version_pattern": "[Rr][Ii][Zz][Ii][Nn][^0-9]*0\\.8\\.2(?:[^0-9]|$)"
+    },
+    {
+      "name": "capa",
+      "path": "/usr/local/bin/capa",
+      "environment": [
+        {
+          "name": "CAPA_PATH",
+          "value": "/usr/local/bin/capa",
+          "required": true
+        },
+        {
+          "name": "CAPA_RULES_PATH",
+          "value": "/opt/capa-rules",
+          "required": true
+        }
+      ],
+      "version_args": [
+        "--version"
+      ],
+      "allowed_exit_codes": [
+        0
+      ],
+      "version_pattern": "(?:[Cc][Aa][Pp][Aa]|[Mm][Aa][Ii][Nn]\\.[Pp][Yy])[^0-9]*9\\.3\\.1(?:[^0-9]|$)"
+    },
+    {
+      "name": "detect-it-easy",
+      "path": "/usr/bin/diec",
+      "environment": [
+        {
+          "name": "DIE_PATH",
+          "value": "/usr/bin/diec",
+          "required": true
+        }
+      ],
+      "version_args": [
+        "--version"
+      ],
+      "allowed_exit_codes": [
+        0
+      ],
+      "version_pattern": "(?:[Dd][Ee][Tt][Ee][Cc][Tt] [Ii][Tt] [Ee][Aa][Ss][Yy]|[Dd][Ii][Ee])[^0-9]*3\\.10(?:[^0-9]|$)"
+    },
+    {
+      "name": "upx",
+      "path": "/opt/upx/upx",
+      "environment": [
+        {
+          "name": "UPX_PATH",
+          "value": "/opt/upx/upx",
+          "required": true
+        }
+      ],
+      "version_args": [
+        "--version"
+      ],
+      "allowed_exit_codes": [
+        0
+      ],
+      "version_pattern": "[Uu][Pp][Xx][^0-9]*5\\.1\\.1(?:[^0-9]|$)"
+    },
+    {
+      "name": "flare-floss",
+      "path": "/usr/local/bin/floss",
+      "environment": [
+        {
+          "name": "FLOSS_PATH",
+          "value": "/usr/local/bin/floss",
+          "required": true
+        }
+      ],
+      "version_args": [
+        "--version"
+      ],
+      "allowed_exit_codes": [
+        0
+      ],
+      "version_pattern": "[Ff][Ll][Oo][Ss][Ss][^0-9]*3\\.1\\.1(?:[^0-9]|$)"
+    },
+    {
+      "name": "yara-x-python",
+      "path": "/usr/local/bin/python3.12",
+      "environment": [
+        {
+          "name": "YARAX_PYTHON",
+          "value": "/usr/local/bin/python3.12",
+          "required": true
+        },
+        {
+          "name": "YARA_X_RULES_PATH",
+          "must_be_unset": true
+        }
+      ],
+      "version_args": [
+        "-c",
+        "import importlib.metadata as m; print(\"yara-x\", m.version(\"yara-x\"))"
+      ],
+      "allowed_exit_codes": [
+        0
+      ],
+      "version_pattern": "[Yy][Aa][Rr][Aa]-[Xx][^0-9]*1\\.14\\.0(?:[^0-9]|$)"
+    }
+  ],
+  "generated_by": "scripts/generate-docker.mjs",
+  "generator_version": 1
+}

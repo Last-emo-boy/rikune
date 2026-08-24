@@ -156,4 +156,114 @@ describe('ToolExecutor', () => {
       executor.executeTool('workflow_analyze_start', {}, { registry, logger })
     ).rejects.toThrow(/Use workflow\.search query="workflow\.analyze\.start"/)
   })
+
+  test('holds and fences the declared shared sample set across handler execution', async () => {
+    const events: string[] = []
+    const lease = {
+      heartbeat: jest.fn(() => events.push('heartbeat')),
+      assertOwned: jest.fn(() => events.push('assert')),
+      release: jest.fn(() => events.push('release')),
+    }
+    const sampleOperationGate = {
+      sharedLeaseTtlMs: 30_000,
+      resolveSampleReferences: jest.fn(() => new Set([`sha256:${'a'.repeat(64)}`])),
+      acquireShared: jest.fn(() => lease),
+    }
+    registry.registerTool(
+      {
+        ...makeToolDef('sample.reader', z.object({ sample_id: z.string() })),
+        sampleReferences: { direct: ['sample_id'] },
+      },
+      async () => {
+        events.push('handler')
+        return { ok: true }
+      }
+    )
+
+    await executor.executeTool(
+      'sample_reader',
+      { sample_id: `sha256:${'a'.repeat(64)}` },
+      { registry, logger, sampleOperationGate: sampleOperationGate as any }
+    )
+
+    expect(sampleOperationGate.resolveSampleReferences).toHaveBeenCalledWith(
+      { sample_id: `sha256:${'a'.repeat(64)}` },
+      { direct: ['sample_id'] }
+    )
+    expect(sampleOperationGate.acquireShared).toHaveBeenCalledTimes(1)
+    expect(events).toEqual(['assert', 'handler', 'assert', 'release'])
+  })
+
+  test('resolves exclusive-managed references without acquiring a deadlocking shared lease', async () => {
+    const handler = jest.fn(async () => ({ content: [], structuredContent: { ok: true } }))
+    const sampleOperationGate = {
+      resolveSampleReferences: jest.fn(() => new Set([`sha256:${'b'.repeat(64)}`])),
+      acquireShared: jest.fn(() => {
+        throw new Error('must not acquire shared lease')
+      }),
+    }
+    registry.registerTool(
+      {
+        ...makeToolDef('sample.delete', z.object({ sample_id: z.string() })),
+        sampleReferences: { direct: ['sample_id'] },
+        sampleLeaseMode: 'exclusive-managed',
+      },
+      handler as any
+    )
+
+    const response = await executor.executeTool(
+      'sample_delete',
+      { sample_id: `sha256:${'b'.repeat(64)}` },
+      { registry, logger, sampleOperationGate: sampleOperationGate as any }
+    )
+
+    expect(response.structuredContent).toEqual({ ok: true })
+    expect(sampleOperationGate.resolveSampleReferences).toHaveBeenCalledTimes(1)
+    expect(sampleOperationGate.acquireShared).not.toHaveBeenCalled()
+    expect(handler).toHaveBeenCalledTimes(1)
+  })
+
+  test.each([
+    'workflow.triage',
+    'workflow.analyze.start',
+    'workflow.analyze.status',
+    'workflow.analyze.promote',
+    'workflow.analyze.auto',
+    'workflow.reconstruct',
+    'workflow.deep_static',
+    'workflow.function_index.recover',
+    'workflow.semantic_name_review',
+    'workflow.function_explanation_review',
+    'workflow.module_reconstruction_review',
+    'ghidra.analyze',
+    'strings.extract',
+    'strings.floss.decode',
+    'binary.role.profile',
+    'analysis.context.link',
+    'crypto.identify',
+    'attack.map',
+  ])('fails closed before handler/queue/database mutation for static direct call %s', async (name) => {
+    const previousProfile = process.env.RIKUNE_DOCKER_PROFILE
+    const enqueue = jest.fn()
+    const databaseWrite = jest.fn()
+    const handler = jest.fn(async () => {
+      enqueue()
+      databaseWrite()
+      return { ok: true }
+    })
+    registry.registerTool(makeToolDef(name), handler)
+    process.env.RIKUNE_DOCKER_PROFILE = 'static'
+
+    try {
+      const result = await executor.executeTool(name.replaceAll('.', '_'), {}, { registry, logger })
+      expect(result.isError).toBe(true)
+      expect((result.content[0] as any).text).toContain('E_STATIC_PROFILE_CONTRACT')
+      expect(handler).not.toHaveBeenCalled()
+      expect(enqueue).not.toHaveBeenCalled()
+      expect(databaseWrite).not.toHaveBeenCalled()
+    } finally {
+      if (previousProfile === undefined) delete process.env.RIKUNE_DOCKER_PROFILE
+      else process.env.RIKUNE_DOCKER_PROFILE = previousProfile
+    }
+  })
 })

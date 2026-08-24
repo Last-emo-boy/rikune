@@ -1,6 +1,6 @@
 {
   "name": "@rikune/windows-host-agent",
-  "version": "1.2.0",
+  "version": "1.4.0",
   "description": "Rikune Windows Host Agent for remote sandbox lifecycle management.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -12,13 +12,13 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "clean": "node -e \"const fs=require('fs'); fs.rmSync('dist',{recursive:true,force:true});\"",
-    "dev": "tsx watch src/index.ts",
-    "start": "node dist/index.js",
+    "dev": "tsx watch src/bootstrap.ts",
+    "start": "node dist/bootstrap.js",
     "lint": "cmd /d /s /c \"pushd ..\\.. && eslint packages/windows-host-agent/src --ext .ts && popd\"",
-    "test": "cmd /d /s /c \"pushd ..\\.. && node --experimental-vm-modules node_modules\\jest\\bin\\jest.js --runInBand tests\\unit\\packages\\windows-host-agent.test.ts && popd\""
+    "test": "cmd /d /s /c \"pushd ..\\.. && node --experimental-vm-modules node_modules\\jest\\bin\\jest.js --runInBand --runTestsByPath tests\\unit\\packages\\windows-host-agent.test.ts tests\\unit\\packages\\windows-host-agent-bootstrap.test.ts && popd\""
   },
   "dependencies": {
-    "@rikune/shared": "1.2.0",
+    "@rikune/shared": "1.4.0",
     "pino": "^10.3.1",
     "zod": "^3.25.76"
   },

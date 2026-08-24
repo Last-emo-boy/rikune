@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { describe, test, expect, beforeEach, afterEach, jest } from '@jest/globals'
 import fs from 'fs'
 import path from 'path'
@@ -34,7 +35,7 @@ describe('com.role.profile tool', () => {
     cacheManager = new CacheManager(testCachePath, database)
 
     const sampleId = 'sha256:' + 'f'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'f'.repeat(64),
       md5: 'f'.repeat(32),

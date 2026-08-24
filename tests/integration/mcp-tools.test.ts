@@ -10,6 +10,7 @@ import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { PolicyGuard } from '../../src/policy-guard.js'
 import { CacheManager } from '../../src/cache-manager.js'
+import { SampleOperationGate } from '../../src/sample/sample-operation-gate.js'
 import {
   sampleIngestToolDefinition,
   createSampleIngestHandler,
@@ -65,6 +66,7 @@ describe('MCP Tools Integration Tests', () => {
   let database: DatabaseManager
   let policyGuard: PolicyGuard
   let cacheManager: CacheManager
+  let sampleOperationGate: SampleOperationGate
   let testSampleId: string
 
   beforeAll(() => {
@@ -91,6 +93,7 @@ describe('MCP Tools Integration Tests', () => {
     // Initialize components
     workspaceManager = new WorkspaceManager(workspaceRoot)
     database = new DatabaseManager(dbPath)
+    sampleOperationGate = new SampleOperationGate(database)
     policyGuard = new PolicyGuard(auditLogPath)
     cacheManager = new CacheManager(cachePath, database)
 
@@ -101,7 +104,7 @@ describe('MCP Tools Integration Tests', () => {
     // Register all tools
     server.registerTool(
       sampleIngestToolDefinition,
-      createSampleIngestHandler(workspaceManager, database, policyGuard)
+      createSampleIngestHandler(workspaceManager, database, policyGuard, sampleOperationGate)
     )
     server.registerTool(sampleProfileGetToolDefinition, createSampleProfileGetHandler(database))
     server.registerTool(
@@ -139,6 +142,8 @@ describe('MCP Tools Integration Tests', () => {
   })
 
   afterAll(() => {
+    sampleOperationGate.close()
+
     // Close database connection before cleanup
     try {
       database.close()

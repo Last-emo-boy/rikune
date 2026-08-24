@@ -226,14 +226,40 @@ function createRegistryServer() {
   }
 }
 
-function createMockPluginDeps(server = null) {
+async function createDocumentationSafetyDeps() {
+  const [{ DatabaseManager }, { SampleOperationGate }] = await Promise.all([
+    import(toFileUrl('src/database.ts')),
+    import(toFileUrl('src/sample/sample-operation-gate.ts')),
+  ])
+  const database = new DatabaseManager(':memory:')
+  try {
+    const sampleOperationGate = new SampleOperationGate(database, { startHeartbeat: false })
+    return {
+      database,
+      sampleOperationGate,
+      close() {
+        try {
+          sampleOperationGate.close()
+        } finally {
+          database.close()
+        }
+      },
+    }
+  } catch (error) {
+    database.close()
+    throw error
+  }
+}
+
+function createMockPluginDeps(server, { database, sampleOperationGate }) {
   return {
     workspaceManager: {},
-    database: {},
+    database,
     policyGuard: {},
     cacheManager: {},
     jobQueue: {},
     storageManager: {},
+    sampleOperationGate,
     config: {
       workers: {
         static: { pythonPath: undefined },
@@ -250,7 +276,7 @@ function createMockPluginDeps(server = null) {
     services: {
       workspace: {
         manager: {},
-        database: {},
+        database,
         storage: {},
       },
       platform: {
@@ -271,14 +297,15 @@ function createMockPluginDeps(server = null) {
   }
 }
 
-function createCoreDeps(server) {
+function createCoreDeps(server, { database, sampleOperationGate }) {
   return {
     workspaceManager: {},
-    database: {},
+    database,
     policyGuard: {},
     cacheManager: {},
     jobQueue: {},
     storageManager: {},
+    sampleOperationGate,
     config: {
       api: { port: 18080 },
       runtime: { mode: 'disabled' },
@@ -290,9 +317,8 @@ function createCoreDeps(server) {
   }
 }
 
-async function collectCoreTools() {
+async function collectCoreTools(safetyDeps) {
   const server = createRegistryServer()
-  const deps = createCoreDeps(server)
   const [
     sampleTools,
     artifactTools,
@@ -315,10 +341,15 @@ async function collectCoreTools() {
     import(toFileUrl('src/core/tool-registry/diagnostics-tools.ts')),
   ])
 
+  // Core registrars construct production handlers while the catalog only captures
+  // definitions. Keep required safety dependencies real, but isolate their state in
+  // memory and disable the background heartbeat for this short-lived process.
+  const deps = createCoreDeps(server, safetyDeps)
+
   sampleTools.registerSampleTools(server, deps)
   artifactTools.registerArtifactTools(server, deps)
   llmTools.registerLlmTools(server)
-  workflowTools.registerWorkflowTools(server, deps)
+  await workflowTools.registerWorkflowTools(server, deps)
   taskTools.registerTaskTools(server, deps)
   systemTools.registerSystemTools(server, deps)
   utilityTools.registerUtilityTools(server, { runtimeClient: null, runtimeMode: 'disabled' })
@@ -333,7 +364,7 @@ async function collectCoreTools() {
   })
 }
 
-async function collectPluginCatalog() {
+async function collectPluginCatalog(safetyDeps) {
   const [{ discoverBuiltInPlugins }, { createPluginTestHarness }] = await Promise.all([
     import(toFileUrl('src/core/plugin-system/discovery.ts')),
     import('@rikune/plugin-sdk'),
@@ -345,7 +376,7 @@ async function collectPluginCatalog() {
   for (const plugin of plugins) {
     const harness = createPluginTestHarness({
       ctx: { pluginId: plugin.id },
-      deps: createMockPluginDeps(),
+      deps: createMockPluginDeps(null, safetyDeps),
     })
     harness.deps.server = harness.server
     harness.deps.services.platform.server = harness.server
@@ -995,20 +1026,25 @@ ${renderNav(true)}
 }
 
 async function main() {
-  const coreDefinitions = await collectCoreTools()
-  const coreTools = coreDefinitions.map((definition) => toolMetadata('core', null, definition))
-  const { plugins, errors } = await collectPluginCatalog()
-  const html = renderHtml({ coreTools, plugins, errors })
-  mkdirSync(dirname(OUTPUT_PATH), { recursive: true })
-  writeFileSync(OUTPUT_PATH, html.replace(/[ \t]+(?=\r?\n)/g, ''), 'utf8')
-  const pluginToolCount = plugins.reduce((sum, plugin) => sum + plugin.tools.length, 0)
-  console.log(
-    `Generated docs/tool-catalog.html (${coreTools.length} core tools, ${plugins.length} plugins, ${pluginToolCount} plugin tools, ${errors.length} registration errors).`
-  )
-  if (errors.length > 0) {
-    for (const error of errors) {
-      console.warn(`Plugin registration error: ${error.pluginId}: ${error.message}`)
+  const safetyDeps = await createDocumentationSafetyDeps()
+  try {
+    const coreDefinitions = await collectCoreTools(safetyDeps)
+    const coreTools = coreDefinitions.map((definition) => toolMetadata('core', null, definition))
+    const { plugins, errors } = await collectPluginCatalog(safetyDeps)
+    const html = renderHtml({ coreTools, plugins, errors })
+    mkdirSync(dirname(OUTPUT_PATH), { recursive: true })
+    writeFileSync(OUTPUT_PATH, html.replace(/[ \t]+(?=\r?\n)/g, ''), 'utf8')
+    const pluginToolCount = plugins.reduce((sum, plugin) => sum + plugin.tools.length, 0)
+    console.log(
+      `Generated docs/tool-catalog.html (${coreTools.length} core tools, ${plugins.length} plugins, ${pluginToolCount} plugin tools, ${errors.length} registration errors).`
+    )
+    if (errors.length > 0) {
+      for (const error of errors) {
+        console.warn(`Plugin registration error: ${error.pluginId}: ${error.message}`)
+      }
     }
+  } finally {
+    safetyDeps.close()
   }
 }
 

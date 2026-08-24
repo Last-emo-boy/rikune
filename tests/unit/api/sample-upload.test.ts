@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../../src/database.js"
 /**
  * Sample Upload API tests
  * Tasks: api-file-server 7.2
@@ -100,7 +101,7 @@ describe('api-file-server - Sample Upload', () => {
 
       // Step 2: Create database record
       const sampleId = `sha256:${stored.sha256}`
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: stored.sha256,
         size: stored.size,

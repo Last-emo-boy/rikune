@@ -24,6 +24,11 @@ import {
   type CryptoPlanningArtifactScope,
 } from '../crypto-planning-artifacts.js'
 import { RequiredUserInputSchema, SetupActionSchema } from '../../../setup-guidance.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'trace.condition'
 
@@ -147,8 +152,8 @@ export const traceConditionToolDefinition: ToolDefinition = {
 }
 
 interface TraceConditionDependencies {
-  breakpointSmart?: (args: unknown) => Promise<WorkerResult>
-  dynamicDependencies?: (args: unknown) => Promise<WorkerResult>
+  breakpointSmart?: AbortableHandler<unknown, WorkerResult>
+  dynamicDependencies?: AbortableHandler<unknown, WorkerResult>
 }
 
 function buildRuntimeReadiness(result: WorkerResult | undefined) {
@@ -251,9 +256,10 @@ export function createTraceConditionHandler(
   const dynamicDependenciesHandler =
     dependencies.dynamicDependencies || createDynamicDependenciesHandler(workspaceManager, database)
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const startTime = Date.now()
     try {
+      throwIfAnalysisAborted(abortSignal)
       const input = traceConditionInputSchema.parse(args)
       const sample = database.findSample(input.sample_id)
       if (!sample) {
@@ -275,6 +281,7 @@ export function createTraceConditionHandler(
             sessionTag: input.session_tag,
           }
         )
+        throwIfAnalysisAborted(abortSignal)
         if (selection.latest_payload) {
           return {
             ok: true,
@@ -300,6 +307,7 @@ export function createTraceConditionHandler(
           scope: input.artifact_scope as CryptoPlanningArtifactScope,
           sessionTag: input.session_tag,
         })
+        throwIfAnalysisAborted(abortSignal)
         if (breakpointSelection.latest_payload) {
           sourceResult = {
             ok: true,
@@ -310,14 +318,18 @@ export function createTraceConditionHandler(
       }
 
       if (!sourceResult && !selectedBreakpoint) {
-        sourceResult = await breakpointSmartHandler({
-          sample_id: input.sample_id,
-          persist_artifact: false,
-          reuse_cached: true,
-          artifact_scope: input.artifact_scope,
-          force_refresh: input.force_refresh,
-          session_tag: input.session_tag,
-        })
+        sourceResult = await invokeAbortable(
+          breakpointSmartHandler,
+          {
+            sample_id: input.sample_id,
+            persist_artifact: false,
+            reuse_cached: true,
+            artifact_scope: input.artifact_scope,
+            force_refresh: input.force_refresh,
+            session_tag: input.session_tag,
+          },
+          abortSignal
+        )
       }
 
       if (!selectedBreakpoint) {
@@ -341,7 +353,11 @@ export function createTraceConditionHandler(
       }
 
       const runtimeReadiness = buildRuntimeReadiness(
-        await dynamicDependenciesHandler({ sample_id: input.sample_id })
+        await invokeAbortable(
+          dynamicDependenciesHandler,
+          { sample_id: input.sample_id },
+          abortSignal
+        )
       )
       const builtPlan = buildNormalizedTracePlan({
         breakpoint: BreakpointCandidateSchema.parse(selectedBreakpoint),
@@ -414,6 +430,7 @@ export function createTraceConditionHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [error instanceof Error ? error.message : String(error)],

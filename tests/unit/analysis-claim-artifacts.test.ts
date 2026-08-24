@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals'
 import crypto from 'crypto'
 import { spawn } from 'child_process'
@@ -1324,7 +1325,7 @@ describe('analysis Claim Ledger artifacts', () => {
 })
 
 function insertSample(database: DatabaseManager, sampleId: string, sha256: string): void {
-  database.insertSample({
+  database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
     id: sampleId,
     sha256,
     md5: null,

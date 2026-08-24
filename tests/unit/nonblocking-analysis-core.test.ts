@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 /**
  * Unit tests for nonblocking analysis pipeline - core logic
  * Tasks: 5.1 - run reuse logic, compatibility markers, stage state machine
@@ -190,7 +191,7 @@ describe('nonblocking analysis pipeline - core logic', () => {
           created_at: new Date().toISOString(),
           source: 'unit-test',
         }
-        database.insertSample(sample)
+        database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, sample)
 
         const first = createOrReuseAnalysisRun(database, {
           sample,

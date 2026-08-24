@@ -10,6 +10,8 @@ import type { PolicyGuard } from '../policy-guard.js'
 import type { CacheManager } from '../cache-manager.js'
 import type { JobQueue } from '../job-queue.js'
 import type { StorageManager } from '../storage/storage-manager.js'
+import type { SampleOperationGate } from '../sample/sample-operation-gate.js'
+import type { SampleDeletionService } from '../sample/sample-deletion.js'
 import type { Config } from '../config.js'
 import type {
   ToolRegistrar,
@@ -26,6 +28,8 @@ export interface ToolDeps {
   cacheManager: CacheManager
   jobQueue: JobQueue
   storageManager: StorageManager
+  sampleOperationGate?: SampleOperationGate
+  sampleDeletionService?: SampleDeletionService
   config: Config
   server: ToolRegistrar & PromptRegistrar & ResourceRegistrar & SamplingClient & PluginManagerSetter
   runtimeClient?: any
@@ -67,12 +71,7 @@ import { registerDiagnosticsTools } from './tool-registry/diagnostics-tools.js'
 import { registerScriptResources } from './tool-registry/script-resources.js'
 
 const CORE_GATEWAY_TOOLS = ['workflow.search', 'workflow.run', 'artifact.read']
-const POST_PLUGIN_CORE_TOOLS = [
-  'plugin.list',
-  'plugin.enable',
-  'plugin.disable',
-  'system.config.validate',
-]
+const POST_PLUGIN_CORE_TOOLS = ['plugin.list', 'system.config.validate']
 
 export async function registerAllTools(
   server: ToolRegistrar &
@@ -86,7 +85,7 @@ export async function registerAllTools(
   registerSampleTools(server, deps)
   registerArtifactTools(server, deps)
   registerLlmTools(server)
-  registerWorkflowTools(server, deps)
+  await registerWorkflowTools(server, deps)
   registerTaskTools(server, deps)
   registerSystemTools(server, deps)
   registerUtilityTools(server, {

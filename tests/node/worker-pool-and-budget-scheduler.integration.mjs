@@ -3,15 +3,11 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-const { DatabaseManager } = await import('../../dist/database.js')
+const { DATABASE_FIXTURE_CAPABILITY, DatabaseManager } = await import('../../dist/database.js')
 const { JobQueue, JobPriority } = await import('../../dist/job-queue.js')
-const {
-  AnalysisBudgetScheduler,
-} = await import('../../dist/analysis/analysis-budget-scheduler.js')
-const {
-  RuntimeWorkerPool,
-  buildRizinPreviewCompatibilityKey,
-} = await import('../../dist/worker/runtime-worker-pool.js')
+const { AnalysisBudgetScheduler } = await import('../../dist/analysis/analysis-budget-scheduler.js')
+const { RuntimeWorkerPool, buildRizinPreviewCompatibilityKey } =
+  await import('../../dist/worker/runtime-worker-pool.js')
 const { createTaskStatusHandler } = await import('../../dist/tools/task-status.js')
 
 const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'worker-pool-budget-integration-'))
@@ -23,7 +19,7 @@ function parseStructured(result) {
 }
 
 function insertSample(fill, size = 4 * 1024 * 1024) {
-  database.insertSample({
+  database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
     id: 'sha256:' + fill.repeat(64),
     sha256: fill.repeat(64),
     md5: fill.repeat(32),
@@ -185,6 +181,7 @@ try {
   await verifyBudgetDeferralAndDeepLaneIsolation()
   console.log('worker pool and budget scheduler integration checks passed')
 } finally {
+  jobQueue.close()
   database.close()
   await fs.rm(tempRoot, { recursive: true, force: true })
 }

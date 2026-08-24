@@ -119,4 +119,79 @@ describe('trace.condition tool', () => {
     expect(data.condition_summary).toContain('buffer_length[0]')
     expect(result.warnings?.some((item) => item.includes('reduced'))).toBe(true)
   })
+
+  test('forwards cancellation into breakpoint and runtime readiness handlers', async () => {
+    mockDatabase.findSample.mockReturnValue({
+      id: 'sha256:test',
+      sha256: 'a'.repeat(64),
+      md5: 'b'.repeat(32),
+      size: 4096,
+      file_type: 'PE32+',
+      created_at: new Date().toISOString(),
+      source: 'test',
+    } as any)
+    let resolveStarted!: (signal: AbortSignal) => void
+    const started = new Promise<AbortSignal>((resolve) => {
+      resolveStarted = resolve
+    })
+    let resolveTeardown!: () => void
+    const teardown = new Promise<void>((resolve) => {
+      resolveTeardown = resolve
+    })
+    const breakpointSmart = jest.fn(async () => ({
+      ok: true,
+      data: {
+        recommended_breakpoints: [
+          {
+            kind: 'api_call',
+            api: 'CryptEncrypt',
+            module: 'advapi32.dll',
+            reason: 'crypto transition',
+            confidence: 0.82,
+            context_capture: ['rcx', 'rdx'],
+            evidence_sources: ['test'],
+            dynamic_support: true,
+          },
+        ],
+      },
+    }))
+    const dynamicDependencies = jest.fn(async (_args, signal?: AbortSignal) => {
+      if (!signal) throw new Error('missing AbortSignal')
+      resolveStarted(signal)
+      await new Promise<void>((resolve) => {
+        signal.addEventListener('abort', () => resolve(), { once: true })
+      })
+      await teardown
+      return { ok: true, data: { components: {} } }
+    })
+    const handler = createTraceConditionHandler(
+      mockWorkspaceManager,
+      mockDatabase,
+      mockCacheManager,
+      { breakpointSmart, dynamicDependencies }
+    )
+    const controller = new AbortController()
+    let settled = false
+    const running = handler(
+      {
+        sample_id: 'sha256:test',
+        persist_artifact: false,
+        reuse_cached: false,
+      },
+      controller.signal
+    ).finally(() => {
+      settled = true
+    })
+
+    const receivedSignal = await started
+    controller.abort(new Error('cancel trace planning'))
+    await Promise.resolve()
+
+    expect(receivedSignal).toBe(controller.signal)
+    expect(breakpointSmart.mock.calls[0]?.[1]).toBe(controller.signal)
+    expect(settled).toBe(false)
+
+    resolveTeardown()
+    await expect(running).rejects.toMatchObject({ name: 'AbortError' })
+  })
 })

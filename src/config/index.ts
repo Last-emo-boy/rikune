@@ -165,10 +165,10 @@ export const ConfigSchema = z
       .default({}),
     api: z
       .object({
-        enabled: z.boolean().default(true), // Default: enabled
+        enabled: z.boolean().default(false), // Explicit opt-in: authenticated HTTP surface
         port: z.number().int().min(1).max(65535).default(18080),
         publicBaseUrl: z.string().url().optional(),
-        apiKey: z.string().optional(), // Auto-generated if not set
+        apiKey: z.string().trim().min(1).optional(),
         maxFileSize: z
           .number()
           .int()
@@ -179,7 +179,7 @@ export const ConfigSchema = z
         maxTotalBytes: z.number().int().min(0).default(0), // 0 = unlimited
       })
       .default({
-        enabled: true,
+        enabled: false,
         port: 18080,
         maxFileSize: 500 * 1024 * 1024,
         storageRoot: '/app/storage',
@@ -231,6 +231,14 @@ export const ConfigSchema = z
         code: z.ZodIssueCode.custom,
         path: ['api', 'maxFileSize'],
         message: `api.maxFileSize (${data.api.maxFileSize}) must not exceed api.maxTotalBytes (${data.api.maxTotalBytes})`,
+      })
+    }
+
+    if (data.api.enabled && !data.api.apiKey) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['api', 'apiKey'],
+        message: 'api.apiKey is required when api.enabled is true',
       })
     }
 

@@ -1,12 +1,10 @@
-name: Docker Build and Push
+name: Docker CI (not a release gate)
 
 on:
   push:
     branches:
       - main
       - master
-    tags:
-      - 'v*'
   pull_request:
     branches:
       - main
@@ -21,21 +19,136 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
+  static-contract:
+    name: Generate and run bare static analyzer image
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Generate exact committed static target
+        run: |
+          npm ci
+          npm run build
+          npm run docker:generate:all
+          git diff --exit-code -- static-profile.lock.json docker/Dockerfile.analyzer docker/Dockerfile.hybrid docker-compose.analyzer.yml docker-compose.hybrid.yml
+          test -z "$(git status --porcelain -- static-profile.lock.json docker/Dockerfile.analyzer docker/Dockerfile.hybrid docker-compose.analyzer.yml docker-compose.hybrid.yml)"
+          bash scripts/verify-compose-config.sh
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build linux/amd64 static analyzer
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ./docker/Dockerfile.analyzer
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: rikune-analyzer-static:ci
+          cache-from: type=gha,scope=rikune-static-ci
+          cache-to: type=gha,mode=max,scope=rikune-static-ci
+
+      - name: Verify bare-image static identity fails closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect rikune-analyzer-static:ci --format '{{index .Config.Labels "org.opencontainers.image.rikune.profile"}}')" = static
+          docker image inspect rikune-analyzer-static:ci --format '{{json .Config.Env}}' | jq -e 'index("RIKUNE_DOCKER_PROFILE=static") != null'
+          bash scripts/verify-static-container.sh rikune-analyzer-static:ci
+          if docker run --rm -e RIKUNE_DOCKER_PROFILE=full rikune-analyzer-static:ci node --version; then
+            echo "static image accepted a downgraded profile" >&2
+            exit 1
+          fi
+          mapfile -t locked_env < <(jq -r '.required_backends[].environment[].name' static-profile.lock.json | sort -u)
+          for name in "${locked_env[@]}"; do
+            override="$name=/__rikune_forbidden_override__"
+            if docker run --rm -e "$override" rikune-analyzer-static:ci node --version; then
+              echo "static image accepted backend override: $override" >&2
+              exit 1
+            fi
+          done
+          invalid_lock="$RUNNER_TEMP/invalid-static-profile.lock.json"
+          printf '{}\n' > "$invalid_lock"
+          if docker run --rm --mount "type=bind,src=$invalid_lock,dst=/app/static-profile.lock.json,readonly" rikune-analyzer-static:ci node --version; then
+            echo "static image accepted an invalid embedded lock" >&2
+            exit 1
+          fi
+
+  hybrid-contract:
+    name: Build and verify Hybrid analyzer image
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Generate exact committed Hybrid target
+        run: |
+          npm ci
+          npm run build
+          npm run docker:generate:hybrid
+          git diff --exit-code -- docker/Dockerfile.hybrid docker-compose.hybrid.yml
+          test -z "$(git status --porcelain -- docker/Dockerfile.hybrid docker-compose.hybrid.yml)"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build linux/amd64 Hybrid analyzer
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ./docker/Dockerfile.hybrid
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: rikune-analyzer-hybrid:ci
+          labels: |
+            org.opencontainers.image.source=https://github.com/Last-emo-boy/rikune
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=1.4.0
+            org.opencontainers.image.rikune.profile=hybrid
+          cache-from: type=gha,scope=rikune-hybrid-ci
+          cache-to: type=gha,mode=max,scope=rikune-hybrid-ci
+
+      - name: Verify hardened Hybrid startup and assets
+        shell: bash
+        run: bash scripts/verify-hybrid-container.sh rikune-analyzer-hybrid:ci "$GITHUB_SHA" 1.4.0
+
   build:
+    name: Build full image without publishing
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
       contents: read
-      id-token: write
-      attestations: write
-      packages: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: npm
@@ -46,92 +159,49 @@ jobs:
       - name: Generate Docker build files
         run: npm run docker:generate
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - name: Normalize image name
-        id: image
-        shell: bash
-        run: echo "name=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
-
-      - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata (tags, labels)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=sha,prefix=sha-,format=long
-            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
-
-      - name: Build and push Docker image
+      - name: Build full Docker image locally
         id: build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64
-          push: ${{ github.event_name != 'pull_request' }}
-          load: ${{ github.event_name == 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          push: false
+          load: true
+          tags: rikune:full-ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            GHIDRA_VERSION=12.0.4
+            GHIDRA_VERSION=12.1.3
 
       - name: Run basic image tests
-        if: github.event_name == 'pull_request'
         run: |
           # Test Node.js
-          docker run --rm ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:sha-${{ github.sha }} node --version
+          docker run --rm rikune:full-ci node --version
 
           # Test Python
-          docker run --rm ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:sha-${{ github.sha }} python3 --version
+          docker run --rm rikune:full-ci python3 --version
 
           # Test Java
-          docker run --rm ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:sha-${{ github.sha }} java -version
+          docker run --rm rikune:full-ci java -version
 
           # Test Ghidra
-          docker run --rm ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:sha-${{ github.sha }} \
+          docker run --rm rikune:full-ci \
             /opt/ghidra/support/analyzeHeadless -help > /dev/null 2>&1 && echo "Ghidra OK"
 
           # Test Python packages
-          docker run --rm ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:sha-${{ github.sha }} \
+          docker run --rm rikune:full-ci \
             python3 -c "import pefile, lief, yara, capa, floss, dnfile, speakeasy" && echo "Python packages OK"
 
       - name: Image size check
-        if: github.event_name == 'pull_request'
         run: |
-          IMAGE_BYTES=$(docker image inspect \
-            ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:sha-${{ github.sha }} \
-            --format '{{.Size}}')
+          IMAGE_BYTES=$(docker image inspect rikune:full-ci --format '{{.Size}}')
           echo "Image size: ${IMAGE_BYTES} bytes"
 
           # Warn if image is larger than 3 GiB
           if (( IMAGE_BYTES > 3221225472 )); then
             echo "::warning::Image size (${IMAGE_BYTES} bytes) exceeds recommended 3 GiB"
           fi
-
-      - name: Generate artifact attestation
-        if: github.event_name != 'pull_request'
-        uses: actions/attest-build-provenance@v4
-        with:
-          subject-name: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true

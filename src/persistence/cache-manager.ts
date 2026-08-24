@@ -248,6 +248,53 @@ class FileSystemCache {
     const cachePath = this.getCachePath(key)
     await fs.unlink(cachePath)
   }
+
+  /**
+   * Strictly purge every L2 entry attributed to a sample, including expired
+   * entries which are intentionally absent from normal cache lookups.
+   */
+  async invalidateSample(sampleSha256: string, knownKeys: ReadonlySet<string>): Promise<number> {
+    let deleted = 0
+    const walk = async (directory: string): Promise<void> => {
+      let entries: import('node:fs').Dirent[]
+      try {
+        entries = await fs.readdir(directory, { withFileTypes: true })
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+        throw error
+      }
+      for (const entry of entries) {
+        const entryPath = path.join(directory, entry.name)
+        const stat = await fs.lstat(entryPath)
+        if (stat.isSymbolicLink()) {
+          throw new Error(`Refusing symlink in filesystem cache: ${entryPath}`)
+        }
+        if (stat.isDirectory()) {
+          await walk(entryPath)
+          continue
+        }
+        if (!stat.isFile()) continue
+        if (stat.nlink > 1) {
+          throw new Error(`Refusing hard-linked filesystem cache entry: ${entryPath}`)
+        }
+        let shouldDelete = knownKeys.has(path.basename(entry.name, '.json'))
+        try {
+          const parsed = JSON.parse(await fs.readFile(entryPath, 'utf8')) as CachedResult
+          shouldDelete = shouldDelete || parsed.sampleSha256 === sampleSha256
+        } catch {
+          // Corrupt cache entries are never authoritative and must not survive a
+          // deletion sweep where they could later be mistaken for valid data.
+          shouldDelete = true
+        }
+        if (shouldDelete) {
+          await fs.unlink(entryPath)
+          deleted++
+        }
+      }
+    }
+    await walk(this.cacheDir)
+    return deleted
+  }
 }
 
 /**
@@ -466,6 +513,35 @@ export class CacheManager {
     }
 
     return deleted
+  }
+
+  /**
+   * Fail-closed variant used by sample deletion. Unlike normal cache
+   * invalidation it never swallows filesystem failures and includes expired L2
+   * entries plus every L3 row attributed to the sample.
+   */
+  async invalidateSampleStrict(sampleSha256: string): Promise<number> {
+    this.memoryCache.clear()
+    const keys = new Set<string>()
+    if (this.db) {
+      for (const row of this.db.querySql<{ key: string }>(
+        'SELECT key FROM cache WHERE sample_sha256 = ?',
+        [sampleSha256]
+      )) {
+        keys.add(row.key)
+      }
+    }
+    const fsDeleted = await this.fsCache.invalidateSample(sampleSha256, keys)
+    let dbDeleted = 0
+    if (this.db) {
+      const before = this.db.queryOneSql<{ count: number }>(
+        'SELECT COUNT(*) AS count FROM cache WHERE sample_sha256 = ?',
+        [sampleSha256]
+      )?.count
+      this.db.runSql('DELETE FROM cache WHERE sample_sha256 = ?', [sampleSha256])
+      dbDeleted = before ?? 0
+    }
+    return Math.max(fsDeleted, dbDeleted)
   }
 
   /**

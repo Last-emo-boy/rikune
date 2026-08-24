@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from '../../src/database.js'
 /**
  * Integration tests for workflows
  */
@@ -66,7 +67,7 @@ describe('Workflow Integration', () => {
     cacheManager = new CacheManager(path.join(testDir, 'cache'), database)
     jobQueue = new JobQueue(database)
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: `sha256:${'a'.repeat(64)}`,
       sha256: 'a'.repeat(64),
       md5: 'b'.repeat(32),
@@ -78,6 +79,7 @@ describe('Workflow Integration', () => {
   })
 
   afterEach(() => {
+    jobQueue.close()
     database.close()
     fs.rmSync(testDir, { recursive: true, force: true })
   })
@@ -306,6 +308,13 @@ describe('Workflow Integration', () => {
       depth: 'balanced',
       backendPolicy: 'auto',
       forceRefresh: true,
+    })
+    upsertAnalysisRunStage(database, {
+      runId: run.id,
+      stage: 'fast_profile',
+      status: 'completed',
+      executionState: 'completed',
+      result: { stage: 'fast_profile', status: 'ready' },
     })
     upsertAnalysisRunStage(database, {
       runId: run.id,
@@ -563,7 +572,7 @@ describe('Workflow Integration', () => {
       depth: 'balanced',
       backendPolicy: 'auto',
     })
-    for (const stage of ['enrich_static', 'function_map', 'reconstruct'] as const) {
+    for (const stage of ['fast_profile', 'enrich_static', 'function_map', 'reconstruct'] as const) {
       upsertAnalysisRunStage(database, {
         runId: run.id,
         stage,

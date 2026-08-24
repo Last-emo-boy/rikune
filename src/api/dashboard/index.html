@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="no-referrer">
 <title>Rikune Dashboard</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -376,7 +377,7 @@ tr.clickable:hover td{background:color-mix(in srgb,var(--accent-bg),transparent 
   <div class="search-modal" style="max-width:580px;max-height:80vh;overflow:auto;padding:20px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <h3 style="margin:0;color:var(--accent)" id="pluginDrawerTitle">Plugin Details</h3>
-      <button class="back-btn" onclick="closePluginDrawer()" style="font-size:12px;padding:4px 8px">✕ Close</button>
+      <button class="back-btn" id="pluginDrawerClose" style="font-size:12px;padding:4px 8px">✕ Close</button>
     </div>
     <div id="pluginDrawerContent"></div>
   </div>
@@ -451,8 +452,8 @@ tr.clickable:hover td{background:color-mix(in srgb,var(--accent-bg),transparent 
   <header class="topbar">
     <button class="sidebar-collapse" id="sidebarToggle" title="Toggle sidebar">☰</button>
     <div class="topbar-actions">
-      <button class="search-trigger" onclick="document.getElementById('searchOverlay').style.display='flex';document.getElementById('globalSearchInput').focus()" title="Ctrl+K">🔍 Search <kbd>⌘K</kbd></button>
-      <label class="auto-refresh-label"><input type="checkbox" id="autoRefreshToggle" onchange="toggleAutoRefresh()" /> Auto-refresh</label>
+      <button class="search-trigger" id="searchTrigger" title="Ctrl+K">🔍 Search <kbd>⌘K</kbd></button>
+      <label class="auto-refresh-label"><input type="checkbox" id="autoRefreshToggle" /> Auto-refresh</label>
     </div>
   </header>
 
@@ -570,7 +571,7 @@ tr.clickable:hover td{background:color-mix(in srgb,var(--accent-bg),transparent 
   <div class="tab-content" id="tab-samples">
     <div class="section">
       <div class="section-title">Sample Inventory <span class="badge" id="sampleCount">0</span>
-        <div class="export-bar"><button class="export-btn" onclick="exportData('samples','csv')">📥 CSV</button><button class="export-btn" onclick="exportData('samples','json')">📥 JSON</button></div>
+        <div class="export-bar"><button class="export-btn" data-export-tab="samples" data-export-format="csv">📥 CSV</button><button class="export-btn" data-export-tab="samples" data-export-format="json">📥 JSON</button></div>
       </div>
       <div class="table-wrap">
         <table>
@@ -582,8 +583,8 @@ tr.clickable:hover td{background:color-mix(in srgb,var(--accent-bg),transparent 
         <button id="samplePrev" class="back-btn">← Prev</button>
         <span style="font-size:13px;color:var(--text2)" id="samplePageInfo">—</span>
         <button id="sampleNext" class="back-btn">Next →</button>
-        <div class="page-jump">Go to <input type="number" min="1" id="samplePageJump" /> <button class="back-btn" onclick="jumpToPage('samples')">Go</button></div>
-        <select id="samplePerPage" onchange="changePerPage('samples')"><option value="30">30/page</option><option value="50">50/page</option><option value="100">100/page</option></select>
+        <div class="page-jump">Go to <input type="number" min="1" id="samplePageJump" /> <button class="back-btn" data-jump-tab="samples">Go</button></div>
+        <select id="samplePerPage" data-perpage-tab="samples"><option value="30">30/page</option><option value="50">50/page</option><option value="100">100/page</option></select>
       </div>
     </div>
   </div>
@@ -593,7 +594,7 @@ tr.clickable:hover td{background:color-mix(in srgb,var(--accent-bg),transparent 
     <div class="section">
       <div class="section-title">Analysis History <span class="badge" id="analysisCount">0</span>
         <div class="view-toggle" id="analysisViewToggle"><button class="active" data-view="table">Table</button><button data-view="timeline">Timeline</button></div>
-        <div class="export-bar"><button class="export-btn" onclick="exportData('analyses','csv')">📥 CSV</button><button class="export-btn" onclick="exportData('analyses','json')">📥 JSON</button></div>
+        <div class="export-bar"><button class="export-btn" data-export-tab="analyses" data-export-format="csv">📥 CSV</button><button class="export-btn" data-export-tab="analyses" data-export-format="json">📥 JSON</button></div>
       </div>
       <div id="analysisTimeline" class="timeline-container" style="display:none"></div>
       <div class="filter-bar" id="analysisFilterBar">
@@ -615,8 +616,8 @@ tr.clickable:hover td{background:color-mix(in srgb,var(--accent-bg),transparent 
         <button id="analysisPrev" class="back-btn">← Prev</button>
         <span style="font-size:13px;color:var(--text2)" id="analysisPageInfo">—</span>
         <button id="analysisNext" class="back-btn">Next →</button>
-        <div class="page-jump">Go to <input type="number" min="1" id="analysisPageJump" /> <button class="back-btn" onclick="jumpToPage('analyses')">Go</button></div>
-        <select id="analysisPerPage" onchange="changePerPage('analyses')"><option value="30">30/page</option><option value="50">50/page</option><option value="100">100/page</option></select>
+        <div class="page-jump">Go to <input type="number" min="1" id="analysisPageJump" /> <button class="back-btn" data-jump-tab="analyses">Go</button></div>
+        <select id="analysisPerPage" data-perpage-tab="analyses"><option value="30">30/page</option><option value="50">50/page</option><option value="100">100/page</option></select>
       </div>
     </div>
   </div>
@@ -661,7 +662,7 @@ tr.clickable:hover td{background:color-mix(in srgb,var(--accent-bg),transparent 
   <div class="tab-content" id="tab-reports">
     <div class="section" id="reportListSection">
       <div class="section-title">Reports &amp; Artifacts <span class="badge" id="artifactCount">0</span>
-        <div class="export-bar"><button class="export-btn" onclick="exportData('artifacts','csv')">📥 CSV</button><button class="export-btn" onclick="exportData('artifacts','json')">📥 JSON</button></div>
+        <div class="export-bar"><button class="export-btn" data-export-tab="artifacts" data-export-format="csv">📥 CSV</button><button class="export-btn" data-export-tab="artifacts" data-export-format="json">📥 JSON</button></div>
       </div>
       <div class="filter-bar">
         <select id="artifactTypeFilter">
@@ -679,8 +680,8 @@ tr.clickable:hover td{background:color-mix(in srgb,var(--accent-bg),transparent 
         <button id="artifactPrev" class="back-btn">← Prev</button>
         <span style="font-size:13px;color:var(--text2)" id="artifactPageInfo">—</span>
         <button id="artifactNext" class="back-btn">Next →</button>
-        <div class="page-jump">Go to <input type="number" min="1" id="artifactPageJump" /> <button class="back-btn" onclick="jumpToPage('artifacts')">Go</button></div>
-        <select id="artifactPerPage" onchange="changePerPage('artifacts')"><option value="30">30/page</option><option value="50">50/page</option><option value="100">100/page</option></select>
+        <div class="page-jump">Go to <input type="number" min="1" id="artifactPageJump" /> <button class="back-btn" data-jump-tab="artifacts">Go</button></div>
+        <select id="artifactPerPage" data-perpage-tab="artifacts"><option value="30">30/page</option><option value="50">50/page</option><option value="100">100/page</option></select>
       </div>
     </div>
     <div id="reportViewSection" style="display:none">
@@ -690,7 +691,7 @@ tr.clickable:hover td{background:color-mix(in srgb,var(--accent-bg),transparent 
         <div class="artifact-toolbar">
           <div class="artifact-breadcrumb" id="artifactBreadcrumb"></div>
           <div class="format-tabs" id="artifactFormatTabs"></div>
-          <button class="copy-btn" id="artifactCopyBtn" onclick="copyArtifactContent()">📋 Copy</button>
+          <button class="copy-btn" id="artifactCopyBtn">📋 Copy</button>
         </div>
         <div class="meta-grid" id="reportMeta" style="margin-bottom:16px"></div>
         <div class="report-viewer" id="reportViewer">
@@ -777,6 +778,59 @@ tr.clickable:hover td{background:color-mix(in srgb,var(--accent-bg),transparent 
 const API = '/api/v1/dashboard'
 const $=s=>document.querySelector(s)
 const $$=s=>document.querySelectorAll(s)
+const dashboardUrl = new URL(window.location.href)
+const dashboardKey = dashboardUrl.searchParams.get('key')
+
+if (dashboardKey) {
+  dashboardUrl.searchParams.delete('key')
+  history.replaceState(null, '', `${dashboardUrl.pathname}${dashboardUrl.search}${dashboardUrl.hash}`)
+}
+
+function dashboardFetch(resource, options = {}) {
+  const headers = new Headers(options.headers || {})
+  if (dashboardKey && !headers.has('X-API-Key')) {
+    headers.set('X-API-Key', dashboardKey)
+  }
+  return fetch(resource, { ...options, headers })
+}
+
+// ── Delegated UI actions (data-* attributes instead of inline handlers) ──
+document.addEventListener('click', e => {
+  const sampleLink = e.target.closest('[data-sample-link]')
+  if (sampleLink) {
+    openSampleDetail(sampleLink.dataset.sampleLink)
+    return
+  }
+  const viewBtn = e.target.closest('[data-view-artifact]')
+  if (viewBtn) {
+    if (viewBtn.dataset.closeDrawer) closeDrawer()
+    viewArtifact(viewBtn.dataset.viewArtifact)
+    return
+  }
+  const pluginLink = e.target.closest('[data-plugin-link]')
+  if (pluginLink) {
+    openPluginDetail(pluginLink.dataset.pluginLink)
+    return
+  }
+  const exportBtn = e.target.closest('[data-export-tab]')
+  if (exportBtn) {
+    exportData(exportBtn.dataset.exportTab, exportBtn.dataset.exportFormat)
+    return
+  }
+  const jumpBtn = e.target.closest('[data-jump-tab]')
+  if (jumpBtn) jumpToPage(jumpBtn.dataset.jumpTab)
+})
+document.addEventListener('change', e => {
+  const perPage = e.target.closest('[data-perpage-tab]')
+  if (perPage) changePerPage(perPage.dataset.perpageTab)
+})
+$('#searchTrigger').addEventListener('click', () => {
+  $('#searchOverlay').style.display = 'flex'
+  $('#globalSearchInput').focus()
+})
+$('#autoRefreshToggle').addEventListener('change', toggleAutoRefresh)
+$('#artifactCopyBtn').addEventListener('click', copyArtifactContent)
+$('#pluginDrawerClose').addEventListener('click', closePluginDrawer)
 
 // ── Tab switching ──────────────────────────────────────────────────────
 $$('.sidebar-nav button').forEach(btn => {
@@ -805,7 +859,7 @@ $('#drawerClose').addEventListener('click', closeDrawer)
 // ── Data fetching ──────────────────────────────────────────────────────
 async function api(path) {
   try {
-    const r = await fetch(API + path)
+    const r = await dashboardFetch(API + path)
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     return await r.json()
   } catch(e) {
@@ -892,10 +946,10 @@ async function loadPlugins() {
   $('#pluginCount').textContent = d.total
 
   $('#pluginSummary').innerHTML = `
-    <div class="card"><h3>Total</h3><div class="value">${d.total}</div></div>
-    <div class="card"><h3>Loaded</h3><div class="value" style="color:var(--green)">${d.loaded}</div></div>
-    <div class="card"><h3>Skipped</h3><div class="value" style="color:var(--yellow)">${d.skipped}</div></div>
-    <div class="card"><h3>Errors</h3><div class="value" style="color:${d.errored>0?'var(--red)':'var(--text2)'}">${d.errored}</div></div>
+    <div class="card"><h3>Total</h3><div class="value">${esc(d.total)}</div></div>
+    <div class="card"><h3>Loaded</h3><div class="value" style="color:var(--green)">${esc(d.loaded)}</div></div>
+    <div class="card"><h3>Skipped</h3><div class="value" style="color:var(--yellow)">${esc(d.skipped)}</div></div>
+    <div class="card"><h3>Errors</h3><div class="value" style="color:${d.errored>0?'var(--red)':'var(--text2)'}">${esc(d.errored)}</div></div>
   `
 
   let rows = ''
@@ -904,9 +958,9 @@ async function loadPlugins() {
     const errorHint = p.error ? `<br><span style="font-size:11px;color:var(--text2)">${esc(p.error)}</span>` : ''
     rows += `<tr class="clickable" data-plugin-id="${esc(p.id)}">
       <td><strong>${esc(p.name)}</strong><br><span class="mono" style="color:var(--text2)">${esc(p.id)}</span></td>
-      <td class="mono">${p.version||'—'}</td>
+      <td class="mono">${esc(p.version||'—')}</td>
       <td><span class="badge-status ${cls}">${esc(p.status)}</span>${errorHint}</td>
-      <td>${p.tool_count}</td>
+      <td>${esc(p.tool_count)}</td>
       <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">${esc(p.description||'—')}</td>
     </tr>`
   }
@@ -948,7 +1002,7 @@ async function loadRuntime() {
       <td class="mono" style="font-size:11px">${esc(job.tool || '—')}</td>
       <td class="mono" style="font-size:11px" title="${esc(job.sampleId || '')}">${esc(shortSample)}</td>
       <td>${statusBadge(status)}</td>
-      <td>${job.attempts ?? 0}</td>
+      <td>${esc(job.attempts ?? 0)}</td>
       <td>${job.updatedAt ? new Date(job.updatedAt).toLocaleString() : '—'}</td>
     </tr>`
   }
@@ -1000,7 +1054,7 @@ async function loadSamples() {
     const size = s.size ? formatBytes(s.size) : '—'
     rows += `<tr class="clickable" data-sample-id="${esc(s.id)}">
       <td>${sampleOffset+i+1}</td>
-      <td class="mono" style="font-size:11px" title="${esc(s.sha256||'')}">${sha}</td>
+      <td class="mono" style="font-size:11px" title="${esc(s.sha256||'')}">${esc(sha)}</td>
       <td>${size}</td>
       <td>${esc(s.file_type||'—')}</td>
       <td>${esc(s.source||'—')}</td>
@@ -1048,7 +1102,7 @@ async function openSampleDetail(sampleId) {
   </div></div>`
 
   // Analyses
-  html += `<div class="drawer-section"><h3>Analyses (${d.analyses.length})</h3>`
+  html += `<div class="drawer-section"><h3>Analyses (${esc(d.analyses.length)})</h3>`
   if (d.analyses.length > 0) {
     html += '<div class="table-wrap"><table><thead><tr><th>Stage</th><th>Backend</th><th>Status</th><th>Started</th><th>Duration</th></tr></thead><tbody>'
     for (const a of d.analyses) {
@@ -1069,7 +1123,7 @@ async function openSampleDetail(sampleId) {
   html += '</div>'
 
   // Artifacts
-  html += `<div class="drawer-section"><h3>Artifacts (${d.artifacts.length})</h3>`
+  html += `<div class="drawer-section"><h3>Artifacts (${esc(d.artifacts.length)})</h3>`
   if (d.artifacts.length > 0) {
     html += '<div class="table-wrap"><table><thead><tr><th>Type</th><th>Path</th><th>Created</th><th>Action</th></tr></thead><tbody>'
     for (const a of d.artifacts) {
@@ -1078,7 +1132,7 @@ async function openSampleDetail(sampleId) {
         <td><span class="badge-type">${esc(a.type)}</span></td>
         <td class="mono" style="font-size:11px;max-width:300px;overflow:hidden;text-overflow:ellipsis" title="${esc(a.path)}">${esc(a.path)}</td>
         <td>${new Date(a.created_at).toLocaleString()}</td>
-        <td>${viewable ? `<button class="back-btn" onclick="event.stopPropagation();closeDrawer();viewArtifact('${esc(a.id)}')">View</button>` : '—'}</td>
+        <td>${viewable ? `<button class="back-btn" data-view-artifact="${esc(a.id)}" data-close-drawer="1">View</button>` : '—'}</td>
       </tr>`
     }
     html += '</tbody></table></div>'
@@ -1088,7 +1142,7 @@ async function openSampleDetail(sampleId) {
   html += '</div>'
 
   // Functions
-  html += `<div class="drawer-section"><h3>Functions (${d.functions.total} total, top 20 by score)</h3>`
+  html += `<div class="drawer-section"><h3>Functions (${esc(d.functions.total)} total, top 20 by score)</h3>`
   if (d.functions.top.length > 0) {
     html += '<div class="table-wrap"><table><thead><tr><th>Address</th><th>Name</th><th>Size</th><th>Score</th></tr></thead><tbody>'
     for (const f of d.functions.top) {
@@ -1126,7 +1180,7 @@ async function loadAnalyses() {
     rows += `<tr>
       <td>${analysisOffset+i+1}</td>
       <td class="mono" style="font-size:11px">${esc(a.id.substring(0,8))}</td>
-      <td class="mono" style="font-size:11px;cursor:pointer;color:var(--accent)" title="${esc(a.sample_id)}" onclick="openSampleDetail('${esc(a.sample_id)}')">${shortSample}</td>
+      <td class="mono" style="font-size:11px;cursor:pointer;color:var(--accent)" title="${esc(a.sample_id)}" data-sample-link="${esc(a.sample_id)}">${esc(shortSample)}</td>
       <td>${esc(a.stage)}</td>
       <td class="mono">${esc(a.backend)}</td>
       <td><span class="badge-status ${cls}">${esc(a.status)}</span></td>
@@ -1180,7 +1234,7 @@ async function loadRuns() {
         : 'none'
     rows += `<tr class="clickable" data-run-id="${esc(run.id)}">
       <td><span class="mono">${esc(shortId(run.id))}</span><br><span style="font-size:11px;color:var(--text3)">${esc(run.latest_stage || 'no stage')}</span></td>
-      <td class="mono" style="font-size:11px;cursor:pointer;color:var(--accent)" title="${esc(run.sample_id)}" onclick="event.stopPropagation();openSampleDetail('${esc(run.sample_id)}')">${esc(shortSample)}</td>
+      <td class="mono" style="font-size:11px;cursor:pointer;color:var(--accent)" title="${esc(run.sample_id)}" data-sample-link="${esc(run.sample_id)}">${esc(shortSample)}</td>
       <td>${esc(run.goal)}<br><span style="font-size:11px;color:var(--text3)">${esc(run.depth)} / ${esc(run.backend_policy)}</span></td>
       <td>${statusBadge(run.normalized_status || run.status)}<br><span style="font-size:11px;color:var(--text3)">${esc(run.status)}</span></td>
       <td>${renderStagePills(run.stage_plan || [], run.stages || [])}</td>
@@ -1190,7 +1244,10 @@ async function loadRuns() {
   })
   $('#runTableBody').innerHTML = rows || '<tr><td colspan="7" style="color:var(--text2)">No staged runs found</td></tr>'
   $$('#runTableBody tr.clickable').forEach(row => {
-    row.addEventListener('click', () => openRunDetail(row.dataset.runId))
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('[data-sample-link],[data-view-artifact]')) return
+      openRunDetail(row.dataset.runId)
+    })
   })
 
   const totalPages = Math.ceil(d.total / RUN_LIMIT) || 1
@@ -1235,8 +1292,8 @@ async function openRunDetail(runId) {
   html += `<div class="drawer-section"><h3>Next Steps</h3><div class="meta-grid">
     <span class="label">Tools</span><span>${(run.recommended_next_tools || []).map(t => `<span class="badge-type">${esc(t)}</span>`).join(' ') || '—'}</span>
     <span class="label">Actions</span><span>${(run.next_actions || []).map(a => esc(a)).join('<br>') || '—'}</span>
-    <span class="label">Queued Jobs</span><span>${(run.deferred_jobs || []).length}</span>
-    <span class="label">Recoverable</span><span>${(run.recoverable_stages || []).length}</span>
+    <span class="label">Queued Jobs</span><span>${esc((run.deferred_jobs || []).length)}</span>
+    <span class="label">Recoverable</span><span>${esc((run.recoverable_stages || []).length)}</span>
   </div></div>`
 
   if ((run.coverage_gaps || []).length || (run.upgrade_paths || []).length) {
@@ -1263,13 +1320,13 @@ async function openRunDetail(runId) {
   }
 
   html += `<div class="drawer-section"><h3>Semantic Review</h3><div class="meta-grid">
-    <span class="label">Artifacts</span><span>${semantic.artifact_count || 0}</span>
-    <span class="label">Names</span><span>${semantic.name_suggestion_artifacts || 0}</span>
-    <span class="label">Explanations</span><span>${semantic.explanation_artifacts || 0}</span>
-    <span class="label">Modules</span><span>${semantic.module_review_artifacts || 0}</span>
-    <span class="label">Waiting LLM</span><span>${semantic.waiting_for_llm_stages || 0}</span>
-    <span class="label">Applied Stages</span><span>${semantic.applied_stages || 0}</span>
-    <span class="label">Accepted / Rejected</span><span>${semantic.accepted_count || 0} / ${semantic.rejected_count || 0}</span>
+    <span class="label">Artifacts</span><span>${esc(semantic.artifact_count || 0)}</span>
+    <span class="label">Names</span><span>${esc(semantic.name_suggestion_artifacts || 0)}</span>
+    <span class="label">Explanations</span><span>${esc(semantic.explanation_artifacts || 0)}</span>
+    <span class="label">Modules</span><span>${esc(semantic.module_review_artifacts || 0)}</span>
+    <span class="label">Waiting LLM</span><span>${esc(semantic.waiting_for_llm_stages || 0)}</span>
+    <span class="label">Applied Stages</span><span>${esc(semantic.applied_stages || 0)}</span>
+    <span class="label">Accepted / Rejected</span><span>${esc(semantic.accepted_count || 0)} / ${esc(semantic.rejected_count || 0)}</span>
     <span class="label">Consumed</span><span>${semantic.reconstruct_consumed ? 'yes' : 'no'}</span>
     <span class="label">Sessions</span><span class="mono">${esc((semantic.session_tags || []).join(', ') || '—')}</span>
     <span class="label">Prepare Artifacts</span><span class="mono">${esc((semantic.prepare_artifact_ids || []).join(', ') || '—')}</span>
@@ -1284,14 +1341,14 @@ async function openRunDetail(runId) {
         <td>${esc(stage.stage)}</td>
         <td>${statusBadge(stage.review_state || stage.status)}<br><span style="font-size:11px;color:var(--text3)">${esc(stage.status || '—')}</span></td>
         <td>${esc(stage.review_status || '—')}<br><span class="mono" style="font-size:11px">${esc(stage.session_tag || '—')}</span></td>
-        <td>${stage.accepted_count || 0} / ${stage.rejected_count || 0}</td>
+        <td>${esc(stage.accepted_count || 0)} / ${esc(stage.rejected_count || 0)}</td>
         <td>${stage.updated_at ? new Date(stage.updated_at).toLocaleString() : '—'}</td>
       </tr>`
     }
     html += '</tbody></table></div></div>'
   }
 
-  html += `<div class="drawer-section"><h3>Stages (${(run.stages || []).length})</h3>`
+  html += `<div class="drawer-section"><h3>Stages (${esc((run.stages || []).length)})</h3>`
   if ((run.stages || []).length) {
     html += '<div class="table-wrap"><table><thead><tr><th>Stage</th><th>Status</th><th>Tool</th><th>Artifacts</th><th>Updated</th></tr></thead><tbody>'
     for (const stage of run.stages) {
@@ -1299,7 +1356,7 @@ async function openRunDetail(runId) {
         <td>${esc(stage.stage)}</td>
         <td>${statusBadge(stage.normalized_status || stage.status)}<br><span style="font-size:11px;color:var(--text3)">${esc(stage.execution_state || '—')}</span></td>
         <td class="mono" style="font-size:11px">${esc(stage.tool || '—')}</td>
-        <td>${stage.artifact_count || 0}</td>
+        <td>${esc(stage.artifact_count || 0)}</td>
         <td>${stage.updated_at ? new Date(stage.updated_at).toLocaleString() : '—'}</td>
       </tr>`
       if (stage.result_summary?.summary || stage.result?.summary) {
@@ -1353,10 +1410,10 @@ async function loadArtifacts() {
       <td>${artifactOffset+i+1}</td>
       <td><span class="badge-type">${esc(a.type)}</span></td>
       <td class="mono" style="font-size:11px" title="${esc(a.path)}">${esc(shortPath)}</td>
-      <td class="mono" style="font-size:11px;cursor:pointer;color:var(--accent)" title="${esc(a.sample_id)}" onclick="openSampleDetail('${esc(a.sample_id)}')">${shortSample}</td>
+      <td class="mono" style="font-size:11px;cursor:pointer;color:var(--accent)" title="${esc(a.sample_id)}" data-sample-link="${esc(a.sample_id)}">${esc(shortSample)}</td>
       <td style="font-size:11px">${esc(a.mime||'—')}</td>
       <td>${new Date(a.created_at).toLocaleString()}</td>
-      <td>${viewable ? `<button class="back-btn" onclick="viewArtifact('${esc(a.id)}')">View</button>` : '—'}</td>
+      <td>${viewable ? `<button class="back-btn" data-view-artifact="${esc(a.id)}">View</button>` : '—'}</td>
     </tr>`
   })
   $('#artifactTableBody').innerHTML = rows || '<tr><td colspan="7" style="color:var(--text2)">No artifacts found</td></tr>'
@@ -1419,11 +1476,11 @@ async function loadSemantic() {
       <td><span class="badge-type" title="${esc(a.type)}">${esc(typeLabel)}</span></td>
       <td class="mono" style="font-size:11px">${esc(sem.session_tag || '—')}</td>
       <td class="mono" style="font-size:11px" title="${esc(runLink ? runLink.run_id : '')}">${esc(runLabel)}</td>
-      <td>${sem.entry_count == null ? '—' : sem.entry_count}</td>
+      <td>${sem.entry_count == null ? '—' : esc(sem.entry_count)}</td>
       <td class="mono" style="font-size:11px" title="${esc(clientModel)}">${esc(clientModel)}</td>
-      <td class="mono" style="font-size:11px;cursor:pointer;color:var(--accent)" title="${esc(a.sample_id)}" onclick="openSampleDetail('${esc(a.sample_id)}')">${esc(shortSample)}</td>
+      <td class="mono" style="font-size:11px;cursor:pointer;color:var(--accent)" title="${esc(a.sample_id)}" data-sample-link="${esc(a.sample_id)}">${esc(shortSample)}</td>
       <td>${a.created_at ? new Date(a.created_at).toLocaleString() : '—'}</td>
-      <td><button class="back-btn" onclick="viewArtifact('${esc(a.id)}')">View</button></td>
+      <td><button class="back-btn" data-view-artifact="${esc(a.id)}">View</button></td>
     </tr>`
   })
   $('#semanticTableBody').innerHTML = rows || '<tr><td colspan="9" style="color:var(--text2)">No semantic review artifacts found</td></tr>'
@@ -1503,28 +1560,11 @@ async function viewArtifact(artifactId) {
       viewer.innerHTML = d.parsed_json ? renderJsonHtml(d.parsed_json) : esc(d.content)
       break
     case 'html':
-      viewer.className = 'report-viewer html'
-      // Use srcdoc sandbox for security
-      viewer.innerHTML = `<iframe sandbox="allow-same-origin" srcdoc="${esc(d.content)}"></iframe>`
-      break
     case 'svg':
-      viewer.className = 'report-viewer'
-      // Sanitize SVG by rendering through DOMParser
-      try {
-        const parser = new DOMParser()
-        const doc = parser.parseFromString(d.content, 'image/svg+xml')
-        const svg = doc.querySelector('svg')
-        if (svg) {
-          svg.style.maxWidth = '100%'
-          svg.style.height = 'auto'
-          viewer.innerHTML = ''
-          viewer.appendChild(svg)
-        } else {
-          viewer.textContent = d.content
-        }
-      } catch {
-        viewer.textContent = d.content
-      }
+      // Untrusted markup (HTML reports and SVG alike) is isolated inside a
+      // fully sandboxed opaque-origin iframe — never inserted into the main DOM
+      viewer.className = 'report-viewer html'
+      renderSandboxedArtifact(viewer, d.content)
       break
     case 'code':
       viewer.className = 'report-viewer'
@@ -1581,8 +1621,13 @@ function renderMarkdown(md) {
   // Blockquote
   html = html.replace(/^&gt;\s+(.+)$/gm, '<blockquote>$1</blockquote>')
 
-  // Links [text](url)
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+  // Links [text](url) — allowlisted http/https only; hostile schemes and
+  // attribute-breakout payloads render as inert text instead of an anchor
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) => {
+    const safe = sanitizeHttpUrl(url)
+    if (!safe) return `${text} (${url})`
+    return `<a href="${esc(safe)}" target="_blank" rel="noopener noreferrer">${text}</a>`
+  })
 
   // Tables
   html = html.replace(/^(\|.+\|)\n(\|\s*[-:]+[-|:\s]*\|)\n((?:\|.+\|\n?)*)/gm, (_, header, sep, body) => {
@@ -1688,7 +1733,7 @@ function appendLogLine(container, e) {
   line.className = 'log-line'
   const ts = e.time ? new Date(e.time).toLocaleTimeString() : ''
   const lvl = e.levelLabel || 'info'
-  line.innerHTML = `<span class="log-time">${ts}</span><span class="log-level log-level-${lvl}">${lvl.toUpperCase()}</span><span>${esc(e.msg || '')}</span>`
+  line.innerHTML = `<span class="log-time">${esc(ts)}</span><span class="log-level log-level-${esc(lvl)}">${esc(lvl.toUpperCase())}</span><span>${esc(e.msg || '')}</span>`
   container.appendChild(line)
   // Keep max 500 entries
   while (container.children.length > 500) container.removeChild(container.firstChild)
@@ -1730,7 +1775,7 @@ async function loadConfig() {
   if (d.validation && d.validation.diagnostics) {
     const icons = { ok:'🟢', warn:'🟡', error:'🔴' }
     let diagHtml = `<div style="margin-bottom:8px;font-size:13px;font-weight:600">
-      ✅ ${d.validation.summary.ok} OK &nbsp; ⚠️ ${d.validation.summary.warn} Warn &nbsp; ❌ ${d.validation.summary.error} Error
+      ✅ ${esc(d.validation.summary.ok)} OK &nbsp; ⚠️ ${esc(d.validation.summary.warn)} Warn &nbsp; ❌ ${esc(d.validation.summary.error)} Error
     </div>`
     diagHtml += '<div style="font-size:13px">'
     for (const item of d.validation.diagnostics) {
@@ -1746,20 +1791,22 @@ async function loadSystem() {
   const d = await api('/system')
   if (!d) return
 
-  const memPct = d.memory.usage_percent
+  // Coerce/clamp to a finite 0–100 number before it reaches a style width
+  const memPctRaw = Number(d.memory.usage_percent)
+  const memPct = Number.isFinite(memPctRaw) ? Math.min(Math.max(memPctRaw, 0), 100) : 0
   $('#systemHost').innerHTML = `<div style="font-size:13px">
     <div class="diag-item"><span style="color:var(--text2);width:120px;display:inline-block">Hostname</span>${esc(d.hostname)}</div>
     <div class="diag-item"><span style="color:var(--text2);width:120px;display:inline-block">Platform</span>${esc(d.platform)}</div>
     <div class="diag-item"><span style="color:var(--text2);width:120px;display:inline-block">Architecture</span>${esc(d.arch)}</div>
     <div class="diag-item"><span style="color:var(--text2);width:120px;display:inline-block">Host Uptime</span>${formatDuration(d.uptime_host_seconds)}</div>
-    <div class="diag-item"><span style="color:var(--text2);width:120px;display:inline-block">Memory</span>${d.memory.free_gb} GB free / ${d.memory.total_gb} GB total (${memPct}%)
+    <div class="diag-item"><span style="color:var(--text2);width:120px;display:inline-block">Memory</span>${esc(d.memory.free_gb)} GB free / ${esc(d.memory.total_gb)} GB total (${memPct}%)
       <div class="progress-bar" style="width:200px;display:inline-block;vertical-align:middle;margin-left:8px"><div class="fill" style="width:${memPct}%;background:${memPct>90?'var(--red)':memPct>70?'var(--yellow)':'var(--green)'}"></div></div>
     </div>
   </div>`
 
   $('#systemProcess').innerHTML = `<div style="font-size:13px">
     <div class="diag-item"><span style="color:var(--text2);width:120px;display:inline-block">Node</span>${esc(d.node)}</div>
-    <div class="diag-item"><span style="color:var(--text2);width:120px;display:inline-block">PID</span>${d.pid}</div>
+    <div class="diag-item"><span style="color:var(--text2);width:120px;display:inline-block">PID</span>${esc(d.pid)}</div>
     <div class="diag-item"><span style="color:var(--text2);width:120px;display:inline-block">Process Uptime</span>${formatDuration(d.uptime_process_seconds)}</div>
     <div class="diag-item"><span style="color:var(--text2);width:120px;display:inline-block">NODE_ENV</span>${esc(d.env.NODE_ENV)}</div>
     <div class="diag-item"><span style="color:var(--text2);width:120px;display:inline-block">LOG_LEVEL</span>${esc(d.env.LOG_LEVEL)}</div>
@@ -1767,7 +1814,7 @@ async function loadSystem() {
 
   let cpuHtml = '<div style="font-size:13px;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:4px">'
   d.cpus.forEach((c,i) => {
-    cpuHtml += `<div class="diag-item"><span style="color:var(--text2);width:50px;display:inline-block">CPU ${i}</span> ${esc(c.model)} @ ${c.speed}MHz</div>`
+    cpuHtml += `<div class="diag-item"><span style="color:var(--text2);width:50px;display:inline-block">CPU ${i}</span> ${esc(c.model)} @ ${esc(c.speed)}MHz</div>`
   })
   cpuHtml += '</div>'
   $('#systemCpus').innerHTML = cpuHtml
@@ -1776,7 +1823,9 @@ async function loadSystem() {
 // ── SSE Live Events ────────────────────────────────────────────────────
 function connectSSE() {
   const log = $('#eventLog')
-  const evtSource = new EventSource('/api/v1/events')
+  const eventsUrl = new URL('/api/v1/events', window.location.origin)
+  if (dashboardKey) eventsUrl.searchParams.set('key', dashboardKey)
+  const evtSource = new EventSource(`${eventsUrl.pathname}${eventsUrl.search}`)
 
   evtSource.addEventListener('connected', (e) => {
     addLogEntry(log, '● Connected to event stream', 'var(--green)')
@@ -1852,10 +1901,56 @@ function showReportList() {
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────
-function esc(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML }
+function esc(s) {
+  // Escape for text-node AND single/double-quoted attribute contexts
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
+}
 function formatBytes(b) { if(b==null) return '—'; if(b<1024) return b+'B'; if(b<1048576) return (b/1024).toFixed(1)+'KB'; return (b/1048576).toFixed(1)+'MB' }
 function formatDuration(s) { if(s==null||isNaN(s)) return '—'; s=Math.floor(s); const d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60); return (d?d+'d ':'')+(h?h+'h ':'')+(m?m+'m ':'')+(s%60)+'s' }
 function tryParse(s) { try{return JSON.parse(s)}catch{return null} }
+
+// Decode a single HTML entity body (named with ';', or numeric with optional
+// ';' — browsers decode both forms in attributes). Unknown → original text.
+function decodeHtmlEntity(body, original) {
+  const named = { amp:'&', lt:'<', gt:'>', quot:'"', apos:"'", colon:':', sol:'/', equals:'=', tab:'\t', newline:'\n' }
+  const lower = body.toLowerCase()
+  if (Object.hasOwn(named, lower)) return named[lower]
+  let code = null
+  if (/^#x[0-9a-f]+$/i.test(body)) code = parseInt(body.slice(2), 16)
+  else if (/^#\d+$/.test(body)) code = parseInt(body.slice(1), 10)
+  if (code == null || code > 0x10ffff) return original
+  try { return String.fromCodePoint(code) } catch { return original }
+}
+
+// Canonicalize a Markdown link target: iteratively undo HTML-entity and
+// percent encoding (bounded, so double-encoded payloads unfold), then strip
+// C0/DEL control characters that browsers ignore when parsing schemes.
+function canonicalizeUrl(raw) {
+  let s = String(raw ?? '')
+  for (let i = 0; i < 4; i++) {
+    let next = s.replace(/&(#x?[0-9a-f]+);?|&([a-z][a-z0-9]*);/gi, (m, num, name) => decodeHtmlEntity(num ?? name, m))
+    try { next = decodeURIComponent(next) } catch { /* keep malformed percent-encoding as-is */ }
+    if (next === s) break
+    s = next
+  }
+  return s.replace(/[\u0000-\u001f\u007f]+/g, '')
+}
+
+// Allowlist absolute http/https URLs only. After canonicalization the target
+// is parsed as a URL: it must keep an http(s) protocol, carry a hostname, and
+// contain no credentials; attribute delimiters are rejected outright so the
+// result can never break out of its href attribute.
+function sanitizeHttpUrl(raw) {
+  const canon = canonicalizeUrl(raw)
+  if (!/^https?:\/\/[^\s/?#]/i.test(canon)) return null
+  if (/["'<>`\\]/.test(canon)) return null
+  let parsed
+  try { parsed = new URL(canon) } catch { return null }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+  if (!parsed.hostname) return null
+  if (parsed.username || parsed.password) return null
+  return canon
+}
 function shortId(id) { if(!id) return '—'; id=String(id); return id.length>12 ? id.substring(0,12)+'…' : id }
 function statusBadge(status) {
   const s = String(status || 'unknown')
@@ -1934,7 +2029,7 @@ async function runGlobalSearch(query) {
 
   // Search samples API
   try {
-    const sr = await fetch(API + '/samples?limit=5&search=' + encodeURIComponent(q))
+    const sr = await dashboardFetch(API + '/samples?limit=5&search=' + encodeURIComponent(q))
     if (sr.ok) {
       const sd = await sr.json()
       for (const s of (sd.samples || [])) {
@@ -1949,7 +2044,7 @@ async function runGlobalSearch(query) {
 
   // Search artifacts API
   try {
-    const ar = await fetch(API + '/artifacts?limit=5&search=' + encodeURIComponent(q))
+    const ar = await dashboardFetch(API + '/artifacts?limit=5&search=' + encodeURIComponent(q))
     if (ar.ok) {
       const ad = await ar.json()
       for (const a of (ad.artifacts || [])) {
@@ -2059,9 +2154,9 @@ async function openPluginDetail(pluginId) {
   const cls = p.status==='loaded'?'badge-loaded':p.status==='error'?'badge-error':'badge-skipped'
   let html = `<div class="meta-grid" style="margin-bottom:16px">
     <span class="label">ID</span><span class="mono">${esc(p.id)}</span>
-    <span class="label">Version</span><span class="mono">${p.version||'—'}</span>
+    <span class="label">Version</span><span class="mono">${esc(p.version||'—')}</span>
     <span class="label">Status</span><span><span class="badge-status ${cls}">${esc(p.status)}</span></span>
-    <span class="label">Tools</span><span>${p.tool_count}</span>
+    <span class="label">Tools</span><span>${esc(p.tool_count)}</span>
     <span class="label">Description</span><span>${esc(p.description||'—')}</span>
   </div>`
 
@@ -2072,7 +2167,7 @@ async function openPluginDetail(pluginId) {
   }
 
   if (p.tools && p.tools.length > 0) {
-    html += `<h4 style="margin:12px 0 8px;color:var(--text2)">Tools (${p.tools.length})</h4><div style="font-size:13px">`
+    html += `<h4 style="margin:12px 0 8px;color:var(--text2)">Tools (${esc(p.tools.length)})</h4><div style="font-size:13px">`
     for (const t of p.tools) {
       html += `<div style="padding:4px 0;border-bottom:1px solid var(--border)"><span class="tool-name">${esc(t.name||t)}</span></div>`
     }
@@ -2326,9 +2421,9 @@ function renderPluginTopology(plugins) {
   let html = ''
   for (const p of plugins) {
     const cls = p.status === 'loaded' ? 'loaded' : p.status === 'error' ? 'error' : 'skipped'
-    html += `<div class="topo-node ${cls}" onclick="openPluginDetail('${esc(p.id)}')">
+    html += `<div class="topo-node ${cls}" data-plugin-link="${esc(p.id)}">
       <div class="topo-name" title="${esc(p.name)}">${esc(p.name)}</div>
-      <div class="topo-tools">${p.tool_count}</div>
+      <div class="topo-tools">${esc(p.tool_count)}</div>
       <div class="topo-meta">v${esc(p.version || '?')} · ${esc(p.status)}</div>
     </div>`
   }
@@ -2367,6 +2462,17 @@ function renderBreadcrumb(path) {
     html += i === parts.length - 1 ? `<span class="bc-file">${esc(p)}</span>` : `<span>${esc(p)}</span>`
   })
   bc.innerHTML = html
+}
+
+// Render untrusted markup inside a fully sandboxed iframe (scripts disabled,
+// opaque origin); srcdoc is assigned as a DOM property so the content never
+// enters an HTML attribute or the main document DOM
+function renderSandboxedArtifact(viewer, content) {
+  viewer.textContent = ''
+  const frame = document.createElement('iframe')
+  frame.setAttribute('sandbox', '')
+  frame.srcdoc = content
+  viewer.appendChild(frame)
 }
 
 function renderCodeWithLineNumbers(content) {

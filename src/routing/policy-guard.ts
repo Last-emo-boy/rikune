@@ -804,6 +804,74 @@ export class PolicyGuard {
   }
 
   /**
+   * Append an audit record durably or throw. Lifecycle state machines use
+   * this before closing their recovery journal, so a successful operation
+   * can never be acknowledged without its audit evidence.
+   */
+  auditLogFailClosed(event: AuditEvent): void {
+    const timestamped = event.timestamp ? event : { ...event, timestamp: new Date().toISOString() }
+    const directory = path.dirname(this.auditLogPath)
+    const directoryStat = fs.lstatSync(directory)
+    if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) {
+      throw new Error('E_AUDIT_DURABILITY: audit directory is not a real directory.')
+    }
+    try {
+      const existing = fs.lstatSync(this.auditLogPath)
+      if (!existing.isFile() || existing.isSymbolicLink() || existing.nlink > 1) {
+        throw new Error('audit log is not a trusted single-link file')
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw new Error(
+          `E_AUDIT_DURABILITY: ${error instanceof Error ? error.message : String(error)}`
+        )
+      }
+    }
+
+    const noFollow = (fs.constants as Record<string, number>).O_NOFOLLOW ?? 0
+    let descriptor: number | undefined
+    try {
+      descriptor = fs.openSync(
+        this.auditLogPath,
+        fs.constants.O_APPEND | fs.constants.O_CREAT | fs.constants.O_WRONLY | noFollow,
+        0o600
+      )
+      const opened = fs.fstatSync(descriptor)
+      if (!opened.isFile() || opened.nlink > 1) {
+        throw new Error('audit descriptor failed identity validation')
+      }
+      const encoded = Buffer.from(`${JSON.stringify(timestamped)}\n`, 'utf8')
+      let offset = 0
+      while (offset < encoded.length) {
+        const written = fs.writeSync(descriptor, encoded, offset, encoded.length - offset, null)
+        if (!Number.isInteger(written) || written <= 0) {
+          throw new Error('audit write made no forward progress')
+        }
+        offset += written
+      }
+      fs.fsyncSync(descriptor)
+    } catch (error) {
+      throw new Error(
+        `E_AUDIT_DURABILITY: ${error instanceof Error ? error.message : String(error)}`
+      )
+    } finally {
+      if (descriptor !== undefined) fs.closeSync(descriptor)
+    }
+
+    let directoryDescriptor: number | undefined
+    try {
+      directoryDescriptor = fs.openSync(directory, fs.constants.O_RDONLY)
+      fs.fsyncSync(directoryDescriptor)
+    } catch (error) {
+      throw new Error(
+        `E_AUDIT_DURABILITY: ${error instanceof Error ? error.message : String(error)}`
+      )
+    } finally {
+      if (directoryDescriptor !== undefined) fs.closeSync(directoryDescriptor)
+    }
+  }
+
+  /**
    * Get audit log path
    */
   getAuditLogPath(): string {

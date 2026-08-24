@@ -39,6 +39,11 @@ import {
   persistCanonicalEvidence,
 } from '../../../analysis/analysis-evidence.js'
 import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'analysis.context.link'
 const TOOL_VERSION = '0.1.0'
@@ -197,6 +202,7 @@ interface AnalysisContextLinkDependencies {
       depth?: number
       limit?: number
       timeout?: number
+      abortSignal?: AbortSignal
     }
   ) => Promise<CrossReferenceAnalysis>
 }
@@ -306,7 +312,7 @@ export function createAnalysisContextLinkHandler(
   dependencies: AnalysisContextLinkDependencies = {},
   jobQueue?: JobQueue,
   options: { allowDeferred?: boolean } = {}
-): (args: unknown) => Promise<WorkerResult> {
+): (args: unknown, abortSignal?: AbortSignal) => Promise<WorkerResult> {
   const stringsExtractHandler =
     dependencies.stringsExtract ||
     createStringsExtractHandler(workspaceManager, database, cacheManager)
@@ -314,7 +320,10 @@ export function createAnalysisContextLinkHandler(
     dependencies.stringsFlossDecode ||
     createStringsFlossDecodeHandler(workspaceManager, database, cacheManager)
 
-  return async (args: unknown): Promise<WorkerResult> => {
+  return async (args: unknown, abortSignal?: AbortSignal): Promise<WorkerResult> => {
+    throwIfAnalysisAborted(abortSignal)
+    const runHandler = (handler: AbortableHandler<unknown, WorkerResult>, handlerArgs: unknown) =>
+      invokeAbortable(handler, handlerArgs, abortSignal)
     const input = analysisContextLinkInputSchema.parse(args)
     const startTime = Date.now()
     const warnings: string[] = []
@@ -388,6 +397,7 @@ export function createAnalysisContextLinkHandler(
             sessionTag: input.session_tag,
           }
         )
+        throwIfAnalysisAborted(abortSignal)
         if (artifactSelection.latest_payload) {
           return {
             ok: true,
@@ -434,6 +444,7 @@ export function createAnalysisContextLinkHandler(
 
       if (!input.force_refresh && input.reuse_cached) {
         const cachedLookup = await lookupCachedResult(cacheManager, cacheKey)
+        throwIfAnalysisAborted(abortSignal)
         if (cachedLookup) {
           return {
             ok: true,
@@ -494,7 +505,7 @@ export function createAnalysisContextLinkHandler(
         })
       }
 
-      const extractResult = await stringsExtractHandler({
+      const extractResult = await runHandler(stringsExtractHandler, {
         sample_id: input.sample_id,
         mode: input.mode === 'preview' ? 'preview' : 'full',
         min_len: 5,
@@ -528,7 +539,7 @@ export function createAnalysisContextLinkHandler(
 
       let decodedStrings: ReturnType<typeof collectDecodedRecords> = []
       if (input.include_decoded && input.mode === 'full') {
-        const flossResult = await stringsFlossDecodeHandler({
+        const flossResult = await runHandler(stringsFlossDecodeHandler, {
           sample_id: input.sample_id,
           modes: ['decoded', 'stack', 'tight'],
           force_refresh: input.force_refresh,
@@ -579,6 +590,7 @@ export function createAnalysisContextLinkHandler(
         const apiTargets = extractSuspiciousApiCandidates(bundle, 4)
 
         for (const target of stringTargets) {
+          throwIfAnalysisAborted(abortSignal)
           try {
             const result = await analyzeCrossReferences(input.sample_id, {
               targetType: 'string',
@@ -586,7 +598,9 @@ export function createAnalysisContextLinkHandler(
               depth: input.xref_depth,
               limit: input.max_functions,
               timeout: 30_000,
+              abortSignal,
             })
+            throwIfAnalysisAborted(abortSignal)
             xrefResults.push({
               target_type: 'string',
               query: target,
@@ -594,6 +608,7 @@ export function createAnalysisContextLinkHandler(
               outbound: result.outbound as XrefFunctionNode[],
             })
           } catch (error) {
+            throwIfAnalysisAborted(abortSignal)
             const message = error instanceof Error ? error.message : String(error)
             if (isPrerequisiteError(message)) {
               xrefStatus = 'unavailable'
@@ -606,6 +621,7 @@ export function createAnalysisContextLinkHandler(
 
         if (xrefStatus === 'available') {
           for (const target of apiTargets) {
+            throwIfAnalysisAborted(abortSignal)
             try {
               const result = await analyzeCrossReferences(input.sample_id, {
                 targetType: 'api',
@@ -613,7 +629,9 @@ export function createAnalysisContextLinkHandler(
                 depth: 1,
                 limit: input.max_functions,
                 timeout: 30_000,
+                abortSignal,
               })
+              throwIfAnalysisAborted(abortSignal)
               xrefResults.push({
                 target_type: 'api',
                 query: target,
@@ -621,6 +639,7 @@ export function createAnalysisContextLinkHandler(
                 outbound: result.outbound as XrefFunctionNode[],
               })
             } catch (error) {
+              throwIfAnalysisAborted(abortSignal)
               const message = error instanceof Error ? error.message : String(error)
               if (isPrerequisiteError(message)) {
                 xrefStatus = 'unavailable'
@@ -668,8 +687,9 @@ export function createAnalysisContextLinkHandler(
             'Large-sample context linking retained a bounded inline digest and persisted the remaining function contexts as chunk artifacts.',
           ],
           buildLabel: (index, itemCount) => `context chunk ${index + 1} (${itemCount} functions)`,
-          persistChunk: async ({ index, itemCount, items }) =>
-            persistStringXrefJsonArtifact(
+          persistChunk: async ({ index, itemCount, items }) => {
+            throwIfAnalysisAborted(abortSignal)
+            const chunkArtifact = await persistStringXrefJsonArtifact(
               workspaceManager,
               database,
               input.sample_id,
@@ -685,8 +705,12 @@ export function createAnalysisContextLinkHandler(
                 function_contexts: items,
               },
               input.session_tag
-            ),
+            )
+            throwIfAnalysisAborted(abortSignal)
+            return chunkArtifact
+          },
         })
+        throwIfAnalysisAborted(abortSignal)
         if (chunked.manifest) {
           boundedFunctionContexts = chunked.inline_items
           chunkManifest = chunked.manifest
@@ -699,6 +723,7 @@ export function createAnalysisContextLinkHandler(
 
       let artifact: ArtifactRef | undefined
       if (input.persist_artifact !== false) {
+        throwIfAnalysisAborted(abortSignal)
         artifact = await persistStringXrefJsonArtifact(
           workspaceManager,
           database,
@@ -717,6 +742,7 @@ export function createAnalysisContextLinkHandler(
           },
           input.session_tag
         )
+        throwIfAnalysisAborted(abortSignal)
         artifacts.push(artifact)
       }
 
@@ -763,7 +789,9 @@ export function createAnalysisContextLinkHandler(
         artifact,
       }
 
+      throwIfAnalysisAborted(abortSignal)
       await cacheManager.setCachedResult(cacheKey, outputData, CACHE_TTL_MS, sample.sha256)
+      throwIfAnalysisAborted(abortSignal)
       persistCanonicalEvidence(database, {
         sample,
         evidenceFamily: 'context_link',
@@ -806,6 +834,7 @@ export function createAnalysisContextLinkHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [error instanceof Error ? error.message : String(error)],

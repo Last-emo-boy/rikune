@@ -7,6 +7,7 @@ import type { WorkerResult, ToolDefinition, ToolArgs, ArtifactRef } from '../../
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
 import type { SharedBackendDependencies } from '../../docker-shared.js'
+import { getPythonCommand } from '../../../utils/shared-helpers.js'
 import {
   randomUUID,
   ArtifactRefSchema,
@@ -389,7 +390,7 @@ export function createRizinAnalyzeHandler(
   database: DatabaseManager,
   dependencies?: SharedBackendDependencies
 ) {
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const startTime = Date.now()
     try {
       const input = rizinAnalyzeInputSchema.parse(args)
@@ -445,8 +446,9 @@ export function createRizinAnalyzeHandler(
                 helperPath: resolvePackagePath('workers', 'rizin_preview_worker.py'),
               }),
               timeoutMs: input.timeout_sec * 1000,
+              abortSignal,
               spawnConfig: {
-                command: process.platform === 'win32' ? 'python' : 'python3',
+                command: getPythonCommand(),
                 args: [resolvePackagePath('workers', 'rizin_preview_worker.py')],
               },
             }

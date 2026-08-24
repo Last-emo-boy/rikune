@@ -30,14 +30,20 @@ WINDOWS_USER="${WINDOWS_USER:-Administrator}"
 SSH_KEY="${SSH_KEY:-}"
 HOST_AGENT_PORT="${HOST_AGENT_PORT:-18082}"
 HOST_AGENT_ENDPOINT="${RUNTIME_HOST_AGENT_ENDPOINT:-}"
-HOST_AGENT_API_KEY="${RUNTIME_HOST_AGENT_API_KEY:-}"
-RUNTIME_API_KEY="${RUNTIME_API_KEY:-}"
+HOST_AGENT_API_KEY="${RUNTIME_HOST_AGENT_API_KEY:-${RIKUNE_HOST_AGENT_API_KEY:-${HOST_AGENT_API_KEY:-}}}"
+RUNTIME_API_KEY="${RUNTIME_API_KEY:-${RIKUNE_RUNTIME_NODE_API_KEY:-${HOST_AGENT_RUNTIME_API_KEY:-}}}"
+ANALYZER_API_KEY="${RIKUNE_API_KEY:-${RIKUNE_ANALYZER_API_KEY:-}}"
+export -n HOST_AGENT_API_KEY RUNTIME_API_KEY ANALYZER_API_KEY 2>/dev/null || true
+unset RUNTIME_HOST_AGENT_API_KEY RIKUNE_HOST_AGENT_API_KEY HOST_AGENT_RUNTIME_API_KEY
+unset RIKUNE_RUNTIME_NODE_API_KEY RIKUNE_RUNTIME_API_KEY
+unset RIKUNE_API_KEY RIKUNE_ANALYZER_API_KEY
 SKIP_BUILD=false
 SKIP_START=false
 SKIP_WINDOWS_SETUP=false
 RESET_DATA=false
 FOLLOW=false
 TAIL=100
+ALLOW_INSECURE_RUNTIME_HTTP=false
 
 usage() {
   cat <<EOF
@@ -46,7 +52,7 @@ Usage:
   ./rikune.sh install --profile static
   ./rikune.sh install --profile full
   ./rikune.sh install --profile hybrid --windows-host <host> --windows-user <user>
-  ./rikune.sh install --profile hybrid --host-agent-endpoint http://<windows-host>:18082 --host-agent-api-key <key>
+  ./rikune.sh install --profile hybrid --host-agent-endpoint https://<trusted-runtime-endpoint>
   ./rikune.sh start|stop|restart|status|logs|health|doctor|generate [--profile static|hybrid|full]
 
 Options:
@@ -56,9 +62,9 @@ Options:
   -u, --windows-user USER         Remote Windows SSH user (default: Administrator)
   -k, --ssh-key PATH              SSH private key path for remote Windows bootstrap
   -e, --host-agent-endpoint URL   Existing Windows Host Agent endpoint
-  -a, --host-agent-api-key KEY    Existing Windows Host Agent API key
-  -r, --runtime-api-key KEY       Runtime Node API key, defaults to Host Agent key
       --host-agent-port PORT      Windows Host Agent port (default: 18082)
+      --allow-insecure-runtime-http
+                                      Allow remote plaintext HTTP only on an isolated trusted network
       --skip-build                Skip Docker image build
       --skip-start                Skip Compose start
       --skip-windows-setup        For remote hybrid, do not install Windows runtime
@@ -66,6 +72,11 @@ Options:
   -f, --follow                    Follow logs
       --tail N                    Log tail count (default: 100)
   -h, --help                      Show this help
+
+Credentials:
+  Provide distinct RUNTIME_HOST_AGENT_API_KEY and RUNTIME_API_KEY through a
+  protected process environment or an interactive hidden prompt. Secrets are
+  not accepted as command-line arguments.
 EOF
 }
 
@@ -77,9 +88,8 @@ while [ "$#" -gt 0 ]; do
     -u|--windows-user) WINDOWS_USER="$2"; shift 2 ;;
     -k|--ssh-key) SSH_KEY="$2"; shift 2 ;;
     -e|--host-agent-endpoint) HOST_AGENT_ENDPOINT="$2"; shift 2 ;;
-    -a|--host-agent-api-key) HOST_AGENT_API_KEY="$2"; shift 2 ;;
-    -r|--runtime-api-key) RUNTIME_API_KEY="$2"; shift 2 ;;
     --host-agent-port) HOST_AGENT_PORT="$2"; shift 2 ;;
+    --allow-insecure-runtime-http) ALLOW_INSECURE_RUNTIME_HTTP=true; shift ;;
     --skip-build) SKIP_BUILD=true; shift ;;
     --skip-start) SKIP_START=true; shift ;;
     --skip-windows-setup) SKIP_WINDOWS_SETUP=true; shift ;;
@@ -96,6 +106,43 @@ validate_profile() {
     static|hybrid|full) ;;
     *) err "Unknown profile: $1"; exit 1 ;;
   esac
+}
+
+assert_secure_runtime_endpoint() {
+  local endpoint="$1"
+  local authority="${endpoint#*://}"
+  authority="${authority%%/*}"
+  authority="${authority%%\?*}"
+  authority="${authority%%\#*}"
+  if [ -z "$authority" ] || [[ "$authority" == *"@"* ]] || [[ "$endpoint" =~ [[:space:]] ]]; then
+    err "Host Agent endpoint must contain a valid authority and no URL credentials"
+    exit 1
+  fi
+  if [[ "$endpoint" =~ ^https:// ]]; then
+    return 0
+  fi
+  if [[ "$endpoint" =~ ^http://(localhost|127\.0\.0\.1|host\.docker\.internal|\[::1\])(:[0-9]+)?(/|$) ]]; then
+    return 0
+  fi
+  if [[ "$endpoint" =~ ^http:// ]] && [ "$ALLOW_INSECURE_RUNTIME_HTTP" = true ]; then
+    warn "Remote runtime HTTP was explicitly enabled. Restrict it to an isolated trusted network or VPN."
+    return 0
+  fi
+  if [[ "$endpoint" =~ ^http:// ]]; then
+    err "Remote Host Agent endpoints must use HTTPS. Use --allow-insecure-runtime-http only for an isolated trusted network."
+  else
+    err "Host Agent endpoint must use http:// or https://"
+  fi
+  exit 1
+}
+
+assert_runtime_api_key() {
+  local name="$1"
+  local value="$2"
+  if ! printf '%s' "$value" | LC_ALL=C grep -Eq '^[!-~]{32,}$'; then
+    err "$name must contain at least 32 printable non-space ASCII characters"
+    exit 1
+  fi
 }
 
 compose_file() {
@@ -146,11 +193,13 @@ has_compose() {
 run_compose() {
   local profile="$1"
   shift
-  local file="$PROJECT_ROOT/$(compose_file "$profile")"
+  local file
+  file="$PROJECT_ROOT/$(compose_file "$profile")"
   local args=()
 
   [ -f "$file" ] || { err "Compose file not found: $file"; exit 1; }
-  if [ -f "$PROJECT_ROOT/.docker-runtime.env" ]; then
+  if [ -e "$PROJECT_ROOT/.docker-runtime.env" ] || [ -L "$PROJECT_ROOT/.docker-runtime.env" ]; then
+    verify_private_env_file "$PROJECT_ROOT/.docker-runtime.env"
     args+=(--env-file "$PROJECT_ROOT/.docker-runtime.env")
   else
     warn ".docker-runtime.env not found. Compose defaults will be used."
@@ -165,6 +214,40 @@ run_compose() {
     err "Docker Compose not found"
     exit 1
   fi
+}
+
+verify_private_env_file() {
+  local target="$1"
+  RIKUNE_VERIFY_PRIVATE_ENV_PATH="$target" \
+    node "$PROJECT_ROOT/scripts/write-docker-runtime-env.mjs"
+}
+
+remove_existing_env_file() {
+  local target="$PROJECT_ROOT/.docker-runtime.env"
+  RIKUNE_REMOVE_PRIVATE_ENV_PATH="$target" \
+    node "$PROJECT_ROOT/scripts/write-docker-runtime-env.mjs"
+  info "Any prior protected Compose env was removed before dependency lifecycle commands; credentials will be rotated after build."
+}
+
+assert_secret_environment_cleared() {
+  local name declaration
+  for name in \
+    RIKUNE_API_KEY RIKUNE_ANALYZER_API_KEY RUNTIME_HOST_AGENT_API_KEY \
+    HOST_AGENT_API_KEY HOST_AGENT_RUNTIME_API_KEY RUNTIME_API_KEY \
+    RIKUNE_HOST_AGENT_API_KEY RIKUNE_RUNTIME_API_KEY RIKUNE_RUNTIME_NODE_API_KEY; do
+    declaration="$(declare -p "$name" 2>/dev/null || true)"
+    if [[ "$declaration" == "declare -x"* ]]; then
+      err "Secret environment alias must be cleared before dependency or build commands: $name"
+      exit 1
+    fi
+  done
+}
+
+provision_analyzer_api_key() {
+  if [ -z "$ANALYZER_API_KEY" ]; then
+    ANALYZER_API_KEY="$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")"
+  fi
+  assert_runtime_api_key "Analyzer API key" "$ANALYZER_API_KEY"
 }
 
 env_value() {
@@ -211,6 +294,7 @@ check_prereqs() {
 
 write_env_file() {
   local profile="$1"
+  local env_file="$PROJECT_ROOT/.docker-runtime.env"
   reset_data_root
   mkdir -p \
     "$DATA_ROOT/samples" \
@@ -225,21 +309,20 @@ write_env_file() {
     "$DATA_ROOT/config"
   prepare_linux_data_root_permissions
 
-  cat > "$PROJECT_ROOT/.docker-runtime.env" <<EOF
-# Rikune Docker runtime environment - generated by rikune.sh
-RIKUNE_DATA_ROOT=$DATA_ROOT
-RIKUNE_BUILD_HTTP_PROXY=${RIKUNE_BUILD_HTTP_PROXY:-}
-RIKUNE_BUILD_HTTPS_PROXY=${RIKUNE_BUILD_HTTPS_PROXY:-}
-RIKUNE_BUILD_NO_PROXY=localhost,127.0.0.1,deb.debian.org,security.debian.org,mirrors.aliyun.com,archive.ubuntu.com,security.ubuntu.com,aliyuncs.com
-EOF
+  RIKUNE_DOCKER_ENV_PATH="$env_file" \
+  RIKUNE_DOCKER_ENV_DATA_ROOT="$DATA_ROOT" \
+  RIKUNE_DOCKER_ENV_PROFILE="$profile" \
+  RIKUNE_BUILD_HTTP_PROXY="${RIKUNE_BUILD_HTTP_PROXY:-}" \
+  RIKUNE_BUILD_HTTPS_PROXY="${RIKUNE_BUILD_HTTPS_PROXY:-}" \
+  RIKUNE_BUILD_NO_PROXY="localhost,127.0.0.1,deb.debian.org,security.debian.org,mirrors.aliyun.com,archive.ubuntu.com,security.ubuntu.com,aliyuncs.com" \
+  RIKUNE_API_KEY="$ANALYZER_API_KEY" \
+  RUNTIME_HOST_AGENT_ENDPOINT="$HOST_AGENT_ENDPOINT" \
+  RUNTIME_HOST_AGENT_API_KEY="$HOST_AGENT_API_KEY" \
+  RUNTIME_API_KEY="$RUNTIME_API_KEY" \
+  RIKUNE_ALLOW_INSECURE_RUNTIME_HTTP="$ALLOW_INSECURE_RUNTIME_HTTP" \
+    node "$PROJECT_ROOT/scripts/write-docker-runtime-env.mjs"
 
-  if [ "$profile" = "hybrid" ]; then
-    {
-      printf "RUNTIME_HOST_AGENT_ENDPOINT=%s\n" "$HOST_AGENT_ENDPOINT"
-      printf "RUNTIME_HOST_AGENT_API_KEY=%s\n" "$HOST_AGENT_API_KEY"
-      printf "RUNTIME_API_KEY=%s\n" "${RUNTIME_API_KEY:-$HOST_AGENT_API_KEY}"
-    } >> "$PROJECT_ROOT/.docker-runtime.env"
-  fi
+  chmod 600 "$env_file"
 
   ok "Wrote .docker-runtime.env"
 }
@@ -295,8 +378,14 @@ generate_profile() {
 
 build_project() {
   step "Building project"
-  (cd "$PROJECT_ROOT" && npm install && npm run build)
+  (cd "$PROJECT_ROOT" && npm ci --include=dev && npm run build)
   ok "Project build completed"
+}
+
+verify_hybrid_runtime() {
+  step "Verifying Hybrid runtime lifecycle from the analyzer container"
+  docker exec rikune-analyzer node /app/scripts/verify-hybrid-runtime.mjs
+  ok "Hybrid Host Agent and Runtime Node lifecycle verified"
 }
 
 install_remote_hybrid() {
@@ -307,12 +396,14 @@ install_remote_hybrid() {
   local args=(-w "$WINDOWS_HOST" -u "$WINDOWS_USER" -d "$DATA_ROOT" -p "$HOST_AGENT_PORT")
   [ -n "$SSH_KEY" ] && args+=(-k "$SSH_KEY")
   [ -n "$HOST_AGENT_ENDPOINT" ] && args+=(-e "$HOST_AGENT_ENDPOINT")
-  [ -n "$HOST_AGENT_API_KEY" ] && args+=(-a "$HOST_AGENT_API_KEY")
-  [ -n "$RUNTIME_API_KEY" ] && args+=(-r "$RUNTIME_API_KEY")
   [ "$SKIP_WINDOWS_SETUP" = true ] && args+=(-s)
+  [ "$ALLOW_INSECURE_RUNTIME_HTTP" = true ] && args+=(-i)
 
   step "Delegating hybrid install to deploy-hybrid.sh"
-  "$PROJECT_ROOT/deploy-hybrid.sh" "${args[@]}"
+  RUNTIME_HOST_AGENT_API_KEY="$HOST_AGENT_API_KEY" \
+  RUNTIME_API_KEY="$RUNTIME_API_KEY" \
+  RIKUNE_API_KEY="$ANALYZER_API_KEY" \
+    "$PROJECT_ROOT/deploy-hybrid.sh" "${args[@]}"
 }
 
 install_stack() {
@@ -334,21 +425,33 @@ install_stack() {
       HOST_AGENT_ENDPOINT="$(prompt_default "Windows Host Agent endpoint" "http://<windows-host>:18082")"
     fi
     if [ -z "$HOST_AGENT_API_KEY" ] && [ -t 0 ]; then
-      read -r -p "Windows Host Agent API key: " HOST_AGENT_API_KEY
+      read -r -s -p "Windows Host Agent API key: " HOST_AGENT_API_KEY
+      printf '\n'
     fi
-    if [ -z "$RUNTIME_API_KEY" ]; then
-      RUNTIME_API_KEY="$HOST_AGENT_API_KEY"
+    if [ -z "$RUNTIME_API_KEY" ] && [ -t 0 ]; then
+      read -r -s -p "Distinct Runtime Node API key: " RUNTIME_API_KEY
+      printf '\n'
     fi
-    if [ -z "$HOST_AGENT_ENDPOINT" ] || [ -z "$HOST_AGENT_API_KEY" ]; then
-      err "Hybrid install needs --windows-host for SSH bootstrap, or --host-agent-endpoint and --host-agent-api-key for an existing Host Agent."
+    if [ -z "$HOST_AGENT_ENDPOINT" ] || [ -z "$HOST_AGENT_API_KEY" ] || [ -z "$RUNTIME_API_KEY" ]; then
+      err "Hybrid install needs --windows-host for SSH bootstrap, or an existing endpoint plus distinct RUNTIME_HOST_AGENT_API_KEY and RUNTIME_API_KEY values from a protected environment."
       exit 1
     fi
+    assert_runtime_api_key "Host Agent API key" "$HOST_AGENT_API_KEY"
+    assert_runtime_api_key "Runtime Node API key" "$RUNTIME_API_KEY"
+    if [ "$HOST_AGENT_API_KEY" = "$RUNTIME_API_KEY" ]; then
+      err "Host Agent and Runtime Node API keys must be distinct"
+      exit 1
+    fi
+    assert_secure_runtime_endpoint "$HOST_AGENT_ENDPOINT"
   fi
 
   check_prereqs
-  write_env_file "$profile"
+  remove_existing_env_file
+  assert_secret_environment_cleared
   build_project
   generate_profile "$profile"
+  provision_analyzer_api_key
+  write_env_file "$profile"
 
   local service
   service="$(service_name "$profile")"
@@ -368,6 +471,7 @@ install_stack() {
     run_compose "$profile" up -d "$service"
     ok "Service started: $service"
     show_health "$profile"
+    [ "$profile" = "hybrid" ] && verify_hybrid_runtime
   fi
 }
 
@@ -429,6 +533,9 @@ check_analyzer_health() {
 }
 
 check_runtime_health() {
+  if [ -e "$PROJECT_ROOT/.docker-runtime.env" ] || [ -L "$PROJECT_ROOT/.docker-runtime.env" ]; then
+    verify_private_env_file "$PROJECT_ROOT/.docker-runtime.env"
+  fi
   local endpoint="${HOST_AGENT_ENDPOINT:-$(env_value RUNTIME_HOST_AGENT_ENDPOINT)}"
   local key="${HOST_AGENT_API_KEY:-$(env_value RUNTIME_HOST_AGENT_API_KEY)}"
 
@@ -438,7 +545,7 @@ check_runtime_health() {
   fi
 
   local url="${endpoint%/}/sandbox/health"
-  if command -v curl >/dev/null 2>&1 && curl -fsS -H "Authorization: Bearer $key" "$url" >/dev/null 2>&1; then
+  if command -v curl >/dev/null 2>&1 && printf 'Authorization: Bearer %s\n' "$key" | curl -fsS --header @- "$url" >/dev/null 2>&1; then
     ok "Windows Host Agent healthy: $url"
   else
     warn "Windows Host Agent health check failed: $url"
@@ -493,7 +600,8 @@ show_doctor() {
     check_runtime_health
   fi
 
-  local file="$PROJECT_ROOT/$(compose_file "$profile")"
+  local file
+  file="$PROJECT_ROOT/$(compose_file "$profile")"
   if [ -f "$file" ] && has_compose; then
     if run_compose "$profile" config --quiet >/dev/null 2>&1; then
       ok "Compose config is valid for profile '$profile'"
@@ -517,7 +625,7 @@ runtime_stop() {
 
   header "Stop remote Windows Host Agent"
   ssh "${ssh_args[@]}" "${WINDOWS_USER}@${WINDOWS_HOST}" \
-    "powershell -NoProfile -Command \"if (Get-Command pm2 -ErrorAction SilentlyContinue) { pm2 stop rikune-host-agent; pm2 delete rikune-host-agent }; Get-CimInstance Win32_Process -Filter 'Name = ''node.exe''' | Where-Object { \$_.CommandLine -match 'windows-host-agent' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }\""
+    "pwsh -NoProfile -NonInteractive -Command \"\$pm2='C:/rikune/node_modules/.bin/pm2.cmd'; if (Test-Path -LiteralPath \$pm2) { & \$pm2 stop rikune-host-agent; & \$pm2 delete rikune-host-agent }; Get-CimInstance Win32_Process -Filter 'Name = ''node.exe''' | Where-Object { \$_.CommandLine -match 'windows-host-agent' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }\""
   ok "Remote Host Agent stop attempted"
 }
 
@@ -547,14 +655,24 @@ show_menu() {
       read -r -p "Windows host: " WINDOWS_HOST
       WINDOWS_USER="$(prompt_default "Windows SSH user" "$WINDOWS_USER")"
       SSH_KEY="$(prompt_default "SSH private key path (empty for ssh default)" "$SSH_KEY")"
+      HOST_AGENT_ENDPOINT="$(prompt_default "Windows Host Agent endpoint" "https://$WINDOWS_HOST")"
+      if [[ "$HOST_AGENT_ENDPOINT" =~ ^http:// ]] && ! [[ "$HOST_AGENT_ENDPOINT" =~ ^http://(localhost|127\.0\.0\.1|host\.docker\.internal|\[::1\])(:[0-9]+)?(/|$) ]]; then
+        read -r -p "Allow plaintext runtime HTTP only on an isolated trusted network? [y/N]: " allow_http
+        case "$allow_http" in
+          y|Y|yes|YES) ALLOW_INSECURE_RUNTIME_HTTP=true ;;
+          *) err "Remote Hybrid installation cancelled because HTTPS was not configured."; return ;;
+        esac
+      fi
       install_stack "$PROFILE"
       ;;
     3)
       PROFILE="hybrid"
       DATA_ROOT="$(prompt_default "Data root" "$DATA_ROOT")"
-      HOST_AGENT_ENDPOINT="$(prompt_default "Windows Host Agent endpoint" "http://<windows-host>:18082")"
-      read -r -p "Windows Host Agent API key: " HOST_AGENT_API_KEY
-      RUNTIME_API_KEY="${RUNTIME_API_KEY:-$HOST_AGENT_API_KEY}"
+      HOST_AGENT_ENDPOINT="$(prompt_default "Windows Host Agent endpoint" "https://<trusted-runtime-endpoint>")"
+      read -r -s -p "Windows Host Agent API key: " HOST_AGENT_API_KEY
+      printf '\n'
+      read -r -s -p "Distinct Runtime Node API key: " RUNTIME_API_KEY
+      printf '\n'
       install_stack "$PROFILE"
       ;;
     4)

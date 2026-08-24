@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 /**
  * Unit tests for report.html.generate tool
  */
@@ -229,7 +230,7 @@ describe('report.html.generate tool', () => {
 
   function seedSampleWithEvidence() {
     const now = new Date().toISOString()
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: sampleHash,
       md5: '2'.repeat(32),

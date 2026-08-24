@@ -55,7 +55,7 @@ const ghidraPlugin: Plugin = {
         GHIDRA_PROJECT_ROOT: '/ghidra-projects',
         GHIDRA_LOG_ROOT: '/ghidra-logs',
       },
-      buildArgs: { GHIDRA_VERSION: '12.0.4' },
+      buildArgs: { GHIDRA_VERSION: '12.1.3' },
       directories: [
         { path: '/ghidra-projects', chown: 'appuser:appuser' },
         { path: '/ghidra-logs', chown: 'appuser:appuser' },

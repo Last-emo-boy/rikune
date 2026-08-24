@@ -151,4 +151,78 @@ describe('breakpoint.smart tool', () => {
     expect(data.runtime_readiness.ready).toBe(false)
     expect(data.runtime_readiness.status).toBe('setup_required')
   })
+
+  test('forwards cancellation into nested dependency handlers and waits for teardown', async () => {
+    mockDatabase.findSample.mockReturnValue({
+      id: 'sha256:test',
+      sha256: 'a'.repeat(64),
+      md5: 'b'.repeat(32),
+      size: 4096,
+      file_type: 'PE32+',
+      created_at: new Date().toISOString(),
+      source: 'test',
+    } as any)
+    let resolveStarted!: (signal: AbortSignal) => void
+    const started = new Promise<AbortSignal>((resolve) => {
+      resolveStarted = resolve
+    })
+    let resolveTeardown!: () => void
+    const teardown = new Promise<void>((resolve) => {
+      resolveTeardown = resolve
+    })
+    const cryptoIdentify = jest.fn(async () => ({
+      ok: true,
+      data: {
+        algorithms: [
+          {
+            algorithm_family: 'windows_cryptoapi',
+            algorithm_name: 'Windows CryptoAPI',
+            confidence: 0.8,
+            source_apis: ['CryptEncrypt'],
+            evidence: [],
+            candidate_constants: [],
+          },
+        ],
+      },
+    }))
+    const dynamicDependencies = jest.fn(async (_args, signal?: AbortSignal) => {
+      if (!signal) throw new Error('missing AbortSignal')
+      resolveStarted(signal)
+      await new Promise<void>((resolve) => {
+        signal.addEventListener('abort', () => resolve(), { once: true })
+      })
+      await teardown
+      return { ok: true, data: { components: {} } }
+    })
+    const handler = createBreakpointSmartHandler(
+      mockWorkspaceManager,
+      mockDatabase,
+      mockCacheManager,
+      { cryptoIdentify, dynamicDependencies }
+    )
+    const controller = new AbortController()
+    let settled = false
+    const running = handler(
+      {
+        sample_id: 'sha256:test',
+        persist_artifact: false,
+        reuse_cached: false,
+        include_runtime_evidence: false,
+      },
+      controller.signal
+    ).finally(() => {
+      settled = true
+    })
+
+    const receivedSignal = await started
+    controller.abort(new Error('cancel breakpoint planning'))
+    await Promise.resolve()
+
+    expect(receivedSignal).toBe(controller.signal)
+    expect(cryptoIdentify.mock.calls[0]?.[1]).toBe(controller.signal)
+    expect(settled).toBe(false)
+
+    resolveTeardown()
+    await expect(running).rejects.toMatchObject({ name: 'AbortError' })
+  })
 })

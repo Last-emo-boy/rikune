@@ -9,6 +9,7 @@ import type { DatabaseManager } from '../../../database.js'
 import { persistStaticAnalysisJsonArtifact } from '../../../artifacts/static-analysis-artifacts.js'
 import { spawn } from 'child_process'
 import path from 'path'
+import { fileURLToPath } from 'url'
 
 const TOOL_NAME = 'smt.solve'
 
@@ -45,12 +46,14 @@ export const smtSolveToolDefinition: ToolDefinition = {
   outputSchema: smtSolveOutputSchema,
 }
 
+export function resolveSmtWorkerPath(): string {
+  const moduleDirectory = import.meta.dirname ?? path.dirname(fileURLToPath(import.meta.url))
+  return path.resolve(moduleDirectory, '../workers/constraint_solver_worker.py')
+}
+
 function invokeWorker(request: Record<string, unknown>): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
-    const workerPath = path.resolve(
-      import.meta.dirname ?? '.',
-      '../../workers/constraint_solver_worker.py'
-    )
+    const workerPath = resolveSmtWorkerPath()
 
     const proc = spawn('python', [workerPath], {
       stdio: ['pipe', 'pipe', 'pipe'],

@@ -59,7 +59,7 @@ check_optional_command() {
 
     if command -v "$command_name" >/dev/null 2>&1; then
         local version_output
-        version_output=$("$command_name" $version_args 2>&1 | head -n 1 || true)
+        version_output=$("$command_name" "$version_args" 2>&1 | head -n 1 || true)
         if [ -n "$version_output" ]; then
             log_info "$label available: $version_output"
         else
@@ -82,33 +82,67 @@ require_ghidra() {
     plugin_enabled "ghidra"
 }
 
-# Check if a directory exists, create if not
+validate_static_image_contract() {
+    if ! node --input-type=module --eval '
+        const { assertStaticImageStartupContract } = await import("file:///app/dist/core/static-profile-lock.js");
+        assertStaticImageStartupContract();
+    '; then
+        log_error "Static image identity or lock validation failed"
+        exit 1
+    fi
+}
+
+# Check that a runtime directory is real and writable by the image user. The
+# static image never changes ownership at startup: bind/named volumes must be
+# provisioned for uid/gid 1000 by the operator.
 ensure_dir() {
     local dir_path=$1
-    local owner=${2:-appuser}
-    
+
+    if [ -L "$dir_path" ]; then
+        log_error "Runtime directory must not be a symlink: $dir_path"
+        return 1
+    fi
+
     if [ ! -d "$dir_path" ]; then
         log_info "Creating directory: $dir_path"
         if ! mkdir -p "$dir_path"; then
-            log_warn "Could not create directory: $dir_path"
+            log_error "Could not create runtime directory: $dir_path"
             return 1
         fi
     fi
 
-    if is_root; then
-        if ! chown "$owner:$owner" "$dir_path" 2>/dev/null; then
-            log_warn "Could not chown $dir_path"
-        fi
+    if [ ! -x "$dir_path" ]; then
+        log_error "Runtime directory is not writable by uid $RUNNING_UID: $dir_path"
+        return 1
+    fi
+
+    # `test -w` can report a mode-bit answer that does not reflect a read-only
+    # container mount. Prove actual create+unlink capability instead.
+    local write_probe="$dir_path/.rikune-write-probe.$$"
+    if ! (set -C; : > "$write_probe") 2>/dev/null; then
+        log_error "Runtime directory failed its real write probe: $dir_path"
+        return 1
+    fi
+    if ! rm -f -- "$write_probe"; then
+        log_error "Runtime directory failed its write-probe cleanup: $dir_path"
+        return 1
     fi
 }
 
 ensure_optional_dir() {
     local dir_path=$1
-    local owner=${2:-appuser}
-
-    if ! ensure_dir "$dir_path" "$owner"; then
+    if ! ensure_dir "$dir_path"; then
         log_warn "Could not create optional directory: $dir_path"
         return 0
+    fi
+}
+
+require_readonly_input_dir() {
+    local dir_path=$1
+
+    if [ -L "$dir_path" ] || [ ! -d "$dir_path" ] || [ ! -r "$dir_path" ] || [ ! -x "$dir_path" ]; then
+        log_error "Input directory must be a readable, non-symlink directory: $dir_path"
+        return 1
     fi
 }
 
@@ -117,6 +151,11 @@ ensure_optional_dir() {
 # =============================================================================
 
 log_info "=== Validating Environment Variables ==="
+
+# A baked static marker cannot be disabled with `docker run -e`. Validate the
+# exact lock, plugin list, stage allowlist, and disabled runtime before doing
+# any mutable filesystem initialization or forwarding an alternate command.
+validate_static_image_contract
 
 check_env WORKSPACE_ROOT
 check_env DB_PATH
@@ -243,57 +282,46 @@ fi
 log_info "=== Creating Runtime Directories ==="
 
 # Create directories (will be mounted as volumes or created if not mounted)
-ensure_dir "$WORKSPACE_ROOT" "appuser"
-ensure_dir "$(dirname $DB_PATH)" "appuser"
-ensure_dir "$CACHE_ROOT" "appuser"
+ensure_dir "$WORKSPACE_ROOT"
+ensure_dir "$(dirname "$DB_PATH")"
+ensure_dir "$CACHE_ROOT"
 if [ -n "$HOME" ]; then
-    ensure_dir "$HOME" "appuser"
-    ensure_dir "$HOME/.rikune" "appuser"
-    ensure_dir "$HOME/.cache" "appuser"
+    ensure_dir "$HOME"
+    ensure_dir "$HOME/.rikune"
+    ensure_dir "$HOME/.cache"
 fi
-ensure_dir "/app/logs" "appuser"
+ensure_dir "/app/logs"
 if [ -n "$XDG_CONFIG_HOME" ]; then
-    ensure_dir "$XDG_CONFIG_HOME" "appuser"
+    ensure_dir "$XDG_CONFIG_HOME"
 fi
 if [ -n "$XDG_CACHE_HOME" ]; then
-    ensure_dir "$XDG_CACHE_HOME" "appuser"
+    ensure_dir "$XDG_CACHE_HOME"
 fi
-ensure_dir "/ghidra-projects" "appuser"
-ensure_dir "/ghidra-logs" "appuser"
-ensure_dir "/samples" "appuser"
+ensure_dir "/ghidra-projects"
+ensure_dir "/ghidra-logs"
+require_readonly_input_dir "/samples"
 if [ -n "${QILING_ROOTFS:-}" ]; then
-    ensure_optional_dir "$QILING_ROOTFS" "appuser"
+    ensure_optional_dir "$QILING_ROOTFS"
 else
     log_warn "QILING_ROOTFS is not set; skipping Qiling rootfs directory creation"
 fi
-ensure_dir "/tmp" "appuser"
+ensure_dir "/tmp"
 
 # Ensure database directory exists
 DB_DIR=$(dirname "$DB_PATH")
 if [ ! -d "$DB_DIR" ]; then
     log_info "Creating database directory: $DB_DIR"
     mkdir -p "$DB_DIR"
-    if is_root; then
-        chown appuser:appuser "$DB_DIR" 2>/dev/null || log_warn "Could not chown $DB_DIR"
-    fi
 fi
 
 # =============================================================================
 # Step 4: Set Permissions
 # =============================================================================
 
-log_info "=== Setting Permissions ==="
-
-if is_root; then
-    # Ensure appuser owns all application directories
-    chown -R appuser:appuser /app 2>/dev/null || log_warn "Could not chown /app"
-    chown -R appuser:appuser /ghidra-projects 2>/dev/null || log_warn "Could not chown /ghidra-projects"
-    chown -R appuser:appuser /ghidra-logs 2>/dev/null || log_warn "Could not chown /ghidra-logs"
-
-    # Set proper permissions on tmp
-    chmod 1777 /tmp 2>/dev/null || log_warn "Could not chmod /tmp"
-else
-    log_info "Skipping root-only permission adjustments for non-root container user"
+log_info "=== Verifying Runtime Identity ==="
+if [ -f /app/.rikune-static-profile ] && [ "$RUNNING_UID" = "0" ]; then
+    log_error "The static runtime must not start as root"
+    exit 1
 fi
 
 # =============================================================================
@@ -312,7 +340,7 @@ fi
 # Check if workers/static_worker.py exists and is valid
 if [ -f "/app/workers/static_worker.py" ]; then
     log_info "Validating Python worker syntax..."
-    if python3 -m py_compile /app/workers/static_worker.py 2>/dev/null; then
+    if PYTHONPYCACHEPREFIX=/tmp/rikune-pycache python3 -m py_compile /app/workers/static_worker.py 2>/dev/null; then
         log_info "Python worker syntax OK"
     else
         log_warn "Python worker syntax check failed, but continuing..."

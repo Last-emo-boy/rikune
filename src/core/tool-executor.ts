@@ -15,6 +15,11 @@ import {
 } from './tool-name-normalization.js'
 import { getToolSurfaceManager } from './tool-surface-manager.js'
 import type { MCPRegistry } from './mcp-registry.js'
+import type {
+  SampleOperationGate,
+  SharedSampleOperationLease,
+} from '../sample/sample-operation-gate.js'
+import { assertStaticToolAllowed, isStaticDockerProfile } from './static-profile-lock.js'
 
 export interface PluginRuntimeLike {
   fireHook(
@@ -30,6 +35,7 @@ export interface ExecuteToolOptions {
   pluginRuntime?: PluginRuntimeLike
   logger: pino.Logger
   signal?: AbortSignal
+  sampleOperationGate?: SampleOperationGate
 }
 
 /**
@@ -55,10 +61,39 @@ export class ToolExecutor {
   ): Promise<CallToolResult> {
     const { registry, pluginRuntime } = options
     const startTime = Date.now()
+    let sampleLease: SharedSampleOperationLease | null = null
+    let sampleLeaseHeartbeat: NodeJS.Timeout | null = null
     this.logger.info({ tool: name, args }, 'Calling tool')
 
+    // Static contract rejection is deliberately outside the plugin hook
+    // lifecycle. Even a malicious error hook cannot turn a denied alias/direct
+    // invocation into registry, filesystem, or database side effects.
+    const admissionName = registry.resolveToolName(name)
+    const admissionDefinition = admissionName
+      ? registry.getToolDefinitionByTransportName(admissionName)
+      : undefined
+    if (admissionDefinition && isStaticDockerProfile()) {
+      try {
+        assertStaticToolAllowed(admissionDefinition.canonicalName || admissionDefinition.name)
+      } catch (error) {
+        this.logger.warn({ tool: name, error }, 'Static tool admission rejected')
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                ok: false,
+                errors: [error instanceof Error ? error.message : String(error)],
+              }),
+            },
+          ],
+          isError: true,
+        }
+      }
+    }
+
     try {
-      const resolvedName = registry.resolveToolName(name)
+      const resolvedName = admissionName
 
       // Check if tool exists
       const definition = resolvedName
@@ -68,7 +103,6 @@ export class ToolExecutor {
         throw new McpError(ErrorCode.MethodNotFound, `Tool not found: ${name}`)
       }
       const canonicalName = definition.canonicalName || definition.name
-
       const surface = getToolSurfaceManager()
       if (surface.isEnabled()) {
         const visibleToolNames = surface.getVisibleToolNames()
@@ -83,6 +117,33 @@ export class ToolExecutor {
 
       // Validate input arguments
       const validatedArgs = this.validateArgs(definition.inputSchema, args)
+
+      if (options.sampleOperationGate) {
+        if (!definition.sampleReferences) {
+          throw new Error(`Tool lacks a sample-reference contract: ${canonicalName}`)
+        }
+        const referencedSamples = options.sampleOperationGate.resolveSampleReferences(
+          validatedArgs as Record<string, unknown>,
+          definition.sampleReferences
+        )
+        if (referencedSamples.size > 0 && definition.sampleLeaseMode !== 'exclusive-managed') {
+          sampleLease = options.sampleOperationGate.acquireShared(referencedSamples)
+          const intervalMs = Math.max(
+            100,
+            Math.floor(options.sampleOperationGate.sharedLeaseTtlMs / 3)
+          )
+          sampleLeaseHeartbeat = setInterval(() => {
+            try {
+              sampleLease?.heartbeat()
+            } catch {
+              // The synchronous commit/result boundary assertion below reports
+              // the ownership failure and prevents a successful response.
+            }
+          }, intervalMs)
+          sampleLeaseHeartbeat.unref()
+          sampleLease.assertOwned()
+        }
+      }
 
       // Get handler
       const handler = registry.getHandler(resolvedName)
@@ -107,6 +168,7 @@ export class ToolExecutor {
 
       // Execute handler
       const result = await handler(validatedArgs)
+      sampleLease?.assertOwned()
 
       const elapsed = Date.now() - startTime
 
@@ -189,6 +251,9 @@ export class ToolExecutor {
         ],
         isError: true,
       }
+    } finally {
+      if (sampleLeaseHeartbeat) clearInterval(sampleLeaseHeartbeat)
+      sampleLease?.release()
     }
   }
 

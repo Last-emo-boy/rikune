@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals'
 import { createHash } from 'crypto'
 import fs from 'fs'
@@ -38,7 +39,7 @@ describe('analysis.evidence.graph tool', () => {
     tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rikune-evidence-graph-'))
     workspaceManager = new WorkspaceManager(path.join(tempRoot, 'workspaces'))
     database = new DatabaseManager(path.join(tempRoot, 'rikune.db'))
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: SAMPLE_ID,
       sha256: SAMPLE_HASH,
       md5: '4'.repeat(32),

@@ -126,6 +126,13 @@ export function getPythonCommand(
   overridePath?: string
 ): string {
   if (overridePath) return overridePath
+  if (process.env.RIKUNE_DOCKER_PROFILE === 'static') {
+    const lockedPython = process.env.PYTHON_PATH
+    if (!lockedPython?.startsWith('/')) {
+      throw new Error('E_STATIC_PROFILE_CONTRACT: PYTHON_PATH must be a locked absolute path')
+    }
+    return lockedPython
+  }
   if (platform === 'win32') {
     // Prefer Windows Python Launcher if available; fallback to bare 'python'
     return 'python'

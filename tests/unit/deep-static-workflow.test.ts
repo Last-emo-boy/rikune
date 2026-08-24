@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
 import fs from 'fs'
 import path from 'path'
@@ -84,7 +85,7 @@ describe('workflow.deep_static tool', () => {
 
   test('should enqueue deep static workflow as async job when queue is provided', async () => {
     const sampleId = 'sha256:' + 'b'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'b'.repeat(64),
       md5: 'c'.repeat(32),

@@ -145,6 +145,19 @@ class StaticWorker:
             signal.signal(signal.SIGTERM, self._handle_shutdown_signal)
             signal.signal(signal.SIGINT, self._handle_shutdown_signal)
 
+    @staticmethod
+    def _static_profile_enabled() -> bool:
+        return os.environ.get("RIKUNE_DOCKER_PROFILE", "").strip().lower() == "static"
+
+    @classmethod
+    def _locked_static_executable(cls, environment_name: str) -> str:
+        candidate = os.environ.get(environment_name, "").strip()
+        if not candidate or not os.path.isabs(candidate):
+            raise RuntimeError(
+                f"E_STATIC_PROFILE_CONTRACT: {environment_name} must be a locked absolute path"
+            )
+        return candidate
+
     def _handle_shutdown_signal(self, signum, _frame):
         self._cleanup_active_children()
         raise SystemExit(128 + int(signum))
@@ -408,16 +421,21 @@ class StaticWorker:
 
         candidates: List[List[str]] = []
 
-        flare_floss = shutil.which("flare-floss")
-        if flare_floss:
-            candidates.append([flare_floss])
+        if self._static_profile_enabled():
+            # The static image startup gate already validated this exact path and
+            # version. Never re-resolve through PATH or a Python module fallback.
+            candidates.append([self._locked_static_executable("FLOSS_PATH")])
+        else:
+            flare_floss = shutil.which("flare-floss")
+            if flare_floss:
+                candidates.append([flare_floss])
 
-        floss = shutil.which("floss")
-        if floss:
-            candidates.append([floss])
+            floss = shutil.which("floss")
+            if floss:
+                candidates.append([floss])
 
-        # Fallback when command entrypoint is missing but module exists.
-        candidates.append([sys.executable, "-m", "floss.main"])
+            # Fallback when command entrypoint is missing but module exists.
+            candidates.append([sys.executable, "-m", "floss.main"])
 
         probe_errors: List[str] = []
 
@@ -539,18 +557,23 @@ class StaticWorker:
         package_version = self._get_python_package_version("flare-capa") or self._get_python_package_version("capa")
         candidates: List[List[str]] = []
 
-        if requested_command:
-            if isinstance(requested_command, list):
-                requested_items = [str(item).strip() for item in requested_command if str(item).strip()]
-                if requested_items:
-                    candidates.append(requested_items)
-            elif str(requested_command).strip():
-                candidates.append([str(requested_command).strip()])
+        if self._static_profile_enabled():
+            # Ignore caller- and PATH-provided alternatives in the locked static
+            # profile. The startup contract binds CAPA_PATH to the probed binary.
+            candidates.append([self._locked_static_executable("CAPA_PATH")])
+        else:
+            if requested_command:
+                if isinstance(requested_command, list):
+                    requested_items = [str(item).strip() for item in requested_command if str(item).strip()]
+                    if requested_items:
+                        candidates.append(requested_items)
+                elif str(requested_command).strip():
+                    candidates.append([str(requested_command).strip()])
 
-        capa_cli = shutil.which("capa")
-        if capa_cli:
-            candidates.append([capa_cli])
-        candidates.append([sys.executable, "-m", "capa.main"])
+            capa_cli = shutil.which("capa")
+            if capa_cli:
+                candidates.append([capa_cli])
+            candidates.append([sys.executable, "-m", "capa.main"])
 
         probe_errors: List[str] = []
         for candidate in candidates:
@@ -3905,15 +3928,14 @@ print(json.dumps(payload))
             if mode not in valid_modes:
                 raise ValueError(f"Invalid mode: {mode}. Must be one of {valid_modes}")
 
-        # Locate FLOSS CLI without extra probe calls on the hot path.
-        floss_cli = shutil.which("flare-floss") or shutil.which("floss")
-        if not floss_cli:
-            raise Exception(
-                "FLOSS tool not found. Install FLARE-FLOSS (`pip install flare-floss`) and ensure it is in PATH."
-            )
+        # Reuse the probed command so the static profile executes exactly the
+        # startup-validated FLOSS_PATH rather than resolving PATH again.
+        floss_backend = self._discover_floss_cli()
+        if not floss_backend.get("ok"):
+            raise Exception(floss_backend.get("error") or "FLOSS tool not found")
         
         # Build FLARE-FLOSS command
-        command = [floss_cli, "--json", sample_path]
+        command = list(floss_backend["command"]) + ["--json", sample_path]
         
         timeout_occurred = False
         partial_results = False

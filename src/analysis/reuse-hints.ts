@@ -44,7 +44,7 @@ export interface SampleReuseHints {
   summary: string
 }
 
-const ACTIVE_JOB_STATUSES = new Set(['queued', 'running'])
+const ACTIVE_JOB_STATUSES = new Set(['queued', 'retry_wait', 'running', 'cancelling'])
 const TERMINAL_JOB_STATUSES = new Set(['completed', 'failed', 'cancelled', 'interrupted'])
 
 function parseJson(value: unknown): unknown {

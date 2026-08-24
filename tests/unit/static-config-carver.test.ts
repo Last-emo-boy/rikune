@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals'
 import fs from 'fs'
 import os from 'os'
@@ -30,7 +31,7 @@ describe('static.config.carver tool', () => {
       'U2VjcmV0Q29uZmlnVmFsdWU=',
     ].join('\0')
     const sampleBytes = Buffer.from(`MZ\0${payload}`, 'utf8')
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: SAMPLE_ID,
       sha256: SAMPLE_HASH,
       md5: '2'.repeat(32),

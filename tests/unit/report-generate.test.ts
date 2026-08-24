@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
 import fs from 'fs'
 import path from 'path'
@@ -248,7 +249,7 @@ describe('report.generate tool', () => {
     const sampleId = 'sha256:' + '1'.repeat(64)
     const createdAt = new Date().toISOString()
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '1'.repeat(64),
       md5: '1'.repeat(32),
@@ -361,7 +362,7 @@ describe('report.generate tool', () => {
     const sampleId = 'sha256:' + '2'.repeat(64)
     const createdAt = '2026-03-11T00:00:00.000Z'
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '2'.repeat(64),
       md5: '2'.repeat(32),
@@ -407,7 +408,7 @@ describe('report.generate tool', () => {
     const sampleId = 'sha256:' + 'b'.repeat(64)
     const createdAt = new Date().toISOString()
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'b'.repeat(64),
       md5: 'b'.repeat(32),
@@ -514,7 +515,7 @@ describe('report.generate tool', () => {
     const sampleId = 'sha256:' + 'c'.repeat(64)
     const createdAt = new Date().toISOString()
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'c'.repeat(64),
       md5: 'c'.repeat(32),
@@ -558,7 +559,7 @@ describe('report.generate tool', () => {
     const sampleId = 'sha256:' + 'd'.repeat(64)
     const createdAt = new Date().toISOString()
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'd'.repeat(64),
       md5: 'd'.repeat(32),
@@ -626,7 +627,7 @@ describe('report.generate tool', () => {
     const sampleId = 'sha256:' + '3'.repeat(64)
     const createdAt = '2026-03-11T00:00:00.000Z'
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '3'.repeat(64),
       md5: '3'.repeat(32),
@@ -678,7 +679,7 @@ describe('report.generate tool', () => {
     const sampleId = 'sha256:' + '4'.repeat(64)
     const createdAt = '2026-03-11T00:00:00.000Z'
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '4'.repeat(64),
       md5: '4'.repeat(32),
@@ -750,7 +751,7 @@ describe('report.generate tool', () => {
     const sampleId = 'sha256:' + '5'.repeat(64)
     const createdAt = '2026-03-11T00:00:00.000Z'
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '5'.repeat(64),
       md5: '5'.repeat(32),

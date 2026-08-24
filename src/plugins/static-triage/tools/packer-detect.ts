@@ -25,6 +25,7 @@ import {
   callStaticWorker as callPooledStaticWorker,
 } from '../../../tools/static-worker-client.js'
 import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
+import { throwIfAnalysisAborted } from '../../../analysis/analysis-cancellation.js'
 
 // ============================================================================
 // Constants
@@ -245,7 +246,8 @@ export function createPackerDetectHandler(
   database: DatabaseManager,
   cacheManager: CacheManager
 ) {
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
+    throwIfAnalysisAborted(abortSignal)
     const input = args as PackerDetectInput
     const startTime = Date.now()
     const requestEngines = normalizeEngineList(input.engines, false)
@@ -319,7 +321,9 @@ export function createPackerDetectHandler(
       const workerResponse = await callPooledStaticWorker(workerRequest, {
         database,
         family: 'static_python.preview',
+        abortSignal,
       })
+      throwIfAnalysisAborted(abortSignal)
 
       if (!workerResponse.ok) {
         return {
@@ -365,6 +369,7 @@ export function createPackerDetectHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [(error as Error).message],

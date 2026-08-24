@@ -1,5 +1,5 @@
 # Rikune — Local (Non-Docker) Install Script
-# Requires: PowerShell 7+, Node.js 22+, Python 3.11+
+# Requires: PowerShell 7+, Node.js 22+, CPython 3.12 x86_64
 # Encoding: UTF-8 without BOM
 
 param(
@@ -19,6 +19,36 @@ param(
     [Parameter(HelpMessage="Enable verbose output")]
     [switch]$EnableVerbose
 )
+
+$ErrorActionPreference = "Stop"
+$PSNativeCommandUseErrorActionPreference = $false
+$explicitAnalyzerApiKey = $env:RIKUNE_API_KEY
+if ([string]::IsNullOrWhiteSpace($explicitAnalyzerApiKey)) {
+    $explicitAnalyzerApiKey = $env:RIKUNE_ANALYZER_API_KEY
+}
+@(
+    "RIKUNE_API_KEY",
+    "RIKUNE_ANALYZER_API_KEY",
+    "RIKUNE_STAGE_LOCAL_ENV_PATH",
+    "RIKUNE_LOCAL_EXISTING_ENV_BASE64",
+    "RIKUNE_LOCAL_ENV_PATH",
+    "RIKUNE_LOCAL_ENV_FORCE_KEYS",
+    "ANALYZER_API_KEY",
+    "STAGED_LOCAL_ENV_BASE64",
+    "RUNTIME_HOST_AGENT_API_KEY",
+    "HOST_AGENT_API_KEY",
+    "HOST_AGENT_RUNTIME_API_KEY",
+    "RUNTIME_API_KEY",
+    "RIKUNE_HOST_AGENT_API_KEY",
+    "RIKUNE_RUNTIME_API_KEY",
+    "RIKUNE_RUNTIME_NODE_API_KEY"
+) | ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }
+if (
+    -not [string]::IsNullOrWhiteSpace($explicitAnalyzerApiKey) -and
+    $explicitAnalyzerApiKey -notmatch '^[\x21-\x7e]{32,}$'
+) {
+    throw "RIKUNE_API_KEY must contain at least 32 printable non-space ASCII characters"
+}
 
 $ColorPrimary = "Cyan"
 $ColorSuccess = "Green"
@@ -138,6 +168,11 @@ $($envLines -join "`r`n")
 try { Clear-Host } catch { }
 Write-Header "Rikune — Local Install (No Docker)"
 
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    Write-Error-Message "PowerShell 7 or newer is required for protected atomic environment-file writes."
+    exit 1
+}
+
 Write-Host "This script will:" -ForegroundColor $ColorInfo
 Write-Host "  1. Check Node.js & Python" -ForegroundColor $ColorInfo
 Write-Host "  2. Install npm dependencies & build" -ForegroundColor $ColorInfo
@@ -160,6 +195,15 @@ if ($continue -eq 'n' -or $continue -eq 'N') {
 # =============================================================================
 Write-Step "Checking Required Tools"
 
+$isWindowsPlatform = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+    [System.Runtime.InteropServices.OSPlatform]::Windows
+)
+$isX64Platform = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq [System.Runtime.InteropServices.Architecture]::X64
+if (-not $isWindowsPlatform -or -not $isX64Platform) {
+    Write-Error-Message "This installer requires Windows x86_64; the repository Python locks target Windows x86_64."
+    exit 1
+}
+
 # Node.js
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     Write-Error-Message "Node.js not found"
@@ -181,6 +225,20 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
 }
 Write-Success "npm: $((npm --version).Trim())"
 
+$envFile = Join-Path $ProjectRoot ".env"
+$localEnvWriter = Join-Path $ProjectRoot "scripts/write-local-runtime-env.mjs"
+if (-not (Test-Path -LiteralPath $localEnvWriter -PathType Leaf)) {
+    throw "Secure local environment writer not found: $localEnvWriter"
+}
+[Environment]::SetEnvironmentVariable("RIKUNE_STAGE_LOCAL_ENV_PATH", $envFile, "Process")
+try {
+    $stageOutput = & node $localEnvWriter
+    if ($LASTEXITCODE -ne 0) { throw "Secure local environment staging failed" }
+    $stagedLocalEnvBase64 = [string](@($stageOutput) -join '')
+} finally {
+    [Environment]::SetEnvironmentVariable("RIKUNE_STAGE_LOCAL_ENV_PATH", $null, "Process")
+}
+
 if ($RuntimeMode -eq "auto-sandbox") {
     if (-not [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
         Write-Error-Message "RUNTIME_MODE=auto-sandbox requires a Windows-native analyzer"
@@ -196,33 +254,35 @@ if ($RuntimeMode -eq "auto-sandbox") {
 
 # Python
 $pythonCmd = $null
-foreach ($cmd in @('python', 'python3', 'py')) {
-    if (Get-Command $cmd -ErrorAction SilentlyContinue) {
+$pythonPrefixArgs = @()
+$pythonCandidates = @(
+    @{ Command = 'python3.12'; PrefixArgs = @() },
+    @{ Command = 'py'; PrefixArgs = @('-3.12') },
+    @{ Command = 'python'; PrefixArgs = @() },
+    @{ Command = 'python3'; PrefixArgs = @() }
+)
+foreach ($candidate in $pythonCandidates) {
+    $candidateCommand = [string]$candidate.Command
+    $candidatePrefixArgs = @($candidate.PrefixArgs)
+    if (Get-Command $candidateCommand -ErrorAction SilentlyContinue) {
         try {
-            $ver = & $cmd --version 2>&1
-            if ($ver -match '3\.\d+') {
-                $pythonCmd = $cmd
+            & $candidateCommand @candidatePrefixArgs -c "import struct, sys; raise SystemExit(0 if sys.implementation.name == 'cpython' and sys.version_info[:2] == (3, 12) and struct.calcsize('P') == 8 else 1)" *> $null
+            if ($LASTEXITCODE -eq 0) {
+                $pythonCmd = $candidateCommand
+                $pythonPrefixArgs = $candidatePrefixArgs
                 break
             }
         } catch {}
     }
 }
 if (-not $pythonCmd) {
-    Write-Error-Message "Python 3.11+ not found"
+    Write-Error-Message "CPython 3.12 x86_64 not found"
     Write-Host "  Install Python: https://www.python.org/downloads/" -ForegroundColor $ColorError
     exit 1
 }
-$pyVersion = (& $pythonCmd --version 2>&1).ToString().Trim()
-Write-Success "Python: $pyVersion (command: $pythonCmd)"
-
-# pip
-try {
-    $pipVer = & $pythonCmd -m pip --version 2>&1
-    Write-Success "pip: available"
-} catch {
-    Write-Warning-Message "pip not available, trying to install..."
-    & $pythonCmd -m ensurepip --upgrade 2>&1 | Out-Null
-}
+$pyVersion = (& $pythonCmd @pythonPrefixArgs --version 2>&1).ToString().Trim()
+$pythonDisplay = (($pythonCmd, ($pythonPrefixArgs -join ' ')) -join ' ').Trim()
+Write-Success "Python: $pyVersion (command: $pythonDisplay)"
 
 # =============================================================================
 # Step 2: Install npm Dependencies & Build
@@ -231,13 +291,13 @@ Write-Step "Installing npm Dependencies & Building"
 
 Push-Location $ProjectRoot
 try {
-    Write-Info "Running npm install..."
-    npm install 2>&1 | Out-Null
+    Write-Info "Running npm ci --include=dev..."
+    npm ci --include=dev 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        Write-Error-Message "npm install failed"
+        Write-Error-Message "npm ci --include=dev failed"
         exit 1
     }
-    Write-Success "npm dependencies installed"
+    Write-Success "npm dependencies installed from package-lock.json"
 
     Write-Info "Building TypeScript..."
     npm run build 2>&1 | Out-Null
@@ -261,10 +321,16 @@ Write-Step "Setting Up Python Virtual Environment"
 $workersDir = Join-Path $ProjectRoot "workers"
 $venvDir = Join-Path $workersDir "venv"
 $venvPython = Join-Path $venvDir "Scripts\python.exe"
+$baseRequirementsLock = Join-Path $ProjectRoot "requirements.windows.lock.txt"
+$dynamicRequirementsLock = Join-Path $workersDir "requirements-dynamic.windows.lock.txt"
+if (-not (Test-Path -LiteralPath $baseRequirementsLock -PathType Leaf)) {
+    Write-Error-Message "Windows base Python lock not found: $baseRequirementsLock"
+    exit 1
+}
 
 if (-not (Test-Path $venvDir)) {
     Write-Info "Creating virtual environment..."
-    & $pythonCmd -m venv $venvDir
+    & $pythonCmd @pythonPrefixArgs -m venv $venvDir
     if ($LASTEXITCODE -ne 0) {
         Write-Error-Message "Failed to create venv"
         exit 1
@@ -274,16 +340,29 @@ if (-not (Test-Path $venvDir)) {
     Write-Success "Virtual environment exists: $venvDir"
 }
 
+if (-not (Test-Path -LiteralPath $venvPython -PathType Leaf)) {
+    Write-Error-Message "Python venv executable not found: $venvPython"
+    exit 1
+}
+& $venvPython -c "import struct, sys; raise SystemExit(0 if sys.implementation.name == 'cpython' and sys.version_info[:2] == (3, 12) and struct.calcsize('P') == 8 else 1)" *> $null
+if ($LASTEXITCODE -ne 0) {
+    Write-Error-Message "Existing Python venv must use CPython 3.12 x86_64. Remove $venvDir and rerun."
+    exit 1
+}
+& $venvPython -m pip --version *> $null
+if ($LASTEXITCODE -ne 0) {
+    Write-Error-Message "pip is unavailable in the CPython 3.12 virtual environment. Recreate $venvDir."
+    exit 1
+}
+
 # Install base requirements
 Write-Info "Installing base Python requirements..."
-& $venvPython -m pip install --upgrade pip 2>&1 | Out-Null
-& $venvPython -m pip install -r (Join-Path $ProjectRoot "requirements.txt") 2>&1 | Out-Null
-& $venvPython -m pip install -r (Join-Path $workersDir "requirements.txt") 2>&1 | Out-Null
+& $venvPython -m pip install --disable-pip-version-check --require-hashes --requirement $baseRequirementsLock 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
-    Write-Warning-Message "Some base Python packages failed to install"
-} else {
-    Write-Success "Base Python requirements installed"
+    Write-Error-Message "Base Python requirements failed to install from the Windows hash lock"
+    exit 1
 }
+Write-Success "Base Python requirements installed"
 
 # Ask about dynamic tools
 Write-Host "`nInstall dynamic analysis Python packages?" -ForegroundColor $ColorPrimary
@@ -292,53 +371,20 @@ Write-Host "  (Recommended for malware analysis workflows)" -ForegroundColor $Co
 $installDynamic = Read-Host "Install? (Y/n)"
 if ($installDynamic -ne 'n' -and $installDynamic -ne 'N') {
     Write-Info "Installing dynamic analysis packages..."
-    & $venvPython -m pip install -r (Join-Path $workersDir "requirements-dynamic.txt") 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning-Message "Some dynamic packages failed (this is OK on Windows)"
-    } else {
-        Write-Success "Dynamic analysis packages installed"
+    if (-not (Test-Path -LiteralPath $dynamicRequirementsLock -PathType Leaf)) {
+        Write-Error-Message "Windows dynamic Python lock not found: $dynamicRequirementsLock"
+        exit 1
     }
+    & $venvPython -m pip install --disable-pip-version-check --require-hashes --requirement $dynamicRequirementsLock 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error-Message "Dynamic Python requirements failed to install from the Windows hash lock"
+        exit 1
+    }
+    Write-Success "Dynamic analysis packages installed"
 }
 
-# Ask about Qiling
-Write-Host "`nInstall Qiling emulation framework?" -ForegroundColor $ColorPrimary
-Write-Host "  Qiling uses its own venv due to unicorn version conflicts" -ForegroundColor $ColorInfo
-$installQiling = Read-Host "Install? (y/N)"
-if ($installQiling -eq 'y' -or $installQiling -eq 'Y') {
-    $qilingVenv = Join-Path $ProjectRoot "qiling-venv"
-    if (-not (Test-Path $qilingVenv)) {
-        Write-Info "Creating Qiling venv..."
-        & $pythonCmd -m venv $qilingVenv
-    }
-    $qilingPython = Join-Path $qilingVenv "Scripts\python.exe"
-    & $qilingPython -m pip install --upgrade pip 2>&1 | Out-Null
-    & $qilingPython -m pip install -r (Join-Path $workersDir "requirements-qiling.txt") 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning-Message "Qiling installation had issues"
-    } else {
-        Write-Success "Qiling installed in isolated venv: $qilingVenv"
-    }
-}
-
-# Ask about angr
-Write-Host "`nInstall angr symbolic execution engine?" -ForegroundColor $ColorPrimary
-Write-Host "  angr uses its own venv (large dependency tree, ~1.5 GB)" -ForegroundColor $ColorInfo
-$installAngr = Read-Host "Install? (y/N)"
-if ($installAngr -eq 'y' -or $installAngr -eq 'Y') {
-    $angrVenv = Join-Path $ProjectRoot "angr-venv"
-    if (-not (Test-Path $angrVenv)) {
-        Write-Info "Creating angr venv..."
-        & $pythonCmd -m venv $angrVenv
-    }
-    $angrPython = Join-Path $angrVenv "Scripts\python.exe"
-    & $angrPython -m pip install --upgrade pip 2>&1 | Out-Null
-    & $angrPython -m pip install angr 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning-Message "angr installation had issues"
-    } else {
-        Write-Success "angr installed in isolated venv: $angrVenv"
-    }
-}
+Write-Warning-Message "Qiling installation is disabled: no hashed Windows production lock is available."
+Write-Warning-Message "angr installation is disabled on Windows: no hashed Windows production lock is available."
 
 # =============================================================================
 # Step 4: Data Directories
@@ -472,7 +518,6 @@ if (-not $SkipOptional) {
 # =============================================================================
 Write-Step "Generating Environment Configuration"
 
-$envFile = Join-Path $ProjectRoot ".env"
 $envContent = @"
 # Rikune Local Environment — generated by install-local.ps1
 # Adjust paths to match your local tool installations.
@@ -493,7 +538,7 @@ SANDBOX_PYTHON_PATH=$($venvPython -replace '\\', '/')
 API_ENABLED=true
 API_PORT=18080
 API_STORAGE_ROOT=$((Join-Path $DataRoot "storage") -replace '\\', '/')
-# API_KEY=your-secret-key-here
+API_KEY=__RIKUNE_CSPRNG_API_KEY__
 
 # Ghidra (set if installed)
 # GHIDRA_INSTALL_DIR=C:/ghidra
@@ -514,8 +559,28 @@ API_STORAGE_ROOT=$((Join-Path $DataRoot "storage") -replace '\\', '/')
 # QILING_PYTHON=$((Join-Path $ProjectRoot "qiling-venv/Scripts/python.exe") -replace '\\', '/')
 "@
 
-$envContent | Set-Content $envFile -Encoding UTF8
-Write-Success "Environment file: $envFile"
+$managedWriterEnvironment = @{
+    RIKUNE_LOCAL_ENV_PATH = $envFile
+    RIKUNE_LOCAL_ENV_FORCE_KEYS = "NODE_ROLE,RUNTIME_MODE,WORKSPACE_ROOT,DB_PATH,CACHE_ROOT,AUDIT_LOG_PATH,LOG_LEVEL,SANDBOX_PYTHON_PATH,API_ENABLED,API_PORT,API_STORAGE_ROOT"
+    RIKUNE_LOCAL_EXISTING_ENV_BASE64 = $stagedLocalEnvBase64
+    RIKUNE_API_KEY = $explicitAnalyzerApiKey
+}
+$previousWriterEnvironment = @{}
+foreach ($name in $managedWriterEnvironment.Keys) {
+    $previousWriterEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
+    [Environment]::SetEnvironmentVariable($name, [string]$managedWriterEnvironment[$name], "Process")
+}
+try {
+    $envContent | & node $localEnvWriter
+    if ($LASTEXITCODE -ne 0) { throw "Secure local environment generation failed" }
+} finally {
+    foreach ($name in $managedWriterEnvironment.Keys) {
+        [Environment]::SetEnvironmentVariable($name, $previousWriterEnvironment[$name], "Process")
+    }
+    $stagedLocalEnvBase64 = $null
+    $explicitAnalyzerApiKey = $null
+}
+Write-Success "Protected environment file: $envFile"
 Write-Info "Edit .env to set paths to your locally installed tools"
 
 # =============================================================================

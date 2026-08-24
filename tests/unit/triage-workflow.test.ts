@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 /**
  * Unit tests for triage workflow
  * Requirements: 15.1, 15.2, 15.4, 15.5
@@ -76,7 +77,7 @@ describe('Triage Workflow', () => {
     
     // Create a dummy sample
     const sampleId = 'sha256:' + '0'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '0'.repeat(64),
       md5: '0'.repeat(32),
@@ -155,7 +156,7 @@ describe('Triage Workflow', () => {
   test('should handle partial tool failures gracefully', async () => {
     // Create a dummy sample
     const sampleId = 'sha256:' + '1'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '1'.repeat(64),
       md5: '1'.repeat(32),
@@ -180,7 +181,7 @@ describe('Triage Workflow', () => {
   test('should include raw results from individual tools', async () => {
     // Create a dummy sample
     const sampleId = 'sha256:' + '2'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '2'.repeat(64),
       md5: '2'.repeat(32),
@@ -217,7 +218,7 @@ describe('Triage Workflow', () => {
 
   test('should integrate compact string context previews into triage output', async () => {
     const sampleId = 'sha256:' + '3'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '3'.repeat(64),
       md5: '3'.repeat(32),
@@ -395,7 +396,7 @@ describe('Triage Workflow', () => {
 
   test('should auto-select bounded triage enrichments when packer and weak-YARA signals are present', async () => {
     const sampleId = 'sha256:' + '4'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '4'.repeat(64),
       md5: '4'.repeat(32),

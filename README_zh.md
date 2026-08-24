@@ -49,11 +49,20 @@ artifact gateway 覆盖不到的内部 analyzer subtool 时，才使用 `rikune_
 手工等价流程：
 
 ```bash
-npm install
+RIKUNE_REMOVE_PRIVATE_ENV_PATH="$PWD/.docker-runtime.env" node scripts/write-docker-runtime-env.mjs
+unset RIKUNE_API_KEY RIKUNE_ANALYZER_API_KEY RUNTIME_HOST_AGENT_API_KEY \
+  HOST_AGENT_API_KEY HOST_AGENT_RUNTIME_API_KEY RUNTIME_API_KEY
+npm ci --include=dev
 npm run build
 npm run docker:generate:all
+RIKUNE_DOCKER_ENV_PATH="$PWD/.docker-runtime.env" \
+RIKUNE_DOCKER_ENV_DATA_ROOT="${RIKUNE_DATA_ROOT:-$HOME/.rikune}" \
+RIKUNE_DOCKER_ENV_PROFILE=static \
+  node scripts/write-docker-runtime-env.mjs
 docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d --build analyzer
 ```
+
+env writer 默认使用操作系统 CSPRNG 轮换新的 32-byte analyzer API key；仅当本次调用显式传入 key 时才保留指定值，并在 POSIX 系统上把文件权限设为 `0600`。Compose 默认只绑定 `127.0.0.1`。本地 Dashboard 地址为 `http://127.0.0.1:18080/?key=<RIKUNE_API_KEY>`；不要分享该 URL，也不要提交 `.docker-runtime.env`。
 
 ### Hybrid Docker + Windows Runtime
 
@@ -66,15 +75,18 @@ Hybrid profile 在 Docker 中运行 Analyzer，把真实 Windows 执行委托给
 Linux/macOS analyzer + 远程 Windows runtime host：
 
 ```bash
-./rikune.sh install --profile hybrid --windows-host <windows-host> --windows-user <windows-user>
+./rikune.sh install --profile hybrid --windows-host <windows-host> --windows-user <windows-user> \
+  --host-agent-endpoint https://runtime.example.internal
 ```
+
+HTTPS endpoint 应由可信 reverse proxy / VPN 路径转发到仅绑定 loopback 的 Host Agent。只有在隔离的可信网络中需要直接明文传输时，才显式添加 `--allow-insecure-runtime-http`；该 opt-in 会让 bootstrap 的 Host Agent 绑定到非 loopback 地址。Runtime key 只通过受保护环境或隐藏 prompt 提供，不接受 CLI 参数。
 
 连接 MCP 客户端不会启动 Sandbox，也不会运行样本。只有 `runtime.debug.session.start`、`runtime.debug.command`、`sandbox.execute` 或 promoted dynamic execution stage 这类显式 live runtime 工具才会触发运行时。
 
 ### Native 开发
 
 ```bash
-npm install
+npm ci --include=dev
 npm run build
 npm test
 node dist/index.js
@@ -90,7 +102,7 @@ node dist/index.js
 
 宿主机文件上传调用 `workflow.run action=request_upload`，向返回的 upload URL POST 原始字节，然后从 HTTP 响应读取 `sample_id`。`sample.request_upload` 和 `sample.ingest` 是兼容 helper，不是普通 AI-facing 主路径。
 
-远程 analyzer 或 `rikune-agent` 部署时，设置 `API_PUBLIC_BASE_URL`、`RIKUNE_API_PUBLIC_BASE_URL` 或 `RIKUNE_ANALYZER_PUBLIC_URL` 为客户端可访问的 HTTP API base，例如 `http://159.195.136.226:18080`。这样上传会话会返回公网/内网可访问的 `upload_url` / `status_url`，而不是容器内部的 `localhost` 地址。远程 gateway 也会把旧 analyzer 返回的 localhost 上传地址归一化到已配置的 analyzer endpoint。
+远程 analyzer 或 `rikune-agent` 部署时，把 `API_PUBLIC_BASE_URL`、`RIKUNE_API_PUBLIC_BASE_URL` 或 `RIKUNE_ANALYZER_PUBLIC_URL` 设置为客户端可访问的 HTTPS base，例如 `https://analyzer.example.com`。应由同一私有 Docker network 上的可信 reverse proxy 终止 TLS；若 proxy 同时执行 SSO，必须移除用户传入的 `X-API-Key`，仅在认证成功后注入内部 analyzer secret。不要通过明文 HTTP 暴露携带 key 的 API。上传会话会返回公网/内网可访问的 `upload_url` / `status_url`，远程 gateway 也会把旧 analyzer 返回的 localhost 地址归一化到已配置 endpoint。
 
 启用 HTTP API 时，非 MCP 集成仍可直接 `POST /api/v1/samples`。导入成功后会返回 `sample_id`；后续分析应使用 `sample_id`，不要继续依赖本地文件路径。
 
@@ -267,7 +279,7 @@ HTTP 层处理 API key 鉴权、rate limit、安全头和受限 CORS。
 
 - Node.js 22+
 - npm
-- Python 3.11+，用于 workers 和分析脚本
+- CPython 3.12 x86_64，用于 native workers 与仓库中带 hash 的 Python 环境
 - Docker 20.10+ 与 Docker Compose v2
 - Java 21+，用于较新的 Ghidra
 - Ghidra，用于反编译和函数分析
@@ -305,7 +317,7 @@ tests/                        单元、集成和 e2e 测试
 ## 开发命令
 
 ```bash
-npm install
+npm ci --include=dev
 npm run build
 npm test
 npm run typecheck

@@ -190,7 +190,9 @@ CREATE TABLE IF NOT EXISTS samples (
   size INTEGER NOT NULL,
   file_type TEXT,
   created_at TEXT NOT NULL,
-  source TEXT
+  source TEXT,
+  ingest_lease_token TEXT,
+  ingest_generation INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_samples_sha256 ON samples(sha256);
@@ -359,6 +361,103 @@ CREATE TABLE IF NOT EXISTS context_write_leases (
   heartbeat_at TEXT NOT NULL
 );
 
+-- sample_operation_instances 表：证明持有 shared lease 的进程实例仍可恢复
+CREATE TABLE IF NOT EXISTS sample_operation_instances (
+  instance_id TEXT PRIMARY KEY,
+  boot_id TEXT NOT NULL,
+  pid INTEGER NOT NULL,
+  started_at TEXT NOT NULL,
+  heartbeat_at TEXT NOT NULL,
+  lease_until TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sample_operation_instances_lease
+  ON sample_operation_instances(lease_until);
+
+-- sample_operation_generations 表：跨删除/重摄取保持单调 fencing generation
+CREATE TABLE IF NOT EXISTS sample_operation_generations (
+  sample_id TEXT PRIMARY KEY,
+  generation INTEGER NOT NULL DEFAULT 0 CHECK (generation >= 0),
+  tombstoned INTEGER NOT NULL DEFAULT 0 CHECK (tombstoned IN (0, 1)),
+  deletion_id TEXT,
+  updated_at TEXT NOT NULL
+);
+
+-- sample_operation_leases 表：所有 sample 读写与删除的持久化 shared/exclusive gate
+CREATE TABLE IF NOT EXISTS sample_operation_leases (
+  sample_id TEXT NOT NULL,
+  lease_token TEXT NOT NULL,
+  instance_id TEXT NOT NULL,
+  boot_id TEXT NOT NULL,
+  mode TEXT NOT NULL CHECK (mode IN ('shared', 'exclusive')),
+  generation INTEGER NOT NULL CHECK (generation >= 0),
+  acquired_at TEXT NOT NULL,
+  heartbeat_at TEXT NOT NULL,
+  lease_until TEXT,
+  PRIMARY KEY (sample_id, lease_token),
+  FOREIGN KEY (instance_id) REFERENCES sample_operation_instances(instance_id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sample_operation_exclusive
+  ON sample_operation_leases(sample_id) WHERE mode = 'exclusive';
+CREATE INDEX IF NOT EXISTS idx_sample_operation_leases_instance
+  ON sample_operation_leases(instance_id, mode, lease_until);
+CREATE INDEX IF NOT EXISTS idx_sample_operation_leases_sample
+  ON sample_operation_leases(sample_id, mode, generation);
+
+-- sample_deletions 表：crash-safe 删除状态机与已冻结 quarantine 清单
+CREATE TABLE IF NOT EXISTS sample_deletions (
+  id TEXT PRIMARY KEY,
+  sample_id TEXT NOT NULL,
+  sample_sha256 TEXT NOT NULL,
+  generation INTEGER NOT NULL CHECK (generation > 0),
+  phase TEXT NOT NULL CHECK (phase IN (
+    'prepared', 'workspace_quarantined', 'cache_purged',
+    'db_deleted', 'files_purged', 'completed'
+  )),
+  manifest_json TEXT NOT NULL,
+  reclaimed_json TEXT NOT NULL,
+  audit_phases_json TEXT NOT NULL,
+  kb_overdelete_count INTEGER NOT NULL DEFAULT 0 CHECK (kb_overdelete_count >= 0),
+  reason TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  completed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_sample_deletions_recovery
+  ON sample_deletions(phase, updated_at);
+CREATE INDEX IF NOT EXISTS idx_sample_deletions_sample
+  ON sample_deletions(sample_id, created_at DESC);
+
+-- sample_ingests 表：文件发布与 samples 行之间的 crash-recovery journal
+CREATE TABLE IF NOT EXISTS sample_ingests (
+  id TEXT PRIMARY KEY,
+  sample_id TEXT NOT NULL UNIQUE,
+  sha256 TEXT NOT NULL,
+  md5 TEXT,
+  size INTEGER NOT NULL CHECK (size >= 0),
+  file_type TEXT,
+  filename TEXT NOT NULL,
+  temp_name TEXT NOT NULL,
+  source TEXT,
+  phase TEXT NOT NULL CHECK (phase IN ('prepared', 'fs_committed')),
+  file_device INTEGER,
+  file_inode INTEGER,
+  owner_instance_id TEXT,
+  owner_boot_id TEXT,
+  owner_token TEXT,
+  owner_until TEXT,
+  lease_token TEXT,
+  generation INTEGER,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sample_ingests_recovery
+  ON sample_ingests(phase, updated_at);
+
 -- upload_sessions 表：存储持久化上传会话
 CREATE TABLE IF NOT EXISTS upload_sessions (
   id TEXT PRIMARY KEY,
@@ -413,6 +512,13 @@ CREATE TABLE IF NOT EXISTS jobs (
   updated_at TEXT NOT NULL,
   started_at TEXT,
   finished_at TEXT,
+  owner_instance_id TEXT,
+  owner_boot_id TEXT,
+  claim_token TEXT,
+  claim_until TEXT,
+  claim_heartbeat_at TEXT,
+  retry_count INTEGER NOT NULL DEFAULT 0,
+  retry_policy_json TEXT,
   FOREIGN KEY (sample_id) REFERENCES samples(id)
 );
 
@@ -569,6 +675,29 @@ export interface Sample {
   file_type: string | null
   created_at: string
   source: string | null
+}
+
+export interface SampleIngestJournal {
+  id: string
+  sample_id: string
+  sha256: string
+  md5: string | null
+  size: number
+  file_type: string | null
+  filename: string
+  temp_name: string
+  source: string | null
+  phase: 'prepared' | 'fs_committed'
+  file_device: number | null
+  file_inode: number | null
+  owner_instance_id: string | null
+  owner_boot_id: string | null
+  owner_token: string | null
+  owner_until: string | null
+  lease_token: string | null
+  generation: number | null
+  created_at: string
+  updated_at: string
 }
 
 export interface Analysis {
@@ -807,6 +936,12 @@ export interface BatchSample {
 }
 
 /**
+ * Unforgeable fixture capability. It is intentionally absent from every
+ * production call site; release tests enforce that source allowlist.
+ */
+export const DATABASE_FIXTURE_CAPABILITY: unique symbol = Symbol('rikune.database.fixture')
+
+/**
  * Database manager class
  */
 export class DatabaseManager {
@@ -884,11 +1019,182 @@ export class DatabaseManager {
    */
   private initializeSchema(): void {
     this.db.exec(SCHEMA_SQL)
+    this.initializeSampleWriteFences()
     this.ensureColumnExists('jobs', 'updated_at', 'ALTER TABLE jobs ADD COLUMN updated_at TEXT')
+    this.ensureColumnExists(
+      'jobs',
+      'owner_instance_id',
+      'ALTER TABLE jobs ADD COLUMN owner_instance_id TEXT'
+    )
+    this.ensureColumnExists(
+      'jobs',
+      'owner_boot_id',
+      'ALTER TABLE jobs ADD COLUMN owner_boot_id TEXT'
+    )
+    this.ensureColumnExists('jobs', 'claim_token', 'ALTER TABLE jobs ADD COLUMN claim_token TEXT')
+    this.ensureColumnExists('jobs', 'claim_until', 'ALTER TABLE jobs ADD COLUMN claim_until TEXT')
+    this.ensureColumnExists(
+      'jobs',
+      'claim_heartbeat_at',
+      'ALTER TABLE jobs ADD COLUMN claim_heartbeat_at TEXT'
+    )
+    this.ensureColumnExists(
+      'jobs',
+      'retry_count',
+      'ALTER TABLE jobs ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0'
+    )
+    this.ensureColumnExists(
+      'jobs',
+      'retry_policy_json',
+      'ALTER TABLE jobs ADD COLUMN retry_policy_json TEXT'
+    )
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_claim_until ON jobs(claim_until)')
+    this.ensureColumnExists(
+      'samples',
+      'ingest_lease_token',
+      'ALTER TABLE samples ADD COLUMN ingest_lease_token TEXT'
+    )
+    this.ensureColumnExists(
+      'samples',
+      'ingest_generation',
+      'ALTER TABLE samples ADD COLUMN ingest_generation INTEGER'
+    )
+    this.ensureColumnExists(
+      'sample_deletions',
+      'kb_overdelete_count',
+      'ALTER TABLE sample_deletions ADD COLUMN kb_overdelete_count INTEGER NOT NULL DEFAULT 0 CHECK (kb_overdelete_count >= 0)'
+    )
+    this.ensureColumnExists(
+      'sample_ingests',
+      'temp_name',
+      "ALTER TABLE sample_ingests ADD COLUMN temp_name TEXT NOT NULL DEFAULT ''"
+    )
+    for (const [column, declaration] of [
+      ['owner_instance_id', 'TEXT'],
+      ['owner_boot_id', 'TEXT'],
+      ['owner_token', 'TEXT'],
+      ['owner_until', 'TEXT'],
+      ['lease_token', 'TEXT'],
+      ['generation', 'INTEGER'],
+    ] as const) {
+      this.ensureColumnExists(
+        'sample_ingests',
+        column,
+        `ALTER TABLE sample_ingests ADD COLUMN ${column} ${declaration}`
+      )
+    }
+    this.db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_sample_ingests_owner_until ON sample_ingests(owner_until)'
+    )
     this.db.exec(`
       UPDATE jobs
       SET updated_at = COALESCE(updated_at, finished_at, started_at, created_at)
       WHERE updated_at IS NULL
+    `)
+  }
+
+  /**
+   * Install DB-level tombstone fences for every table that can persist a direct
+   * sample reference. These triggers are a final fail-closed boundary for
+   * writers that bypass the MCP executor or queue wrappers.
+   */
+  private initializeSampleWriteFences(): void {
+    const directTables = [
+      'analyses',
+      'analysis_runs',
+      'analysis_evidence',
+      'debug_sessions',
+      'functions',
+      'artifacts',
+      'jobs',
+      'scheduler_events',
+      'batch_samples',
+      'sample_kb',
+    ] as const
+    for (const table of directTables) {
+      this.db.exec(`
+        CREATE TRIGGER IF NOT EXISTS trg_${table}_sample_fence_insert
+        BEFORE INSERT ON ${table}
+        WHEN NEW.sample_id IS NOT NULL AND EXISTS (
+          SELECT 1 FROM sample_operation_generations g
+          WHERE g.sample_id = NEW.sample_id AND g.tombstoned = 1
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'E_SAMPLE_TOMBSTONED');
+        END;
+        CREATE TRIGGER IF NOT EXISTS trg_${table}_sample_fence_update
+        BEFORE UPDATE ON ${table}
+        WHEN NEW.sample_id IS NOT NULL AND EXISTS (
+          SELECT 1 FROM sample_operation_generations g
+          WHERE g.sample_id = NEW.sample_id AND g.tombstoned = 1
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'E_SAMPLE_TOMBSTONED');
+        END;
+      `)
+    }
+    this.db.exec(`
+      CREATE TRIGGER IF NOT EXISTS trg_samples_sample_fence_insert
+      BEFORE INSERT ON samples
+      WHEN EXISTS (
+        SELECT 1 FROM sample_operation_generations g
+        WHERE g.sample_id = NEW.id AND g.tombstoned = 1
+      )
+      BEGIN SELECT RAISE(ABORT, 'E_SAMPLE_TOMBSTONED'); END;
+      CREATE TRIGGER IF NOT EXISTS trg_samples_sample_fence_update
+      BEFORE UPDATE ON samples
+      WHEN EXISTS (
+        SELECT 1 FROM sample_operation_generations g
+        WHERE g.sample_id = NEW.id AND g.tombstoned = 1
+      )
+      BEGIN SELECT RAISE(ABORT, 'E_SAMPLE_TOMBSTONED'); END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_upload_sessions_sample_fence_insert
+      BEFORE INSERT ON upload_sessions
+      WHEN NEW.sample_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM sample_operation_generations g
+        WHERE g.sample_id = NEW.sample_id AND g.tombstoned = 1
+      )
+      BEGIN SELECT RAISE(ABORT, 'E_SAMPLE_TOMBSTONED'); END;
+      CREATE TRIGGER IF NOT EXISTS trg_upload_sessions_sample_fence_update
+      BEFORE UPDATE ON upload_sessions
+      WHEN NEW.sample_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM sample_operation_generations g
+        WHERE g.sample_id = NEW.sample_id AND g.tombstoned = 1
+      )
+      BEGIN SELECT RAISE(ABORT, 'E_SAMPLE_TOMBSTONED'); END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_cache_sample_fence_insert
+      BEFORE INSERT ON cache
+      WHEN NEW.sample_sha256 IS NOT NULL AND EXISTS (
+        SELECT 1 FROM sample_operation_generations g
+        WHERE g.sample_id = 'sha256:' || lower(NEW.sample_sha256) AND g.tombstoned = 1
+      )
+      BEGIN SELECT RAISE(ABORT, 'E_SAMPLE_TOMBSTONED'); END;
+      CREATE TRIGGER IF NOT EXISTS trg_cache_sample_fence_update
+      BEFORE UPDATE ON cache
+      WHEN NEW.sample_sha256 IS NOT NULL AND EXISTS (
+        SELECT 1 FROM sample_operation_generations g
+        WHERE g.sample_id = 'sha256:' || lower(NEW.sample_sha256) AND g.tombstoned = 1
+      )
+      BEGIN SELECT RAISE(ABORT, 'E_SAMPLE_TOMBSTONED'); END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_analysis_run_stages_sample_fence_insert
+      BEFORE INSERT ON analysis_run_stages
+      WHEN EXISTS (
+        SELECT 1 FROM analysis_runs r
+        JOIN sample_operation_generations g ON g.sample_id = r.sample_id
+        WHERE r.id = NEW.run_id AND g.tombstoned = 1
+      )
+      BEGIN SELECT RAISE(ABORT, 'E_SAMPLE_TOMBSTONED'); END;
+      CREATE TRIGGER IF NOT EXISTS trg_analysis_run_stages_sample_fence_update
+      BEFORE UPDATE ON analysis_run_stages
+      WHEN EXISTS (
+        SELECT 1 FROM analysis_runs r
+        JOIN sample_operation_generations g ON g.sample_id = r.sample_id
+        WHERE r.id = NEW.run_id AND g.tombstoned = 1
+      )
+      BEGIN SELECT RAISE(ABORT, 'E_SAMPLE_TOMBSTONED'); END;
     `)
   }
 
@@ -945,20 +1251,514 @@ export class DatabaseManager {
   /**
    * Insert a new sample
    */
-  insertSample(sample: Sample): void {
-    const stmt = this.db.prepare(`
-      INSERT INTO samples (id, sha256, md5, size, file_type, created_at, source)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `)
-    stmt.run(
-      sample.id,
-      sample.sha256,
-      sample.md5,
-      sample.size,
-      sample.file_type,
-      sample.created_at,
-      sample.source
-    )
+  insertSample(
+    sample: Sample,
+    fence: {
+      leaseToken: string
+      instanceId: string
+      generation: number
+      journalId: string
+      journalOwnerToken: string
+    }
+  ): void {
+    if (!fence) {
+      throw new Error(
+        'E_SAMPLE_FENCE_REQUIRED: persisted sample insertion requires an ingest fence.'
+      )
+    }
+    this.insertSampleInternal(sample, fence)
+  }
+
+  /**
+   * Explicit fixture-only API. Production source is guarded by a regression
+   * allowlist and must never reference this method; unlike NODE_ENV switches,
+   * the call site is visible to type checking and source review.
+   */
+  insertSampleFixture(capability: typeof DATABASE_FIXTURE_CAPABILITY, sample: Sample): void {
+    if (capability !== DATABASE_FIXTURE_CAPABILITY) {
+      throw new Error('E_SAMPLE_FIXTURE_CAPABILITY: invalid database fixture capability.')
+    }
+    this.insertSampleInternal(sample, null)
+  }
+
+  private insertSampleInternal(
+    sample: Sample,
+    fence: {
+      leaseToken: string
+      instanceId: string
+      generation: number
+      journalId: string
+      journalOwnerToken: string
+    } | null
+  ): void {
+    const insert = this.db.transaction(() => {
+      const now = new Date().toISOString()
+      const state = this.db
+        .prepare(
+          `SELECT generation, tombstoned, deletion_id
+           FROM sample_operation_generations WHERE sample_id = ?`
+        )
+        .get(sample.id) as
+        | { generation: number; tombstoned: number; deletion_id: string | null }
+        | undefined
+      if (state?.tombstoned === 1) {
+        throw new Error('E_SAMPLE_TOMBSTONED: sample must be revived through acquireIngestLease.')
+      }
+      if (fence) {
+        const journalOwned = this.db
+          .prepare(
+            `SELECT 1 FROM sample_ingests
+             WHERE id = ? AND sample_id = ? AND phase = 'fs_committed'
+               AND owner_token = ? AND owner_instance_id = ?
+               AND lease_token = ? AND generation = ?`
+          )
+          .get(
+            fence.journalId,
+            sample.id,
+            fence.journalOwnerToken,
+            fence.instanceId,
+            fence.leaseToken,
+            fence.generation
+          )
+        if (!journalOwned) {
+          throw new Error('E_SAMPLE_INGEST_OWNER_LOST: sample insert journal is not owned.')
+        }
+        const owned = this.db
+          .prepare(
+            `SELECT 1 FROM sample_operation_leases l
+             JOIN sample_operation_generations g ON g.sample_id = l.sample_id
+             JOIN sample_operation_instances i ON i.instance_id = l.instance_id
+             WHERE l.sample_id = ? AND l.lease_token = ? AND l.instance_id = ?
+               AND l.mode = 'shared' AND l.generation = ?
+               AND l.lease_until > ? AND i.lease_until > ?
+               AND g.generation = l.generation AND g.tombstoned = 0
+             LIMIT 1`
+          )
+          .get(sample.id, fence.leaseToken, fence.instanceId, fence.generation, now, now)
+        if (!owned) throw new Error('E_SAMPLE_LEASE_LOST: ingest database fence is not owned.')
+      }
+      this.db
+        .prepare(
+          `INSERT INTO samples
+            (id, sha256, md5, size, file_type, created_at, source,
+             ingest_lease_token, ingest_generation)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          sample.id,
+          sample.sha256,
+          sample.md5,
+          sample.size,
+          sample.file_type,
+          sample.created_at,
+          sample.source,
+          fence?.leaseToken ?? null,
+          fence?.generation ?? null
+        )
+      if (fence) {
+        const updated = this.db
+          .prepare(
+            `UPDATE sample_operation_generations SET updated_at = ?
+             WHERE sample_id = ? AND generation = ? AND tombstoned = 0`
+          )
+          .run(now, sample.id, fence.generation)
+        if (updated.changes !== 1) {
+          throw new Error('E_SAMPLE_LEASE_LOST: ingest generation changed during insert.')
+        }
+      } else {
+        this.db
+          .prepare(
+            `INSERT INTO sample_operation_generations
+              (sample_id, generation, tombstoned, deletion_id, updated_at)
+             VALUES (?, 0, 0, NULL, ?)
+             ON CONFLICT(sample_id) DO UPDATE SET updated_at = excluded.updated_at
+             WHERE sample_operation_generations.tombstoned = 0`
+          )
+          .run(sample.id, now)
+      }
+    })
+    insert.immediate()
+  }
+
+  /** Roll back only the sample row created by a specific ingest fence. */
+  rollbackInsertedSample(
+    sampleId: string,
+    fence: { leaseToken: string; generation: number }
+  ): boolean {
+    if (!fence) {
+      throw new Error('E_SAMPLE_FENCE_REQUIRED: sample rollback requires an ingest fence.')
+    }
+    const rollback = this.db.transaction(() => {
+      const result = this.db
+        .prepare(
+          `DELETE FROM samples
+           WHERE id = ? AND ingest_lease_token = ? AND ingest_generation = ?
+             AND EXISTS (
+               SELECT 1 FROM sample_operation_generations g
+               WHERE g.sample_id = samples.id AND g.generation = ? AND g.tombstoned = 0
+             )`
+        )
+        .run(sampleId, fence.leaseToken, fence.generation, fence.generation)
+      return result.changes === 1
+    })
+    return rollback.immediate()
+  }
+
+  prepareSampleIngestJournal(
+    journal: Omit<
+      SampleIngestJournal,
+      | 'phase'
+      | 'file_device'
+      | 'file_inode'
+      | 'owner_instance_id'
+      | 'owner_boot_id'
+      | 'owner_token'
+      | 'owner_until'
+      | 'lease_token'
+      | 'generation'
+      | 'created_at'
+      | 'updated_at'
+    >,
+    fence: { leaseToken: string; instanceId: string; generation: number },
+    owner: { token: string; until: string }
+  ): void {
+    const prepare = this.db.transaction(() => {
+      const now = new Date().toISOString()
+      const owned = this.db
+        .prepare(
+          `SELECT i.boot_id FROM sample_operation_leases l
+           JOIN sample_operation_generations g ON g.sample_id = l.sample_id
+           JOIN sample_operation_instances i ON i.instance_id = l.instance_id
+           WHERE l.sample_id = ? AND l.lease_token = ? AND l.instance_id = ?
+             AND l.mode = 'shared' AND l.generation = ?
+             AND l.lease_until > ? AND i.lease_until > ?
+             AND g.generation = l.generation AND g.tombstoned = 0`
+        )
+        .get(journal.sample_id, fence.leaseToken, fence.instanceId, fence.generation, now, now) as
+        | { boot_id: string }
+        | undefined
+      if (!owned) throw new Error('E_SAMPLE_LEASE_LOST: ingest journal fence is not owned.')
+      this.db
+        .prepare(
+          `INSERT INTO sample_ingests
+           (id, sample_id, sha256, md5, size, file_type, filename, temp_name,
+            source, phase, file_device, file_inode, owner_instance_id,
+            owner_boot_id, owner_token, owner_until, lease_token, generation,
+            created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'prepared', NULL, NULL,
+                   ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          journal.id,
+          journal.sample_id,
+          journal.sha256,
+          journal.md5,
+          journal.size,
+          journal.file_type,
+          journal.filename,
+          journal.temp_name,
+          journal.source,
+          fence.instanceId,
+          owned.boot_id,
+          owner.token,
+          owner.until,
+          fence.leaseToken,
+          fence.generation,
+          now,
+          now
+        )
+    })
+    prepare.immediate()
+  }
+
+  markSampleIngestFilesystemCommitted(
+    journalId: string,
+    sampleId: string,
+    identity: { device: number; inode: number },
+    fence: { leaseToken: string; instanceId: string; generation: number },
+    ownerToken: string
+  ): void {
+    const mark = this.db.transaction(() => {
+      const now = new Date().toISOString()
+      const result = this.db
+        .prepare(
+          `UPDATE sample_ingests
+           SET phase = 'fs_committed', file_device = ?, file_inode = ?, updated_at = ?
+           WHERE id = ? AND sample_id = ? AND owner_token = ?
+             AND owner_instance_id = ? AND lease_token = ? AND generation = ?
+             AND EXISTS (
+             SELECT 1 FROM sample_operation_leases l
+             JOIN sample_operation_generations g ON g.sample_id = l.sample_id
+             JOIN sample_operation_instances i ON i.instance_id = l.instance_id
+             WHERE l.sample_id = sample_ingests.sample_id
+               AND l.lease_token = ? AND l.instance_id = ?
+               AND l.mode = 'shared' AND l.generation = ?
+               AND l.lease_until > ? AND i.lease_until > ?
+               AND g.generation = l.generation AND g.tombstoned = 0
+           )`
+        )
+        .run(
+          identity.device,
+          identity.inode,
+          now,
+          journalId,
+          sampleId,
+          ownerToken,
+          fence.instanceId,
+          fence.leaseToken,
+          fence.generation,
+          fence.leaseToken,
+          fence.instanceId,
+          fence.generation,
+          now,
+          now
+        )
+      if (result.changes !== 1) {
+        throw new Error('E_SAMPLE_LEASE_LOST: filesystem commit journal fence is not owned.')
+      }
+    })
+    mark.immediate()
+  }
+
+  heartbeatSampleIngestJournal(
+    journalId: string,
+    ownerToken: string,
+    fence: { leaseToken: string; instanceId: string; generation: number },
+    ownerUntil: string
+  ): boolean {
+    const now = new Date().toISOString()
+    const result = this.db
+      .prepare(
+        `UPDATE sample_ingests SET owner_until = ?, updated_at = ?
+       WHERE id = ? AND owner_token = ? AND owner_instance_id = ?
+         AND lease_token = ? AND generation = ?
+         AND EXISTS (
+           SELECT 1 FROM sample_operation_leases l
+           JOIN sample_operation_instances i ON i.instance_id = l.instance_id
+           JOIN sample_operation_generations g ON g.sample_id = l.sample_id
+           WHERE l.sample_id = sample_ingests.sample_id
+             AND l.lease_token = ? AND l.instance_id = ? AND l.generation = ?
+             AND l.mode = 'shared' AND l.lease_until > ? AND i.lease_until > ?
+             AND i.boot_id = l.boot_id AND g.generation = l.generation
+             AND g.tombstoned = 0
+         )`
+      )
+      .run(
+        ownerUntil,
+        now,
+        journalId,
+        ownerToken,
+        fence.instanceId,
+        fence.leaseToken,
+        fence.generation,
+        fence.leaseToken,
+        fence.instanceId,
+        fence.generation,
+        now,
+        now
+      )
+    return result.changes === 1
+  }
+
+  /**
+   * Fence rollback after a shared lease is lost. Cleanup is allowed only while
+   * this exact journal owner still owns the current non-tombstoned generation.
+   */
+  renewSampleIngestCleanupOwnership(
+    journalId: string,
+    ownerToken: string,
+    fence: { instanceId: string; generation: number },
+    ownerUntil: string
+  ): boolean {
+    const now = new Date().toISOString()
+    const result = this.db
+      .prepare(
+        `UPDATE sample_ingests SET owner_until = ?, updated_at = ?
+       WHERE id = ? AND owner_token = ? AND owner_instance_id = ? AND generation = ?
+         AND EXISTS (
+           SELECT 1 FROM sample_operation_generations g
+           WHERE g.sample_id = sample_ingests.sample_id
+             AND g.generation = ? AND g.tombstoned = 0
+         )`
+      )
+      .run(
+        ownerUntil,
+        now,
+        journalId,
+        ownerToken,
+        fence.instanceId,
+        fence.generation,
+        fence.generation
+      )
+    return result.changes === 1
+  }
+
+  /**
+   * Publish that a task has stopped touching the journal while retaining its
+   * crash-recovery record. A successor still has to win the owner-token CAS.
+   */
+  abandonSampleIngestJournal(
+    journalId: string,
+    ownerToken: string,
+    fence: { instanceId: string; generation: number }
+  ): boolean {
+    const now = new Date().toISOString()
+    const result = this.db
+      .prepare(
+        `UPDATE sample_ingests SET owner_until = ?, updated_at = ?
+       WHERE id = ? AND owner_token = ? AND owner_instance_id = ? AND generation = ?`
+      )
+      .run(now, now, journalId, ownerToken, fence.instanceId, fence.generation)
+    return result.changes === 1
+  }
+
+  claimSampleIngestJournal(
+    journalId: string,
+    fence: { leaseToken: string; instanceId: string; generation: number },
+    owner: { token: string; until: string }
+  ): boolean {
+    const claim = this.db.transaction(() => {
+      const now = new Date().toISOString()
+      const owned = this.db
+        .prepare(
+          `SELECT i.boot_id FROM sample_operation_leases l
+         JOIN sample_operation_instances i ON i.instance_id = l.instance_id
+         JOIN sample_operation_generations g ON g.sample_id = l.sample_id
+         JOIN sample_ingests ingest ON ingest.sample_id = l.sample_id
+         WHERE ingest.id = ? AND l.lease_token = ? AND l.instance_id = ?
+           AND l.generation = ? AND l.mode = 'shared'
+           AND l.lease_until > ? AND i.lease_until > ?
+           AND i.boot_id = l.boot_id AND g.generation = l.generation
+           AND g.tombstoned = 0`
+        )
+        .get(journalId, fence.leaseToken, fence.instanceId, fence.generation, now, now) as
+        | { boot_id: string }
+        | undefined
+      if (!owned) return false
+      const result = this.db
+        .prepare(
+          `UPDATE sample_ingests
+         SET owner_instance_id = ?, owner_boot_id = ?, owner_token = ?,
+             owner_until = ?, lease_token = ?, generation = ?, updated_at = ?
+         WHERE id = ? AND (
+           owner_token IS NULL OR (
+             owner_until IS NULL OR owner_until <= ?
+           )
+         )`
+        )
+        .run(
+          fence.instanceId,
+          owned.boot_id,
+          owner.token,
+          owner.until,
+          fence.leaseToken,
+          fence.generation,
+          now,
+          journalId,
+          now
+        )
+      return result.changes === 1
+    })
+    return claim.immediate()
+  }
+
+  closeSampleIngestJournal(
+    journalId: string,
+    sampleId: string,
+    ownerToken: string,
+    fence: { leaseToken: string; instanceId: string; generation: number },
+    requirePersistedSample: boolean
+  ): void {
+    const close = this.db.transaction(() => {
+      const now = new Date().toISOString()
+      const samplePredicate = requirePersistedSample
+        ? `EXISTS (
+             SELECT 1 FROM samples s WHERE s.id = sample_ingests.sample_id
+               AND s.sha256 = sample_ingests.sha256 AND s.size = sample_ingests.size
+           )`
+        : `NOT EXISTS (SELECT 1 FROM samples s WHERE s.id = sample_ingests.sample_id)`
+      const params: unknown[] = []
+      params.push(
+        journalId,
+        sampleId,
+        ownerToken,
+        fence.instanceId,
+        fence.leaseToken,
+        fence.generation,
+        fence.leaseToken,
+        fence.instanceId,
+        fence.generation,
+        now,
+        now
+      )
+      const result = this.db
+        .prepare(
+          `DELETE FROM sample_ingests
+         WHERE ${samplePredicate}
+           AND id = ? AND sample_id = ? AND owner_token = ?
+           AND owner_instance_id = ? AND lease_token = ? AND generation = ?
+           AND EXISTS (
+             SELECT 1 FROM sample_operation_leases l
+             JOIN sample_operation_instances i ON i.instance_id = l.instance_id
+             JOIN sample_operation_generations g ON g.sample_id = l.sample_id
+             WHERE l.sample_id = sample_ingests.sample_id
+               AND l.lease_token = ? AND l.instance_id = ? AND l.generation = ?
+               AND l.mode = 'shared' AND l.lease_until > ? AND i.lease_until > ?
+               AND i.boot_id = l.boot_id AND g.generation = l.generation
+               AND g.tombstoned = 0
+           )`
+        )
+        .run(...params)
+      if (result.changes !== 1) {
+        throw new Error('E_SAMPLE_INGEST_OWNER_LOST: journal close provenance fence failed.')
+      }
+    })
+    close.immediate()
+  }
+
+  closeAbortedSampleIngestJournal(
+    journalId: string,
+    sampleId: string,
+    ownerToken: string,
+    fence: { instanceId: string; generation: number }
+  ): void {
+    const close = this.db.transaction(() => {
+      const result = this.db
+        .prepare(
+          `DELETE FROM sample_ingests
+         WHERE id = ? AND sample_id = ? AND owner_token = ?
+           AND owner_instance_id = ? AND generation = ?
+           AND NOT EXISTS (SELECT 1 FROM samples s WHERE s.id = sample_ingests.sample_id)
+           AND EXISTS (
+             SELECT 1 FROM sample_operation_generations g
+             WHERE g.sample_id = sample_ingests.sample_id
+               AND g.generation = ? AND g.tombstoned = 0
+           )`
+        )
+        .run(journalId, sampleId, ownerToken, fence.instanceId, fence.generation, fence.generation)
+      if (result.changes !== 1) {
+        throw new Error('E_SAMPLE_INGEST_OWNER_LOST: aborted journal close fence failed.')
+      }
+    })
+    close.immediate()
+  }
+
+  listPendingSampleIngests(): SampleIngestJournal[] {
+    return this.db
+      .prepare('SELECT * FROM sample_ingests ORDER BY created_at ASC, id ASC')
+      .all() as SampleIngestJournal[]
+  }
+
+  findSampleIngestJournal(journalId: string): SampleIngestJournal | undefined {
+    return this.db.prepare('SELECT * FROM sample_ingests WHERE id = ?').get(journalId) as
+      | SampleIngestJournal
+      | undefined
+  }
+
+  findSampleIngestJournalBySampleId(sampleId: string): SampleIngestJournal | undefined {
+    return this.db.prepare('SELECT * FROM sample_ingests WHERE sample_id = ?').get(sampleId) as
+      | SampleIngestJournal
+      | undefined
   }
 
   /**
@@ -2655,13 +3455,14 @@ export class DatabaseManager {
     priority: number
     timeout: number
     estimatedDurationMs?: number
+    retryPolicy?: { maxRetries: number; backoffMs: number; retryableErrors: string[] }
   }): void {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO jobs (
         id, type, tool, sample_id, args_json, priority, timeout,
-        estimated_duration_ms, status, created_at, updated_at
+        estimated_duration_ms, retry_policy_json, retry_count, status, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'queued', ?, ?)
     `)
     const now = new Date().toISOString()
     stmt.run(
@@ -2673,6 +3474,7 @@ export class DatabaseManager {
       job.priority,
       job.timeout,
       job.estimatedDurationMs,
+      job.retryPolicy ? JSON.stringify(job.retryPolicy) : null,
       now,
       now
     )
@@ -2683,11 +3485,19 @@ export class DatabaseManager {
     const row = stmt.get(jobId) as any
     if (!row) return null
 
-    return {
-      ...row,
-      args: JSON.parse(row.args_json),
-      result: row.result_json ? JSON.parse(row.result_json) : null,
+    let args: unknown = {}
+    let result: unknown = null
+    try {
+      args = JSON.parse(row.args_json)
+    } catch {
+      // Keep raw args_json for fail-closed recovery validation.
     }
+    try {
+      result = row.result_json ? JSON.parse(row.result_json) : null
+    } catch {
+      // Malformed terminal results remain inspectable but never executable.
+    }
+    return { ...row, args, result }
   }
 
   updateJobStatus(jobId: string, status: string, progress?: number, error?: string): void {
@@ -2725,11 +3535,227 @@ export class DatabaseManager {
     stmt.run(...params)
   }
 
+  /** Atomically claim one queued job. Exactly one server instance can win. */
+  claimQueuedJob(input: {
+    jobId: string
+    ownerInstanceId: string
+    ownerBootId: string
+    claimToken: string
+    claimUntil: string
+    now: string
+  }): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE jobs
+       SET status = 'running', progress = 0, started_at = ?, updated_at = ?,
+           owner_instance_id = ?, owner_boot_id = ?, claim_token = ?,
+           claim_until = ?, claim_heartbeat_at = ?
+       WHERE id = ? AND status = 'queued' AND claim_token IS NULL`
+      )
+      .run(
+        input.now,
+        input.now,
+        input.ownerInstanceId,
+        input.ownerBootId,
+        input.claimToken,
+        input.claimUntil,
+        input.now,
+        input.jobId
+      )
+    return result.changes === 1
+  }
+
+  heartbeatJobClaim(input: {
+    jobId: string
+    ownerInstanceId: string
+    ownerBootId: string
+    claimToken: string
+    claimUntil: string
+    now: string
+  }): { owned: boolean; status?: string } {
+    const transaction = this.db.transaction(() => {
+      const result = this.db
+        .prepare(
+          `UPDATE jobs SET claim_until = ?, claim_heartbeat_at = ?, updated_at = ?
+         WHERE id = ? AND owner_instance_id = ? AND owner_boot_id = ?
+           AND claim_token = ? AND status IN ('running','cancelling','retry_wait')`
+        )
+        .run(
+          input.claimUntil,
+          input.now,
+          input.now,
+          input.jobId,
+          input.ownerInstanceId,
+          input.ownerBootId,
+          input.claimToken
+        )
+      if (result.changes !== 1) return { owned: false }
+      const row = this.db.prepare('SELECT status FROM jobs WHERE id = ?').get(input.jobId) as
+        | { status: string }
+        | undefined
+      return { owned: true, status: row?.status }
+    })
+    return transaction.immediate()
+  }
+
+  updateOwnedJobStatus(input: {
+    jobId: string
+    ownerInstanceId: string
+    ownerBootId: string
+    claimToken: string
+    expectedStatuses: string[]
+    status: string
+    progress?: number
+    error?: string
+    result?: unknown
+    clearClaim?: boolean
+    retryCount?: number
+  }): boolean {
+    if (input.expectedStatuses.length === 0) return false
+    const updates = ['status = ?', 'updated_at = ?']
+    const now = new Date().toISOString()
+    const params: unknown[] = [input.status, now]
+    if (input.progress !== undefined) {
+      updates.push('progress = ?')
+      params.push(input.progress)
+    }
+    if (input.error !== undefined) {
+      updates.push('error = ?')
+      params.push(input.error)
+    }
+    if (input.result !== undefined) {
+      updates.push('result_json = ?')
+      params.push(JSON.stringify(input.result))
+    }
+    if (input.retryCount !== undefined) {
+      updates.push('retry_count = ?')
+      params.push(input.retryCount)
+    }
+    if (['completed', 'failed', 'cancelled', 'interrupted'].includes(input.status)) {
+      updates.push('finished_at = ?')
+      params.push(now)
+    }
+    if (input.status === 'queued') {
+      updates.push('started_at = NULL', 'finished_at = NULL')
+    }
+    if (input.clearClaim) {
+      updates.push(
+        'owner_instance_id = NULL',
+        'owner_boot_id = NULL',
+        'claim_token = NULL',
+        'claim_until = NULL',
+        'claim_heartbeat_at = NULL'
+      )
+    }
+    const placeholders = input.expectedStatuses.map(() => '?').join(', ')
+    params.push(
+      input.jobId,
+      input.ownerInstanceId,
+      input.ownerBootId,
+      input.claimToken,
+      ...input.expectedStatuses
+    )
+    const result = this.db
+      .prepare(
+        `UPDATE jobs SET ${updates.join(', ')}
+       WHERE id = ? AND owner_instance_id = ? AND owner_boot_id = ?
+         AND claim_token = ? AND status IN (${placeholders})`
+      )
+      .run(...params)
+    return result.changes === 1
+  }
+
+  /** Request cancellation without stealing the current execution claim. */
+  requestJobCancellation(jobId: string, reason: string): 'cancelled' | 'cancelling' | null {
+    const transaction = this.db.transaction(() => {
+      const row = this.db.prepare('SELECT status FROM jobs WHERE id = ?').get(jobId) as
+        | { status: string }
+        | undefined
+      if (!row) return null
+      const now = new Date().toISOString()
+      if (row.status === 'queued') {
+        const result = this.db
+          .prepare(
+            `UPDATE jobs SET status = 'cancelled', error = ?, finished_at = ?, updated_at = ?
+           WHERE id = ? AND status = 'queued'`
+          )
+          .run(reason, now, now, jobId)
+        return result.changes === 1 ? 'cancelled' : null
+      }
+      if (row.status === 'retry_wait') {
+        const result = this.db
+          .prepare(
+            `UPDATE jobs SET status = 'cancelled', error = ?, finished_at = ?, updated_at = ?,
+             owner_instance_id = NULL, owner_boot_id = NULL, claim_token = NULL,
+             claim_until = NULL, claim_heartbeat_at = NULL
+           WHERE id = ? AND status = 'retry_wait'`
+          )
+          .run(reason, now, now, jobId)
+        return result.changes === 1 ? 'cancelled' : null
+      }
+      if (row.status === 'running') {
+        const result = this.db
+          .prepare(
+            `UPDATE jobs SET status = 'cancelling', error = ?, updated_at = ?
+           WHERE id = ? AND status = ?`
+          )
+          .run(reason, now, jobId, row.status)
+        return result.changes === 1 ? 'cancelling' : null
+      }
+      return row.status === 'cancelling' ? 'cancelling' : null
+    })
+    return transaction.immediate()
+  }
+
+  /** Recover only claims whose durable heartbeat lease is proven expired. */
+  recoverExpiredJobClaim(
+    jobId: string,
+    now: string,
+    reason: string
+  ): 'queued' | 'interrupted' | null {
+    const transaction = this.db.transaction(() => {
+      const row = this.db
+        .prepare(
+          `SELECT status FROM jobs
+         WHERE id = ? AND claim_token IS NOT NULL
+           AND (claim_until IS NULL OR claim_until <= ?)`
+        )
+        .get(jobId, now) as { status: string } | undefined
+      if (!row) return null
+      if (row.status === 'retry_wait') {
+        const result = this.db
+          .prepare(
+            `UPDATE jobs SET status = 'queued', started_at = NULL, updated_at = ?,
+             owner_instance_id = NULL, owner_boot_id = NULL, claim_token = NULL,
+             claim_until = NULL, claim_heartbeat_at = NULL
+           WHERE id = ? AND status = 'retry_wait'
+             AND claim_token IS NOT NULL AND (claim_until IS NULL OR claim_until <= ?)`
+          )
+          .run(now, jobId, now)
+        return result.changes === 1 ? 'queued' : null
+      }
+      if (row.status === 'running' || row.status === 'cancelling') {
+        const result = this.db
+          .prepare(
+            `UPDATE jobs SET status = 'interrupted', error = ?, finished_at = ?, updated_at = ?,
+             owner_instance_id = NULL, owner_boot_id = NULL, claim_token = NULL,
+             claim_until = NULL, claim_heartbeat_at = NULL
+           WHERE id = ? AND status IN ('running','cancelling')
+             AND claim_token IS NOT NULL AND (claim_until IS NULL OR claim_until <= ?)`
+          )
+          .run(reason, now, now, jobId, now)
+        return result.changes === 1 ? 'interrupted' : null
+      }
+      return null
+    })
+    return transaction.immediate()
+  }
+
   setJobResult(jobId: string, result: any): void {
     const stmt = this.db.prepare(`
       UPDATE jobs
       SET result_json = ?, status = 'completed', finished_at = ?, updated_at = ?
-      WHERE id = ?
+      WHERE id = ? AND claim_token IS NULL
     `)
     const now = new Date().toISOString()
     stmt.run(JSON.stringify(result), now, now, jobId)
@@ -2753,7 +3779,37 @@ export class DatabaseManager {
     return stmt.all(...statuses, limit) as any[]
   }
 
-  markJobInterrupted(jobId: string, reason: string, result?: unknown): void {
+  findJobsByStatusesPage(
+    statuses: string[],
+    limit: number,
+    cursor?: { createdAt: string; id: string }
+  ): any[] {
+    if (statuses.length === 0 || !Number.isInteger(limit) || limit < 1) return []
+    const placeholders = statuses.map(() => '?').join(', ')
+    const cursorClause = cursor ? ' AND (created_at > ? OR (created_at = ? AND id > ?))' : ''
+    const params: unknown[] = [...statuses]
+    if (cursor) params.push(cursor.createdAt, cursor.createdAt, cursor.id)
+    params.push(limit)
+    return this.db
+      .prepare(
+        `SELECT * FROM jobs WHERE status IN (${placeholders})${cursorClause}
+       ORDER BY created_at ASC, id ASC LIMIT ?`
+      )
+      .all(...params) as any[]
+  }
+
+  findExpiredClaimedJobs(now: string, limit: number = 500): any[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM jobs
+       WHERE status IN ('running','cancelling','retry_wait')
+         AND claim_token IS NOT NULL AND (claim_until IS NULL OR claim_until <= ?)
+       ORDER BY claim_until ASC, created_at ASC, id ASC LIMIT ?`
+      )
+      .all(now, limit) as any[]
+  }
+
+  markJobInterrupted(jobId: string, reason: string, result?: unknown): boolean {
     const updates: string[] = ['status = ?', 'error = ?', 'finished_at = ?', 'updated_at = ?']
     const now = new Date().toISOString()
     const params: any[] = ['interrupted', reason, now, now]
@@ -2761,11 +3817,43 @@ export class DatabaseManager {
       updates.unshift('result_json = ?')
       params.unshift(JSON.stringify(result))
     }
-    params.push(jobId)
+    params.push(jobId, now)
     const stmt = this.db.prepare(`
-      UPDATE jobs SET ${updates.join(', ')} WHERE id = ?
+      UPDATE jobs SET ${updates.join(', ')}
+      WHERE id = ? AND (claim_token IS NULL OR claim_until IS NULL OR claim_until <= ?)
     `)
-    stmt.run(...params)
+    return stmt.run(...params).changes === 1
+  }
+
+  /** Terminate persisted analysis stages whose worker cannot be recovered. */
+  markAnalysisStagesInterruptedByJob(jobId: string, reason: string): void {
+    const now = new Date().toISOString()
+    const transaction = this.db.transaction(() => {
+      const runRows = this.db
+        .prepare('SELECT DISTINCT run_id FROM analysis_run_stages WHERE job_id = ?')
+        .all(jobId) as Array<{ run_id: string }>
+      this.db
+        .prepare(
+          `UPDATE analysis_run_stages
+           SET status = 'interrupted', execution_state = 'interrupted',
+               result_json = ?, metadata_json = ?, finished_at = ?, updated_at = ?
+           WHERE job_id = ? AND status IN ('queued','running','partial')`
+        )
+        .run(
+          JSON.stringify({ status: 'interrupted', error: reason }),
+          JSON.stringify({ recovery_error: reason }),
+          now,
+          now,
+          jobId
+        )
+      const updateRun = this.db.prepare(
+        `UPDATE analysis_runs
+         SET status = 'partial', updated_at = ?
+         WHERE id = ? AND status IN ('queued','running')`
+      )
+      for (const row of runRows) updateRun.run(now, row.run_id)
+    })
+    transaction.immediate()
   }
 
   findJobsBySample(sampleId: string, limit: number = 50): any[] {

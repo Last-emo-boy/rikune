@@ -27,6 +27,7 @@ import {
   resolveSampleFile,
   resolveAnalysisBackends,
 } from '../../docker-shared.js'
+import { throwIfAnalysisAborted } from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'upx.inspect'
 const TOOL_VERSION = '0.1.0'
@@ -419,9 +420,11 @@ export function createUPXInspectHandler(
   database: DatabaseManager,
   dependencies?: SharedBackendDependencies
 ) {
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const startTime = Date.now()
+    let tempDir: string | undefined
     try {
+      throwIfAnalysisAborted(abortSignal)
       const input = upxInspectInputSchema.parse(args)
       const sample = ensureSampleExists(database, input.sample_id)
       const evidenceArgs = {
@@ -455,7 +458,7 @@ export function createUPXInspectHandler(
       }
 
       const runner = dependencies?.executeCommand || executeCommand
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'upx-inspect-'))
+      tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'upx-inspect-'))
       let commandArgs: string[] = []
       let outputPath: string | null = null
       if (input.operation === 'list') {
@@ -467,7 +470,10 @@ export function createUPXInspectHandler(
         commandArgs = ['-d', '-o', outputPath, samplePath]
       }
 
-      const commandResult = await runner(backend.path, commandArgs, input.timeout_sec * 1000)
+      const commandResult = await runner(backend.path, commandArgs, input.timeout_sec * 1000, {
+        abortSignal,
+      })
+      throwIfAnalysisAborted(abortSignal)
 
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
@@ -501,8 +507,6 @@ export function createUPXInspectHandler(
         }
         if (artifact) artifacts.push(artifact)
       }
-
-      await fs.rm(tempDir, { recursive: true, force: true })
 
       let outputData: Record<string, unknown> = buildStructuredResult({
         input,
@@ -563,11 +567,14 @@ export function createUPXInspectHandler(
         metrics: buildMetrics(startTime, upxInspectToolDefinition.name),
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [normalizeError(error)],
         metrics: buildMetrics(startTime, upxInspectToolDefinition.name),
       }
+    } finally {
+      if (tempDir) await fs.rm(tempDir, { recursive: true, force: true })
     }
   }
 }

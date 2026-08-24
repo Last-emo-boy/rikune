@@ -16,6 +16,11 @@ import {
 } from '../../../analysis/nonblocking-analysis.js'
 import { lookupCachedResult, formatCacheWarning } from '../../../tools/cache-observability.js'
 import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'attack.map'
 const TOOL_VERSION = '1.1.0'
@@ -885,7 +890,10 @@ export function createAttackMapHandler(
   const triageHandler = createTriageWorkflowHandler(workspaceManager, database, cacheManager)
   const packerHandler = createPackerDetectHandler(workspaceManager, database, cacheManager)
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
+    throwIfAnalysisAborted(abortSignal)
+    const runHandler = (handler: AbortableHandler<ToolArgs, WorkerResult>, handlerArgs: ToolArgs) =>
+      invokeAbortable(handler, handlerArgs, abortSignal)
     const startTime = Date.now()
 
     try {
@@ -914,6 +922,7 @@ export function createAttackMapHandler(
 
       if (input.reuse_cached && !input.force_refresh) {
         const cachedLookup = await lookupCachedResult(cacheManager, cacheKey)
+        throwIfAnalysisAborted(abortSignal)
         if (cachedLookup) {
           return {
             ok: true,
@@ -974,7 +983,7 @@ export function createAttackMapHandler(
         })
       }
 
-      const triageResult = await triageHandler({
+      const triageResult = await runHandler(triageHandler, {
         sample_id: input.sample_id,
         force_refresh: input.force_refresh,
       })
@@ -1007,7 +1016,7 @@ export function createAttackMapHandler(
         suspected?: Array<{ runtime?: string }>
       } | null
 
-      const packerResult = await packerHandler({
+      const packerResult = await runHandler(packerHandler, {
         sample_id: input.sample_id,
         force_refresh: input.force_refresh,
       })
@@ -1044,6 +1053,7 @@ export function createAttackMapHandler(
 
       const tacticSummary: Record<string, number> = {}
       for (const technique of mapping.techniques) {
+        throwIfAnalysisAborted(abortSignal)
         for (const tactic of technique.tactics) {
           tacticSummary[tactic] = (tacticSummary[tactic] || 0) + 1
         }
@@ -1119,7 +1129,9 @@ export function createAttackMapHandler(
         quality_gates: qualityGates,
       }
 
+      throwIfAnalysisAborted(abortSignal)
       await cacheManager.setCachedResult(cacheKey, data, CACHE_TTL_30_DAYS, sample.sha256)
+      throwIfAnalysisAborted(abortSignal)
 
       return {
         ok: true,
@@ -1141,6 +1153,7 @@ export function createAttackMapHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [(error as Error).message],

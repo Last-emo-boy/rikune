@@ -2,6 +2,7 @@ import { describe, expect, test, jest } from '@jest/globals'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { EventEmitter } from 'events'
 import { DatabaseManager } from '../../src/database.js'
 import {
   RuntimeWorkerPool,
@@ -177,20 +178,23 @@ describe('runtime worker pool', () => {
     }
   })
 
-  test('shutdown rejects pending work and clears live workers', async () => {
+  test('shutdown rejects pending work only after the child confirms close', async () => {
     const pool = new RuntimeWorkerPool() as any
     const reject = jest.fn()
     const clearTimeoutMock = jest.spyOn(global, 'clearTimeout')
+    const child = new EventEmitter() as any
+    child.stdin = { end: jest.fn() }
+    child.kill = jest.fn(() => {
+      setImmediate(() => child.emit('close', null, 'SIGTERM'))
+      return true
+    })
 
-    pool.workers.set('worker-live', {
+    const workerState: any = {
       id: 'worker-live',
       family: 'static_python.preview',
       compatibilityKey: 'compat-live',
       deploymentKey: 'deploy-live',
-      child: {
-        stdin: { end: jest.fn() },
-        kill: jest.fn(),
-      } as any,
+      child,
       busy: true,
       unhealthy: false,
       createdAt: new Date().toISOString(),
@@ -201,14 +205,61 @@ describe('runtime worker pool', () => {
         reject,
         timer: setTimeout(() => undefined, 60_000),
       },
+    }
+    child.on('close', () => {
+      if (!workerState.pending) return
+      const pending = workerState.pending
+      workerState.pending = undefined as any
+      clearTimeout(pending.timer)
+      pending.reject(pending.terminalError || new Error('worker closed'))
     })
+    pool.workers.set('worker-live', workerState)
 
     try {
       await pool.shutdown({ graceMs: 10 })
       expect(pool.workers.size).toBe(0)
       expect(reject).toHaveBeenCalledWith(expect.any(Error))
+      expect(child.kill).toHaveBeenCalledWith('SIGTERM')
     } finally {
       clearTimeoutMock.mockRestore()
     }
+  })
+
+  test('AbortSignal escalates a stubborn worker and rejects only after process exit', async () => {
+    const pool = new RuntimeWorkerPool() as any
+    const controller = new AbortController()
+    const request = pool.executeHelperWorker(
+      { job_id: 'stubborn' },
+      {
+        family: 'test.stubborn',
+        compatibilityKey: 'stubborn-v1',
+        spawnConfig: {
+          command: process.execPath,
+          args: [
+            '-e',
+            "process.on('SIGTERM',()=>{}); process.stdin.resume(); setInterval(()=>{},1000)",
+          ],
+        },
+        timeoutMs: 30_000,
+        terminationGraceMs: 75,
+        abortSignal: controller.signal,
+      }
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const worker = [...pool.workers.values()][0]
+    expect(worker?.child.pid).toBeGreaterThan(0)
+    let settled = false
+    void request.finally(() => {
+      settled = true
+    }).catch(() => undefined)
+
+    controller.abort()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(settled).toBe(false)
+    await expect(request).rejects.toThrow(/aborted/i)
+    expect(settled).toBe(true)
+    expect(() => process.kill(worker.child.pid, 0)).toThrow()
+    await pool.shutdown({ graceMs: 75 })
   })
 })

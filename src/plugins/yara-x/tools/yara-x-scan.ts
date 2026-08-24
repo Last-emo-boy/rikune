@@ -25,6 +25,7 @@ import {
   resolveSampleFile,
   resolveAnalysisBackends,
 } from '../../docker-shared.js'
+import { throwIfAnalysisAborted } from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'yara_x.scan'
 const TOOL_VERSION = '0.1.0'
@@ -949,9 +950,10 @@ export function createYaraXScanHandler(
   database: DatabaseManager,
   dependencies?: SharedBackendDependencies
 ) {
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const startTime = Date.now()
     try {
+      throwIfAnalysisAborted(abortSignal)
       const input = yaraXScanInputSchema.parse(args)
       const sample = ensureSampleExists(database, input.sample_id)
       let rulesDigest: string | null = null
@@ -960,8 +962,10 @@ export function createYaraXScanHandler(
       } else if (input.rules_path) {
         try {
           const rulesContent = await fs.readFile(input.rules_path, 'utf8')
+          throwIfAnalysisAborted(abortSignal)
           rulesDigest = createHash('sha256').update(rulesContent).digest('hex')
         } catch {
+          throwIfAnalysisAborted(abortSignal)
           rulesDigest = createHash('sha256').update(input.rules_path).digest('hex')
         }
       }
@@ -971,6 +975,7 @@ export function createYaraXScanHandler(
       }
       const reused = findBackendPreviewEvidence(database, sample, 'yara_x', 'scan', evidenceArgs)
       if (reused) {
+        throwIfAnalysisAborted(abortSignal)
         const reusedData = isRecord(reused.result)
           ? hydrateStructuredResult({
               data: reused.result,
@@ -992,6 +997,7 @@ export function createYaraXScanHandler(
       }
 
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
+      throwIfAnalysisAborted(abortSignal)
       const backends = (dependencies?.resolveBackends || resolveAnalysisBackends)()
       const backend = backends.yara_x
       if (!backend.available || !backend.path) {
@@ -999,18 +1005,28 @@ export function createYaraXScanHandler(
       }
 
       const runPythonImpl = dependencies?.runPythonJson || runPythonJson
-      const result = await runPythonImpl(
-        backend.path,
-        YARAX_SCAN_SCRIPT,
-        {
-          sample_path: samplePath,
-          rules_text: input.rules_text,
-          rules_path: input.rules_path,
-          max_matches_per_pattern: input.max_matches_per_pattern,
-          timeout_sec: input.timeout_sec,
-        },
-        input.timeout_sec * 1000 + 5000
-      )
+      const pythonPayload = {
+        sample_path: samplePath,
+        rules_text: input.rules_text,
+        rules_path: input.rules_path,
+        max_matches_per_pattern: input.max_matches_per_pattern,
+        timeout_sec: input.timeout_sec,
+      }
+      const result = abortSignal
+        ? await runPythonImpl(
+            backend.path,
+            YARAX_SCAN_SCRIPT,
+            pythonPayload,
+            input.timeout_sec * 1000 + 5000,
+            { abortSignal }
+          )
+        : await runPythonImpl(
+            backend.path,
+            YARAX_SCAN_SCRIPT,
+            pythonPayload,
+            input.timeout_sec * 1000 + 5000
+          )
+      throwIfAnalysisAborted(abortSignal)
 
       const matchingRules = normalizeMatchingRules(result.parsed?.matching_rules)
       const moduleOutputs = isRecord(result.parsed?.module_outputs)
@@ -1030,6 +1046,7 @@ export function createYaraXScanHandler(
       const artifacts: ArtifactRef[] = []
       let artifact: ArtifactRef | undefined
       if (input.persist_artifact) {
+        throwIfAnalysisAborted(abortSignal)
         artifact = await persistBackendArtifact(
           workspaceManager,
           database,
@@ -1047,10 +1064,12 @@ export function createYaraXScanHandler(
             },
           }
         )
+        throwIfAnalysisAborted(abortSignal)
         artifacts.push(artifact)
         outputData = { ...outputData, artifact }
       }
 
+      throwIfAnalysisAborted(abortSignal)
       persistBackendPreviewEvidence(
         database,
         sample,
@@ -1064,6 +1083,7 @@ export function createYaraXScanHandler(
           rules_path: input.rules_path || null,
         }
       )
+      throwIfAnalysisAborted(abortSignal)
 
       return {
         ok: true,
@@ -1072,6 +1092,7 @@ export function createYaraXScanHandler(
         metrics: buildMetrics(startTime, yaraXScanToolDefinition.name),
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [normalizeError(error)],

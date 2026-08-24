@@ -7,10 +7,13 @@ Versioning where practical.
 
 ## [Unreleased]
 
-## [1.4.0] - 2026-08-23
+## [1.4.0] - 2026-08-24
 
 ### Added
 
+- Added crash-safe `sample.delete` with persistent shared/exclusive leases, TTL heartbeats,
+  generation fencing, prepared quarantine journals, startup recovery, and complete workspace,
+  storage, artifact, Ghidra, log, cache, batch, KB, and audit cleanup.
 - Added MCP tool and resource annotations, top-level titles, tool `outputSchema` declarations,
   server title/instructions, resource templates, resource subscriptions, and update notifications.
 - Added cursor pagination for tools, prompts, resources, and resource templates together with
@@ -34,11 +37,27 @@ Versioning where practical.
   plugin/worker contracts.
 - Moved the runtime product version to a single `package.json` source used by MCP server info,
   Gateway, health/readiness, and dashboard APIs.
-- Bumped the changed `@rikune/shared`, `@rikune/plugin-sdk`, `@rikune/runtime-node`, and
-  `@rikune/windows-host-agent` workspaces to `1.2.0`.
+- Bumped the changed `@rikune/shared`, `@rikune/plugin-sdk`, `@rikune/runtime-node`,
+  `@rikune/windows-host-agent`, and `@rikune/tsconfig` workspaces to `1.4.0` so every
+  published manifest and bundled internal dependency matches the release version.
 
 ### Security
 
+- Added the exact static OCI contract: a generated 100-plugin lock, the ordered
+  `fast_profile` → `enrich_static` → `function_map` DAG, backend path/environment pinning,
+  non-root uid/gid 1000, root-owned read-only code and lock files, and registry/executor/runner
+  fail-closed gates. Quarantine moves use Linux `openat2` dirfds and `renameat2` so ancestor
+  symlink swaps cannot redirect deletion; unsupported platforms fail closed.
+- Pinned every external OCI base by index digest and verified every downloaded analyzer asset
+  before extraction or installation. Static Python moved to 3.12 with complete transitive
+  `--require-hashes` locks; Angr moved to 9.3.2 with Capstone 5.0.9, and optional dynamic
+  Speakeasy moved to the Unicorn 2 based 2.0.0b4 line.
+- Upgraded the pinned Ghidra backend to 12.1.3 and its official SHA-256-verified release asset,
+  while retaining process-tree timeouts plus container memory and PID ceilings as defense in depth.
+- Pinned every third-party GitHub Action to an exact commit and made the non-release full-image
+  build manual and non-publishing; only the verified static release DAG can mutate release OCI tags.
+- Fenced sample ingest across SQLite and filesystem commit boundaries with lease token,
+  instance, generation, tombstone, TTL, exact-inode rollback, and guarded `samples` triggers.
 - Added fail-closed runtime endpoint validation, special-use IP rejection, DNS pinning, same-origin
   credential binding, and redirect-safe trusted fetch behavior to harden SSRF and DNS-rebinding
   boundaries.
@@ -47,6 +66,20 @@ Versioning where practical.
 - Bounded PDF input, decompression, extracted content, and worker output handling without executing
   embedded JavaScript or opening network connections.
 - Refreshed the dependency lockfile to resolve the npm audit findings present at release time.
+- Hardened Windows and Hybrid bootstrap paths with CSPRNG credentials, protected atomic env-file
+  replacement, PowerShell 7 gates, exact project-local PM2, HTTPS-by-default remote endpoints, and
+  stdin/process-environment secret delivery that keeps API keys out of child command lines.
+- Hardened the dashboard against stored and DOM XSS by escaping API-derived values in both text and
+  attribute contexts, replacing inline handlers with delegated events, allowlisting Markdown link
+  schemes, stripping query-string API keys from browser history, and isolating untrusted HTML and
+  SVG artifacts in opaque-origin sandboxed iframes.
+- Bound Hybrid sandbox start and stop operations to absolute server deadlines, propagated their
+  remaining budget through PowerShell, `netsh`, ACL, readiness, and Hyper-V calls, and added
+  request-correlated status reconciliation so late or ambiguous responses cannot orphan resources
+  or conceal failed cleanup.
+- Disabled bundled and Docker-based Qiling installation after its supported dependency chain was
+  proven to require vulnerable Pillow versions below the v1.4.0 baseline. Qiling remains available
+  only through an independently audited BYO interpreter configured with `QILING_PYTHON`.
 
 ### Fixed
 
@@ -59,9 +92,18 @@ Versioning where practical.
   locally loaded image.
 - Restored the optional JVM decompiler Docker route with a real Java/CFR fragment and made generated
   image version labels follow the root package version.
+- Routed the legacy `docs:api` command to the maintained tool-catalog generator and removed the
+  orphaned Markdown generator that silently emitted an empty API reference.
+- Made static-profile version-evidence patterns compatible with the release image's Node.js 22
+  runtime and verified the exact Rizin and capa command/output contracts against the built image.
 
 ### Packaging
 
+- Classified the npm package as dual-use, included the root `DISCLOSURE`, and changed release
+  automation to stage and verify a candidate while reserving final npm publication for an explicit
+  human maintainer 2FA ceremony.
+- Added a single v1.4.0 release DAG whose npm verification depends on the verified linux/amd64
+  static OCI candidate, SPDX 2.3 SBOM, provenance, signature, and attestations.
 - Bundled `@rikune/shared` and `@rikune/plugin-sdk` into the root npm tarball so public installs no
   longer depend on unavailable scoped registry packages.
 - Added the public `rikune/plugin-sdk.js` bridge for external plugin authors.

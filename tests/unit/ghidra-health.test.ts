@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
 import fs from 'fs/promises'
 import path from 'path'
@@ -28,7 +29,7 @@ describe('ghidra.health tool', () => {
 
   test('should report downstream live probe status using a reusable analysis', async () => {
     const sampleId = 'sha256:' + 'a'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'a'.repeat(64),
       md5: 'b'.repeat(32),

@@ -17,6 +17,7 @@ import {
   buildDynamicSetupRequired,
   resolveAnalysisBackends,
 } from '../../docker-shared.js'
+import { throwIfAnalysisAborted } from '../../../analysis/analysis-cancellation.js'
 
 export const pandaInspectInputSchema = z.object({
   sample_id: z
@@ -401,10 +402,11 @@ export function createPandaInspectHandler(
   database: DatabaseManager,
   dependencies?: SharedBackendDependencies
 ) {
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const startTime = Date.now()
     let backendProbeAttempted = false
     try {
+      throwIfAnalysisAborted(abortSignal)
       const input = pandaInspectInputSchema.parse(args)
       if (input.sample_id) {
         ensureSampleExists(database, input.sample_id)
@@ -428,8 +430,10 @@ export function createPandaInspectHandler(
         backend.path,
         PANDA_INSPECT_SCRIPT,
         {},
-        input.timeout_sec * 1000
+        input.timeout_sec * 1000,
+        { abortSignal }
       )
+      throwIfAnalysisAborted(abortSignal)
 
       return enrichPandaInspectResult(
         {
@@ -454,6 +458,7 @@ export function createPandaInspectHandler(
         }
       )
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       const parsedInput = pandaInspectInputSchema.safeParse(args)
       const message = normalizeError(error)
       return enrichPandaInspectResult(

@@ -1,4 +1,5 @@
-import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
+import { describe, test, expect, beforeEach, afterEach, jest } from '@jest/globals'
 import { createHash } from 'crypto'
 import fs from 'fs'
 import path from 'path'
@@ -307,7 +308,7 @@ describe('workflow.summarize', () => {
 
   test('should stop after static stage and persist triage/static digests', async () => {
     const sampleId = 'sha256:' + '1'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '1'.repeat(64),
       md5: '1'.repeat(32),
@@ -371,7 +372,7 @@ describe('workflow.summarize', () => {
 
   test('should reuse persisted stage digests without rebuilding compact report', async () => {
     const sampleId = 'sha256:' + '2'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '2'.repeat(64),
       md5: '2'.repeat(32),
@@ -418,7 +419,7 @@ describe('workflow.summarize', () => {
 
   test('does not reuse a legacy digest without a fingerprint', async () => {
     const sampleId = 'sha256:' + 'd'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'd'.repeat(64),
       md5: 'd'.repeat(32),
@@ -475,7 +476,7 @@ describe('workflow.summarize', () => {
 
   test('does not reuse a sampling final digest for a deterministic request', async () => {
     const sampleId = 'sha256:' + '8'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '8'.repeat(64),
       md5: '8'.repeat(32),
@@ -549,7 +550,7 @@ describe('workflow.summarize', () => {
 
   test('does not reuse summary digests across evidence selectors', async () => {
     const sampleId = 'sha256:' + '9'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '9'.repeat(64),
       md5: '9'.repeat(32),
@@ -605,7 +606,7 @@ describe('workflow.summarize', () => {
   test('invalidates summary digest reuse when new evidence is persisted', async () => {
     const sampleHash = 'a'.repeat(64)
     const sampleId = `sha256:${sampleHash}`
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: sampleHash,
       md5: 'a'.repeat(32),
@@ -699,7 +700,7 @@ describe('workflow.summarize', () => {
   test('invalidates summary digest reuse when persisted Function state changes', async () => {
     const sampleHash = 'e'.repeat(64)
     const sampleId = `sha256:${sampleHash}`
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: sampleHash,
       md5: 'e'.repeat(32),
@@ -768,7 +769,7 @@ describe('workflow.summarize', () => {
   test('refreshes the memoized fingerprint after a rebuilt report persists source artifacts', async () => {
     const sampleHash = '7'.repeat(64)
     const sampleId = `sha256:${sampleHash}`
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: sampleHash,
       md5: '7'.repeat(32),
@@ -859,7 +860,7 @@ describe('workflow.summarize', () => {
     const sampleHash = 'f'.repeat(64)
     const sampleId = `sha256:${sampleHash}`
     const createdAt = '2026-07-14T13:00:00.000Z'
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: sampleHash,
       md5: 'f'.repeat(32),
@@ -971,7 +972,7 @@ describe('workflow.summarize', () => {
   test('rejects digest reuse when a fingerprinted source Artifact file is corrupted', async () => {
     const sampleHash = '0'.repeat(64)
     const sampleId = `sha256:${sampleHash}`
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: sampleHash,
       md5: '0'.repeat(32),
@@ -1043,7 +1044,7 @@ describe('workflow.summarize', () => {
   test('surfaces source Artifact integrity failures during initial digest persistence', async () => {
     const sampleHash = 'a'.repeat(64)
     const sampleId = `sha256:${sampleHash}`
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: sampleHash,
       md5: 'a'.repeat(32),
@@ -1088,7 +1089,7 @@ describe('workflow.summarize', () => {
 
   test('should produce deterministic final synthesis when sampling is unavailable', async () => {
     const sampleId = 'sha256:' + '3'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '3'.repeat(64),
       md5: '3'.repeat(32),
@@ -1128,7 +1129,7 @@ describe('workflow.summarize', () => {
 
   test('should consume a bounded Claim Ledger context without promoting it to evidence', async () => {
     const sampleId = 'sha256:' + '6'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '6'.repeat(64),
       md5: '6'.repeat(32),
@@ -1385,7 +1386,7 @@ describe('workflow.summarize', () => {
 
   test('should isolate final summaries and digest reuse by selected case', async () => {
     const sampleId = 'sha256:' + '7'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '7'.repeat(64),
       md5: '7'.repeat(32),
@@ -1578,7 +1579,7 @@ describe('workflow.summarize', () => {
 
   test('preserves a Case-active Claim and final reuse through 65 cross-Case ledger revisions', async () => {
     const sampleId = 'sha256:' + '9'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '9'.repeat(64),
       md5: '9'.repeat(32),
@@ -1692,7 +1693,7 @@ describe('workflow.summarize', () => {
 
   test('invalidates final reuse when Claim Ledger integrity degrades', async () => {
     const sampleId = 'sha256:' + 'b'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'b'.repeat(64),
       md5: 'b'.repeat(32),
@@ -1760,7 +1761,7 @@ describe('workflow.summarize', () => {
 
   test('does not reuse a final digest when an unreadable Claim head appears after review was already required', async () => {
     const sampleId = 'sha256:' + '1'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '1'.repeat(64),
       md5: '1'.repeat(32),
@@ -1846,7 +1847,7 @@ describe('workflow.summarize', () => {
     const sampleId = 'sha256:' + 'd'.repeat(64)
     const unassignedClaimStatement =
       'This sample-level Claim must be withheld when the only Case cannot be loaded.'
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'd'.repeat(64),
       md5: 'd'.repeat(32),
@@ -1939,7 +1940,7 @@ describe('workflow.summarize', () => {
 
   test('requires review for selected Case corruption without contaminating another Case', async () => {
     const sampleId = 'sha256:' + 'c'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'c'.repeat(64),
       md5: 'c'.repeat(32),
@@ -2072,7 +2073,7 @@ describe('workflow.summarize', () => {
   test('should use client-mediated sampling for final synthesis when available', async () => {
     const sampleId = 'sha256:' + '4'.repeat(64)
     const claimOnlyFinding = 'Claim-only hypothesis must not become an evidence-backed finding.'
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '4'.repeat(64),
       md5: '4'.repeat(32),
@@ -2151,7 +2152,7 @@ describe('workflow.summarize', () => {
 
   test('rejects sampling payloads that attempt to inject source artifact references', async () => {
     const sampleId = 'sha256:' + '7'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '7'.repeat(64),
       md5: '7'.repeat(32),
@@ -2218,7 +2219,7 @@ describe('workflow.summarize', () => {
 
   test('should fall back to deterministic synthesis when sampling response is invalid', async () => {
     const sampleId = 'sha256:' + '5'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '5'.repeat(64),
       md5: '5'.repeat(32),
@@ -2260,5 +2261,77 @@ describe('workflow.summarize', () => {
     expect(
       result.warnings?.some((item) => item.includes('Falling back to deterministic synthesis'))
     ).toBe(true)
+  })
+
+  test('threads cancellation through report and sampling boundaries and waits for teardown', async () => {
+    const sampleId = 'sha256:' + '6'.repeat(64)
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
+      id: sampleId,
+      sha256: '6'.repeat(64),
+      md5: '6'.repeat(32),
+      size: 4096,
+      file_type: 'PE',
+      created_at: new Date().toISOString(),
+      source: 'unit-test',
+    })
+    let resolveStarted!: (signal: AbortSignal) => void
+    const started = new Promise<AbortSignal>((resolve) => {
+      resolveStarted = resolve
+    })
+    let resolveTeardown!: () => void
+    const teardown = new Promise<void>((resolve) => {
+      resolveTeardown = resolve
+    })
+    const reportSummarizeHandler = jest.fn(
+      async (_args: ToolArgs, _signal?: AbortSignal) => createCompactReportResult(sampleId)
+    )
+    const samplingRequester = jest.fn(
+      async (_request: unknown, options?: { signal?: AbortSignal }) => {
+        const signal = options?.signal
+        if (!signal) throw new Error('missing AbortSignal')
+        resolveStarted(signal)
+        await new Promise<void>((resolve) => {
+          signal.addEventListener('abort', () => resolve(), { once: true })
+        })
+        await teardown
+        return { model: 'test-model', content: [] }
+      }
+    )
+    const handler = createWorkflowSummarizeHandler(
+      workspaceManager,
+      database,
+      cacheManager,
+      undefined,
+      {
+        reportSummarizeHandler,
+        samplingRequester,
+        clientCapabilitiesProvider: () => ({ sampling: {} }),
+      }
+    )
+    const controller = new AbortController()
+    let settled = false
+    const running = handler(
+      {
+        sample_id: sampleId,
+        through_stage: 'final',
+        synthesis_mode: 'sampling',
+        session_tag: 'cancelled-sampling',
+      },
+      controller.signal
+    ).finally(() => {
+      settled = true
+    })
+
+    const receivedSignal = await started
+    controller.abort(new Error('cancel sampling'))
+    await Promise.resolve()
+
+    expect(receivedSignal).toBe(controller.signal)
+    expect(reportSummarizeHandler.mock.calls[0]?.[1]).toBe(controller.signal)
+    expect(samplingRequester.mock.calls[0]?.[1]).toEqual({ signal: controller.signal })
+    expect(settled).toBe(false)
+
+    resolveTeardown()
+    await expect(running).rejects.toMatchObject({ name: 'AbortError' })
   })
 })

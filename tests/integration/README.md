@@ -25,9 +25,8 @@ Use Node.js 22+ for repository tests.
 ```bash
 npm install
 npm run build
-python -m pip install -r requirements.txt
-python -m pip install -r workers/requirements.txt
-python -m pip install -r workers/requirements-dynamic.txt
+python -m pip install --require-hashes -r requirements.lock.txt
+python -m pip install --require-hashes -r workers/requirements-dynamic.lock.txt
 ```
 
 If native modules fail after changing Node versions:

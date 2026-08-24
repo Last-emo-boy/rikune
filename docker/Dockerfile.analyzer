@@ -13,10 +13,9 @@ ARG HTTP_PROXY=""
 ARG HTTPS_PROXY=""
 ARG http_proxy=""
 ARG https_proxy=""
-ARG NO_PROXY="localhost,127.0.0.1,deb.debian.org,security.debian.org,mirrors.aliyun.com,archive.ubuntu.com,security.ubuntu.com,aliyuncs.com"
+ARG NO_PROXY="localhost,127.0.0.1,deb.debian.org,security.debian.org,archive.ubuntu.com,security.ubuntu.com"
 ARG JADX_VERSION=1.5.1
-ARG ANGR_VERSION=9.2.205
-ARG GHIDRA_VERSION=12.0.4
+ARG GHIDRA_VERSION=12.1.3
 ARG GORESYM_VERSION=3.3
 ARG CAPA_RULES_VERSION=v9.3.1
 ARG CAPA_VERSION=9.3.1
@@ -31,7 +30,7 @@ ARG WABT_VERSION=1.0.39
 # =============================================================================
 # Stage 1: TypeScript Builder (always)
 # =============================================================================
-FROM node:22-slim AS builder
+FROM node:22-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436 AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
@@ -46,8 +45,12 @@ ENV HTTP_PROXY="${HTTP_PROXY}" \
     https_proxy="${https_proxy}" \
     NO_PROXY="${NO_PROXY}"
 
-RUN npm config set registry https://registry.npmmirror.com && \
-    npm config set audit false && \
+# Native addons must compile from the npm tarball sources. This prevents
+# install scripts from fetching unverified prebuilt binaries outside the lock.
+ENV npm_config_build_from_source=true \
+    npm_config_nodedir=/usr/local
+
+RUN npm config set audit false && \
     npm config set fund false
 
 WORKDIR /app
@@ -55,7 +58,8 @@ COPY package*.json ./
 COPY turbo.json ./
 COPY tsconfig*.json ./
 COPY packages/ ./packages/
-RUN npm ci --legacy-peer-deps --no-audit --no-fund
+RUN npm ci --legacy-peer-deps --no-audit --no-fund && \
+    node -e "const Database=require('better-sqlite3');const db=new Database(':memory:');db.exec('SELECT 1');db.close()"
 
 COPY scripts/ ./scripts/
 COPY src/ ./src/
@@ -65,7 +69,7 @@ RUN test -f /app/dist/index.js
 # =============================================================================
 # Stage 2: Python Base (baseline + global packages)
 # =============================================================================
-FROM python:3.11-slim-bookworm AS python-base
+FROM python:3.12-slim-bookworm@sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134 AS python-base
 
 ARG HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY
 
@@ -75,12 +79,6 @@ ENV HTTP_PROXY="${HTTP_PROXY}" \
     https_proxy="${https_proxy}" \
     NO_PROXY="${NO_PROXY}"
 
-RUN rm -f /etc/apt/sources.list.d/* && cat > /etc/apt/sources.list <<EOF
-deb https://mirrors.aliyun.com/debian bookworm main contrib non-free non-free-firmware
-deb https://mirrors.aliyun.com/debian bookworm-updates main contrib non-free non-free-firmware
-deb https://mirrors.aliyun.com/debian-security bookworm-security main contrib non-free non-free-firmware
-EOF
-
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -89,11 +87,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     file \
     git \
     libyara-dev \
-    python3-venv \
     xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./requirements.txt
+COPY requirements.lock.txt ./requirements.lock.txt
 COPY workers/ ./workers/
 # Plugin-specific workers (auto-generated from src/plugins/*/workers/)
 COPY src/plugins/android/workers/ ./src/plugins/android/workers/
@@ -109,11 +106,7 @@ COPY src/plugins/pdf-analysis/workers/ ./src/plugins/pdf-analysis/workers/
 COPY src/plugins/python-decompile/workers/ ./src/plugins/python-decompile/workers/
 COPY src/plugins/vm-analysis/workers/ ./src/plugins/vm-analysis/workers/
 
-RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
-    pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
-
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir -r workers/requirements.txt
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock.txt
 
 RUN ls -la /app/workers/ && \
     python3 -c "import sys; sys.path.insert(0, '/app/workers'); import static_worker; print('static_worker.py loaded')" && \
@@ -128,17 +121,17 @@ RUN ls -la /app/workers/ && \
 # =============================================================================
 FROM python-base AS angr-python
 
-ARG ANGR_VERSION
+COPY src/plugins/angr/requirements.lock.txt /tmp/angr-requirements.lock.txt
 
 RUN python3 -m venv /opt/angr-venv && \
-    /opt/angr-venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    /opt/angr-venv/bin/pip install --no-cache-dir "angr==${ANGR_VERSION}" && \
+    /opt/angr-venv/bin/pip install --no-cache-dir --require-hashes \
+      -r /tmp/angr-requirements.lock.txt && \
     /opt/angr-venv/bin/python -c "import angr; print('✓ angr', angr.__version__)"
 
 # =============================================================================
 # Ghidra (JDK + headless analysis)
 # =============================================================================
-FROM eclipse-temurin:21-jdk AS ghidra-stage
+FROM eclipse-temurin:21-jdk@sha256:85f00967bcc624fc19fa9c2cf124ea426a5363898e267141726f31f358c2e14b AS ghidra-stage
 
 ARG HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY
 ARG GHIDRA_VERSION
@@ -149,13 +142,6 @@ ENV HTTP_PROXY="${HTTP_PROXY}" \
     https_proxy="${https_proxy}" \
     NO_PROXY="${NO_PROXY}"
 
-RUN rm -f /etc/apt/sources.list.d/* && cat > /etc/apt/sources.list <<EOF
-deb https://mirrors.aliyun.com/ubuntu noble main restricted universe multiverse
-deb https://mirrors.aliyun.com/ubuntu noble-updates main restricted universe multiverse
-deb https://mirrors.aliyun.com/ubuntu noble-security main restricted universe multiverse
-deb https://mirrors.aliyun.com/ubuntu noble-backports main restricted universe multiverse
-EOF
-
 WORKDIR /opt
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -164,22 +150,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN set -eux; \
-    GHIDRA_URL="https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_${GHIDRA_VERSION}_build/ghidra_${GHIDRA_VERSION}_PUBLIC_20260303.zip"; \
-    echo "Downloading Ghidra ${GHIDRA_VERSION}..."; \
-    echo "URL: $GHIDRA_URL"; \
-    if curl -fsSL --connect-timeout 120 --retry 3 --retry-delay 10 -o ghidra.zip "$GHIDRA_URL"; then \
-        echo "Download successful"; \
-    else \
-        echo "ERROR: Failed to download Ghidra"; \
-        exit 1; \
-    fi && \
+    GHIDRA_URL="https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_${GHIDRA_VERSION}_build/ghidra_${GHIDRA_VERSION}_PUBLIC_20260817.zip"; \
+    curl -fsSL --connect-timeout 120 --retry 3 --retry-delay 10 -o ghidra.zip "$GHIDRA_URL"; \
+    printf '%s  %s\n' '93a5d11a9ad510622acaaf908c556a7b9b764d338e78a7567f3689bf5081fd54' ghidra.zip | sha256sum -c -; \
     FILE_SIZE=$(wc -c < ghidra.zip); \
     if [ "$FILE_SIZE" -lt 1000000 ]; then \
         echo "ERROR: Ghidra archive too small"; \
         exit 1; \
-    fi && \
-    unzip -q ghidra.zip && \
-    mv ghidra_* ghidra && \
+    fi; \
+    unzip -q ghidra.zip; \
+    mv ghidra_* ghidra; \
     rm ghidra.zip
 
 ENV GHIDRA_INSTALL_DIR=/opt/ghidra
@@ -187,8 +167,11 @@ ENV JAVA_HOME=/opt/java/openjdk
 
 RUN test -f /opt/ghidra/support/analyzeHeadless
 
+# ── .NET runtime copied into the final Python image ──
+FROM mcr.microsoft.com/dotnet/runtime:8.0-bookworm-slim@sha256:a27922704a14d6d1ce103697aa3efa885902db33651b41a84ad1594fdf5be66e AS dotnet-runtime
+
 # ── .NET SDK tool staging for ILSpy CLI ──
-FROM mcr.microsoft.com/dotnet/sdk:8.0-bookworm-slim AS dotnet-tools
+FROM mcr.microsoft.com/dotnet/sdk:8.0-bookworm-slim@sha256:306301580fcaa5b445180e759db59309979002d1000669cb4cf58a567d0014bc AS dotnet-tools
 
 ARG HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY
 ARG ILSPYCMD_VERSION
@@ -199,13 +182,19 @@ ENV HTTP_PROXY="${HTTP_PROXY}" \
     https_proxy="${https_proxy}" \
     NO_PROXY="${NO_PROXY}"
 
-RUN dotnet tool install ilspycmd --version "${ILSPYCMD_VERSION}" --tool-path /opt/dotnet-tools && \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && \
+    mkdir -p /tmp/ilspy-feed && \
+    curl -fsSL "https://api.nuget.org/v3-flatcontainer/ilspycmd/${ILSPYCMD_VERSION}/ilspycmd.${ILSPYCMD_VERSION}.nupkg" -o "/tmp/ilspy-feed/ilspycmd.${ILSPYCMD_VERSION}.nupkg" && \
+    printf '%s  %s\n' '2b5058f5ccc164c33b7aabf1a5eb0cf3d3a6af6c145aaf58efd3ed891443af7c' "/tmp/ilspy-feed/ilspycmd.${ILSPYCMD_VERSION}.nupkg" | sha256sum -c - && \
+    printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' '<configuration><packageSources><clear /><add key="verified-local" value="/tmp/ilspy-feed" /></packageSources></configuration>' > /tmp/NuGet.Config && \
+    dotnet tool install ilspycmd --version "${ILSPYCMD_VERSION}" --tool-path /opt/dotnet-tools --configfile /tmp/NuGet.Config && \
+    rm -rf /tmp/ilspy-feed /tmp/NuGet.Config /var/lib/apt/lists/* && \
     /opt/dotnet-tools/ilspycmd --version >/dev/null
 
 # =============================================================================
 # RetDec decompiler
 # =============================================================================
-FROM debian:bookworm-slim AS heavy-tools
+FROM debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241 AS heavy-tools
 
 ARG HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY
 ARG RETDEC_VERSION
@@ -224,6 +213,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN set -eux; \
     curl -fsSL "https://github.com/avast/retdec/releases/download/v${RETDEC_VERSION}/RetDec-v${RETDEC_VERSION}-Linux-Release.tar.xz" -o /tmp/retdec.tar.xz; \
+    printf '%s  %s\n' 'e5a7dd82987ff52b8c714892277d0b1d0190ab778c03036d01eb69c7658ab1a5' /tmp/retdec.tar.xz | sha256sum -c -; \
     mkdir -p /opt/retdec; \
     tar -xJf /tmp/retdec.tar.xz -C /opt/retdec; \
     test -x /opt/retdec/bin/retdec-decompiler; \
@@ -232,7 +222,7 @@ RUN set -eux; \
 # =============================================================================
 # Rizin (static binary)
 # =============================================================================
-FROM debian:bookworm-slim AS core-tools
+FROM debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241 AS core-tools
 
 ARG HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY
 ARG RIZIN_VERSION
@@ -250,12 +240,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN set -eux; \
-    arch="$(dpkg --print-architecture)"; \
-    case "${arch}" in \
-      amd64) rizin_asset="rizin-v${RIZIN_VERSION}-static-x86_64.tar.xz" ;; \
-      *) echo "Unsupported architecture for bundled Rizin static release: ${arch}" >&2; exit 1 ;; \
-    esac; \
+    test "$(dpkg --print-architecture)" = "amd64"; \
+    rizin_asset="rizin-v${RIZIN_VERSION}-static-x86_64.tar.xz"; \
     curl -fsSL "https://github.com/rizinorg/rizin/releases/download/v${RIZIN_VERSION}/${rizin_asset}" -o /tmp/rizin.tar.xz; \
+    printf '%s  %s\n' '39299d492a43458900233e3036058b653d7554a6786192397fd4464c51fce5d6' /tmp/rizin.tar.xz | sha256sum -c -; \
     mkdir -p /opt/rizin; \
     tar -xJf /tmp/rizin.tar.xz -C /opt/rizin; \
     test -x /opt/rizin/bin/rizin; \
@@ -264,7 +252,7 @@ RUN set -eux; \
 # =============================================================================
 # Runtime
 # =============================================================================
-FROM python:3.11-slim-bookworm AS runtime
+FROM python:3.12-slim-bookworm@sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134 AS runtime
 
 ARG HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY
 
@@ -277,12 +265,6 @@ ENV HTTP_PROXY="${HTTP_PROXY}" \
 LABEL maintainer="rikune"
 LABEL version="1.4.0"
 LABEL description="MCP server for Windows binary reverse engineering"
-
-RUN rm -f /etc/apt/sources.list.d/* && cat > /etc/apt/sources.list <<EOF
-deb https://mirrors.aliyun.com/debian bookworm main contrib non-free non-free-firmware
-deb https://mirrors.aliyun.com/debian bookworm-updates main contrib non-free non-free-firmware
-deb https://mirrors.aliyun.com/debian-security bookworm-security main contrib non-free non-free-firmware
-EOF
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
@@ -311,6 +293,13 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package.json ./
+COPY LICENSE DISCLOSURE ./
+RUN chown root:root /app/LICENSE /app/DISCLOSURE && \
+    chmod 0444 /app/LICENSE /app/DISCLOSURE
+COPY static-profile.lock.json /app/static-profile.lock.json
+COPY scripts/secure-fs-helper.py scripts/verify-hybrid-runtime.mjs ./scripts/
+RUN chown root:root ./scripts/secure-fs-helper.py ./scripts/verify-hybrid-runtime.mjs && \
+    chmod 0555 ./scripts/secure-fs-helper.py ./scripts/verify-hybrid-runtime.mjs
 
 # Data files (API semantics, etc.)
 RUN mkdir -p ./data
@@ -326,12 +315,11 @@ COPY src/api/dashboard/ ./dist/api/dashboard/
 
 # Plugin static scripts exposed through MCP resources
 COPY src/plugins/android/scripts/ ./src/plugins/android/scripts/
-COPY src/plugins/frida/scripts/ ./src/plugins/frida/scripts/
 COPY src/plugins/ghidra/scripts/ ./src/plugins/ghidra/scripts/
 
 # -- Python base (always) --
 COPY --from=python-base /usr/local/bin /usr/local/bin
-COPY --from=python-base /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=python-base /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=python-base /app/workers ./workers
 # Plugin-specific workers (auto-generated from src/plugins/*/workers/)
 COPY --from=python-base /app/src/plugins/android/workers/ ./src/plugins/android/workers/
@@ -356,6 +344,7 @@ ARG JADX_VERSION
 RUN set -eux; \
     apt-get update && apt-get install -y --no-install-recommends unzip && \
     curl -fsSL "https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/jadx-${JADX_VERSION}.zip" -o /tmp/jadx.zip && \
+    printf '%s  %s\n' '12fd966431903b8e15c36e5007f19343475be7d8f2a55f082e7a929eeabc937e' /tmp/jadx.zip | sha256sum -c - && \
     mkdir -p /opt/jadx && \
     unzip -q /tmp/jadx.zip -d /opt/jadx && \
     chmod +x /opt/jadx/bin/jadx /opt/jadx/bin/jadx-gui && \
@@ -383,6 +372,7 @@ ARG GORESYM_VERSION
 RUN set -eux; \
     tmpzip="$(mktemp /tmp/goresym-XXXXXX.zip)"; \
     curl -fsSL "https://github.com/mandiant/GoReSym/releases/download/v${GORESYM_VERSION}/GoReSym-linux.zip" -o "$tmpzip"; \
+    printf '%s  %s\n' '33356896529915cccdb1b2d5d73f8a0b719350136285496b7946036339fbe6fe' "$tmpzip" | sha256sum -c -; \
     unzip -o "$tmpzip" -d /tmp/goresym; \
     install -m 755 /tmp/goresym/GoReSym /usr/local/bin/GoReSym; \
     rm -rf "$tmpzip" /tmp/goresym
@@ -400,18 +390,21 @@ ARG DIE_RELEASE_CHANNEL
 RUN set -eux; \
     mkdir -p /opt/capa-rules /opt/capa-sigs /opt/downloads; \
     curl -fsSL "https://github.com/mandiant/capa-rules/archive/refs/tags/${CAPA_RULES_VERSION}.tar.gz" -o /tmp/capa-rules.tar.gz; \
+    printf '%s  %s\n' 'ceb2c468bb30f88e339b51af097ecfb479b1479133bcff2fa3267a4b6bd501ed' /tmp/capa-rules.tar.gz | sha256sum -c -; \
     tar -xzf /tmp/capa-rules.tar.gz -C /opt/downloads; \
     extracted_dir="$(find /opt/downloads -mindepth 1 -maxdepth 1 -type d -name 'capa-rules-*' | head -n 1)"; \
     test -n "${extracted_dir}"; \
     rm -rf /opt/capa-rules; \
     mv "${extracted_dir}" /opt/capa-rules; \
     curl -fsSL "https://github.com/mandiant/capa/archive/refs/tags/v${CAPA_VERSION}.tar.gz" -o /tmp/capa.tar.gz; \
+    printf '%s  %s\n' 'eb4da30ca4c4ea62157f5b58eda0b775522c7e7e2da26e17db09cc2976d84267' /tmp/capa.tar.gz | sha256sum -c -; \
     tar -xzf /tmp/capa.tar.gz -C /opt/downloads; \
     capa_dir="$(find /opt/downloads -mindepth 1 -maxdepth 1 -type d -name 'capa-*' | head -n 1)"; \
     test -n "${capa_dir}"; \
     cp -R "${capa_dir}/sigs/." /opt/capa-sigs/; \
     rm -rf /opt/downloads /tmp/capa-rules.tar.gz /tmp/capa.tar.gz; \
     curl -fsSL "https://github.com/horsicq/DIE-engine/releases/download/${DIE_RELEASE_CHANNEL}/die_${DIE_VERSION}_Debian_12_amd64.deb" -o /tmp/die.deb; \
+    printf '%s  %s\n' 'b3088931639ca1ae51ba2b7905d13ab225af49a9fbd554ed0db99c1a6288a316' /tmp/die.deb | sha256sum -c -; \
     apt-get update; \
     apt-get install -y --no-install-recommends /tmp/die.deb; \
     rm -f /tmp/die.deb; \
@@ -423,17 +416,14 @@ RUN set -eux; \
     test -d /opt/capa-sigs
 
 # ── .NET 8 runtime for managed assembly execution ──
-RUN apt-get update && apt-get install -y --no-install-recommends wget ca-certificates && \
-    wget -qO /tmp/packages-microsoft-prod.deb \
-      "https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb" && \
-    dpkg -i /tmp/packages-microsoft-prod.deb && rm /tmp/packages-microsoft-prod.deb && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends dotnet-runtime-8.0 && \
-    rm -rf /var/lib/apt/lists/*
+COPY --from=dotnet-runtime /usr/share/dotnet /usr/share/dotnet
 COPY --from=dotnet-tools /opt/dotnet-tools /opt/dotnet-tools
-RUN ln -sf /opt/dotnet-tools/ilspycmd /usr/local/bin/ilspycmd && \
+RUN ln -sf /usr/share/dotnet/dotnet /usr/bin/dotnet && \
+    ln -sf /opt/dotnet-tools/ilspycmd /usr/local/bin/ilspycmd && \
+    /usr/bin/dotnet --info >/dev/null && \
     ilspycmd --version >/dev/null
 ENV DOTNET_PATH=/usr/bin/dotnet
+ENV DOTNET_ROOT=/usr/share/dotnet
 ENV ILSPYCMD_PATH=/usr/local/bin/ilspycmd
 
 RUN mkdir -p /opt/rikune-backends/manifold/bin
@@ -441,8 +431,7 @@ COPY src/plugins/manifold/workers/manifold-worker.js /opt/rikune-backends/manifo
 RUN chmod +x /opt/rikune-backends/manifold/bin/manifold-worker.js
 
 # ── Volatility 3 (memory forensics framework) ──
-RUN pip install --no-cache-dir volatility3 && \
-    mkdir -p /opt/vol3-symbols /tmp/rikune-home/.cache && \
+RUN mkdir -p /opt/vol3-symbols /tmp/rikune-home/.cache && \
     HOME=/tmp/rikune-home python3 -c "import volatility3; print('✓ volatility3')" && \
     HOME=/tmp/rikune-home /usr/local/bin/vol --help >/dev/null
 
@@ -470,13 +459,10 @@ ARG UPX_VERSION
 
 # ── UPX ──
 RUN set -eux; \
-    arch="$(dpkg --print-architecture)"; \
-    case "${arch}" in \
-      amd64) upx_asset="upx-${UPX_VERSION}-amd64_linux.tar.xz" ;; \
-      arm64) upx_asset="upx-${UPX_VERSION}-arm64_linux.tar.xz" ;; \
-      *) echo "Unsupported architecture for bundled UPX release: ${arch}" >&2; exit 1 ;; \
-    esac; \
+    test "$(dpkg --print-architecture)" = "amd64"; \
+    upx_asset="upx-${UPX_VERSION}-amd64_linux.tar.xz"; \
     curl -fsSL "https://github.com/upx/upx/releases/download/v${UPX_VERSION}/${upx_asset}" -o /tmp/upx.tar.xz; \
+    printf '%s  %s\n' '1ff660454227861e00772f743f66b900072116b9dc24f6ee28b97cce88a7828a' /tmp/upx.tar.xz | sha256sum -c -; \
     mkdir -p /opt/upx; \
     tar -xJf /tmp/upx.tar.xz -C /opt/upx --strip-components=1; \
     ln -sf /opt/upx/upx /usr/local/bin/upx; \
@@ -523,7 +509,7 @@ RUN (echo "[validate] Rikune Docker image") && \
     (/opt/wabt/bin/wasm-objdump --help >/dev/null 2>&1) && \
     (echo "[validate] All checks passed")
 
-RUN useradd -m -u 1000 -s /bin/bash appuser
+RUN useradd --no-create-home --home-dir /nonexistent -u 1000 -s /usr/sbin/nologin appuser
 
 RUN mkdir -p /app/storage/samples /app/storage/artifacts /app/storage/uploads /app/storage/.metadata && \
     chown -R appuser:appuser /app/storage
@@ -541,6 +527,9 @@ ENV NODE_ENV=production \
     CACHE_ROOT=/app/cache \
     HOME=/tmp/rikune-home \
     RUNNING_IN_DOCKER=true \
+    API_ENABLED=false \
+    API_PORT=18080 \
+    API_STORAGE_ROOT=/app/storage \
     UPLOAD_PORT=18081 \
     AUDIT_LOG_PATH=/app/logs/audit.log \
     XDG_CONFIG_HOME=/tmp/rikune-home/.config \
@@ -573,19 +562,55 @@ ENV NODE_ENV=production \
     CAPA_PATH=/usr/local/bin/capa \
     RETDEC_INSTALL_DIR=/opt/retdec
 
+ENV RIKUNE_DOCKER_PROFILE=static \
+    RIKUNE_STATIC_PROFILE_LOCK_PATH=/app/static-profile.lock.json \
+    RUNTIME_MODE=disabled \
+    PLUGINS=android,android-package,angr,api-hash,apk-smali,apple-container,apple-objc-swift,apple-signing,batch,binary-diff,binary-hardening,btf,bytecode,capstone,code-analysis,compiler-codegen,container-analysis,cpp-abi-layout,crackme,cross-module,cuda-binary,culifter,deep-unpack,die,dotnet-decompile,dotnet-managed,dotnet-reactor,ebpf-bytecode,elf-macho,external-re-bridge,firmware,ghidra,go-analysis,graphviz,gtirb,host-correlation,javascript-deobfuscation,jsimplifier,jsir-cascade,jsvmp-analysis,jvm,jvm-decompile,kb-collaboration,kernel-driver-surface,lib-identify,lief,linux-binary,linux-package,llvm-bitcode,malware,managed-il-xrefs,manifold,memory-forensics,metadata,miasm,ml-model,native-debug-types,native-object,observability,office-analysis,pcap-analysis,pdf-analysis,pe-analysis,pe-signature,python-decompile,qbdi,radare2,remill,reporting,restringer,retdec,revng,rizin,rust-binary,sbom,serialization-format,shader-ir,similarity,static-triage,strings,syscall-abi-surface,tee-enclave,threat-intel,triton,uefi-smm-surface,unity-managed,unpacking,upx,visualization,vm-analysis,vuln-scanner,wabt,wasm,wasm-component,windows-debug-symbols,windows-installer,windows-interface-surface,yara,yara-x,zig-binary \
+    STATIC_WORKFLOW_STAGES=fast_profile,enrich_static,function_map \
+    JAVA_HOME=/opt/java/openjdk \
+    PATH=/opt/java/openjdk/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PYTHON_PATH=/usr/local/bin/python3.12 \
+    PYTHONPATH=/app/workers \
+    HOME=/tmp/rikune-home \
+    XDG_CONFIG_HOME=/tmp/rikune-home/.config \
+    XDG_CACHE_HOME=/tmp/rikune-home/.cache \
+    GHIDRA_INSTALL_DIR=/opt/ghidra \
+    GHIDRA_PATH=/opt/ghidra \
+    RIZIN_PATH=/opt/rizin/bin/rizin \
+    CAPA_PATH=/usr/local/bin/capa \
+    CAPA_RULES_PATH=/opt/capa-rules \
+    DIE_PATH=/usr/bin/diec \
+    UPX_PATH=/opt/upx/upx \
+    FLOSS_PATH=/usr/local/bin/floss \
+    YARAX_PYTHON=/usr/local/bin/python3.12
+
 RUN mkdir -p /app/workspaces /app/data /app/cache /tmp/rikune-home /app/logs /samples /tmp /ghidra-projects /ghidra-logs /opt/vol3-symbols && \
-    chown -R appuser:appuser /app && \
+    chown -R appuser:appuser /app/workspaces /app/data /app/cache /app/logs /app/storage /app/uploads /tmp/rikune-home && \
     chown -R appuser:appuser /ghidra-projects && \
     chown -R appuser:appuser /ghidra-logs && \
     chmod 1777 /tmp
+RUN chown root:root /app /app/package.json && \
+    chmod go-w /app /app/package.json && \
+    find /app/dist /app/node_modules /app/packages /app/workers /app/src /app/scripts \
+      -xdev -exec chown -h root:root {} + && \
+    find /app/dist /app/node_modules /app/packages /app/workers /app/src /app/scripts \
+      -xdev ! -type l -exec chmod go-w {} +
+RUN printf 'static\n' > /app/.rikune-static-profile && \
+    chown root:root /app/.rikune-static-profile /app/static-profile.lock.json && \
+    chmod 0444 /app/.rikune-static-profile /app/static-profile.lock.json
+LABEL org.opencontainers.image.rikune.profile="static"
 
 WORKDIR /app
 
-COPY --chown=appuser:appuser docker-entrypoint.sh /docker-entrypoint.sh
-RUN sed -i 's/\r$//' /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN sed -i 's/\r$//' /docker-entrypoint.sh && \
+    chown root:root /docker-entrypoint.sh && \
+    chmod 0555 /docker-entrypoint.sh
 
+# The static image runs unprivileged by default. Runtime mounts must be owned by uid/gid 1000.
+USER 1000:1000
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["node", "dist/index.js"]
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD node -e "console.log('MCP Server healthy')" || exit 1
+    CMD node --input-type=module --eval "if(!['true','1'].includes(process.env.API_ENABLED||''))process.exit(0);const c=new AbortController();const t=setTimeout(()=>c.abort(),5000);try{const r=await fetch('http://127.0.0.1:18080/api/v1/health',{signal:c.signal});process.exit(r.ok?0:1)}catch{process.exit(1)}finally{clearTimeout(t)}" || exit 1

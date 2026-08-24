@@ -1,40 +1,30 @@
-import path from 'path'
 import fs from 'fs'
-
-function resolveModuleDir(): string {
-  if (typeof __dirname !== 'undefined') {
-    return __dirname
-  }
-
-  const originalPrepareStackTrace = Error.prepareStackTrace
-  try {
-    const holder: { stack?: NodeJS.CallSite[] } = {}
-    Error.prepareStackTrace = (_error, stack) => stack
-    Error.captureStackTrace(holder, resolveModuleDir)
-    const stack = holder.stack || []
-    for (const frame of stack) {
-      const fileName = frame.getFileName()
-      if (fileName && /runtime-paths\.(ts|js)$/.test(fileName)) {
-        return path.dirname(fileName)
-      }
-    }
-  } finally {
-    Error.prepareStackTrace = originalPrepareStackTrace
-  }
-
-  return process.cwd()
-}
+import path from 'path'
+import { fileURLToPath } from 'url'
 
 function resolvePackageRoot(): string {
-  const candidates = [path.resolve(resolveModuleDir(), '..'), process.cwd()]
+  // This module lives at src/infrastructure during development and at
+  // dist/infrastructure after compilation. In both layouts, ../.. is the
+  // Rikune package root. Never prefer process.cwd(): npm consumers run Rikune
+  // from their own project directory, which may also contain a package.json.
+  const candidate = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+  const manifestPath = path.join(candidate, 'package.json')
 
-  for (const candidate of candidates) {
-    if (fs.existsSync(path.join(candidate, 'package.json'))) {
-      return candidate
-    }
+  let packageName: unknown
+  try {
+    packageName = JSON.parse(fs.readFileSync(manifestPath, 'utf8')).name
+  } catch (error) {
+    throw new Error(
+      `Unable to resolve the Rikune package root from ${manifestPath}: ${error instanceof Error ? error.message : String(error)}`
+    )
   }
 
-  return path.resolve(resolveModuleDir(), '..')
+  if (packageName !== 'rikune') {
+    throw new Error(
+      `Resolved package root has unexpected package name ${String(packageName)} at ${manifestPath}`
+    )
+  }
+  return candidate
 }
 
 const packageRoot = resolvePackageRoot()

@@ -9,12 +9,10 @@ import { promisify } from 'util'
 import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
-import { createHash, randomUUID } from 'crypto'
 import type { ArtifactRef } from '../../types.js'
-import type { WorkspaceManager } from '../../workspace-manager.js'
-import type { DatabaseManager } from '../../database.js'
 import { getPythonCommand } from '../../utils/shared-helpers.js'
 import { resolveAnalysisBackends } from '../../static-backend-discovery.js'
+import type { SampleFinalizationService } from '../../sample/sample-finalization.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -396,8 +394,7 @@ export async function executeUnpackBackend(
 // ============================================================================
 
 export async function registerChildSample(
-  workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  finalizer: SampleFinalizationService,
   parentId: string,
   unpackedPath: string,
   provenance: {
@@ -407,32 +404,11 @@ export async function registerChildSample(
   }
 ): Promise<{ sample_id: string; sha256: string }> {
   const data = await fs.readFile(unpackedPath)
-  const sha256 = createHash('sha256').update(data).digest('hex')
-  const md5 = createHash('md5').update(data).digest('hex')
-  const sampleId = `sha256:${sha256}`
-
-  // Check if this sample already exists
-  const existing = database.findSample(sampleId)
-  if (existing) {
-    return { sample_id: sampleId, sha256 }
-  }
-
-  // Create workspace and copy binary
-  const workspace = await workspaceManager.createWorkspace(sampleId)
-  const destPath = path.join(workspace.original, `unpacked_layer_${provenance.layer}.bin`)
-  await fs.copyFile(unpackedPath, destPath)
-
-  // Register in database
-  const now = new Date().toISOString()
-  database.insertSample({
-    id: sampleId,
-    sha256,
-    md5,
-    size: data.length,
-    file_type: null,
+  const result = await finalizer.finalizeBuffer({
+    data,
+    filename: `unpacked_layer_${provenance.layer}.bin`,
     source: `auto_unpack:${provenance.backend}:parent=${parentId}:layer=${provenance.layer}`,
-    created_at: now,
+    auditOperation: 'unpack.auto',
   })
-
-  return { sample_id: sampleId, sha256 }
+  return { sample_id: result.sample_id, sha256: result.sha256 }
 }

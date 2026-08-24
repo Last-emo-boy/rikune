@@ -3,7 +3,6 @@
  * Dynamic-analysis capability bootstrap probe (safe: no sample execution).
  */
 
-import { spawn } from 'child_process'
 import path from 'path'
 import fs from 'fs/promises'
 import { v4 as uuidv4 } from 'uuid'
@@ -24,6 +23,8 @@ import {
 } from '../../../setup-guidance.js'
 import { resolveAnalysisBackends } from '../../../static-backend-discovery.js'
 import { getPythonCommand } from '../../../utils/shared-helpers.js'
+import { runAbortableProcess } from '../../../worker/abortable-process.js'
+import { throwIfAnalysisAborted } from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'dynamic.dependencies'
 const TOOL_VERSION = '0.1.0'
@@ -96,7 +97,7 @@ interface WorkerResponse {
 }
 
 interface DynamicDependenciesDependencies {
-  callWorker?: (request: WorkerRequest) => Promise<WorkerResponse>
+  callWorker?: (request: WorkerRequest, abortSignal?: AbortSignal) => Promise<WorkerResponse>
 }
 
 function buildBootstrapFallback(startTime: number, errorMessage: string): WorkerResult {
@@ -160,14 +161,10 @@ function buildBootstrapFallback(startTime: number, errorMessage: string): Worker
         },
       },
       recommendations: [
-        'Install baseline Python dependencies first: pip install -r requirements.txt',
-        'Install FLARE Speakeasy emulator for PE user-mode emulation: pip install speakeasy-emulator',
-        'Install frida for runtime API tracing: pip install frida',
-        'Install frida-tools for CLI tracing helpers: pip install frida-tools',
-        'Install psutil for process telemetry collection: pip install psutil',
-        'Install Qiling for automated Windows API emulation: pip install qiling',
-        'Install angr in an isolated environment for advanced CFG/path exploration.',
-        'Install pandare for PANDA-oriented record/replay helpers: pip install pandare',
+        `Install the hash-locked baseline first: ${buildBaselinePythonSetupActions()[0].command}`,
+        `Install the hash-locked dynamic lab set for Speakeasy, Frida, PANDA, and psutil: ${buildDynamicDependencySetupActions()[0].command}`,
+        'Qiling automatic installation is disabled because its supported dependency chain is below the release vulnerability baseline; configure QILING_PYTHON only for a separately managed, independently audited environment.',
+        'Install angr in an isolated environment from src/plugins/angr/requirements.lock.txt with --require-hashes.',
         'Install Wine and winedbg when Linux-hosted Windows user-mode execution or debugger-style triage is needed.',
       ],
       setup_actions: mergeSetupActions(
@@ -186,56 +183,34 @@ function buildBootstrapFallback(startTime: number, errorMessage: string): Worker
   }
 }
 
-async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse> {
-  return new Promise((resolve, reject) => {
-    const workerPath = resolvePackagePath('workers', 'static_worker.py')
-    const pythonCommand = getPythonCommand()
-    const pythonProcess = spawn(pythonCommand, [workerPath], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-
-    let stdout = ''
-    let stderr = ''
-
-    pythonProcess.stdout.on('data', (data) => {
-      stdout += data.toString()
-    })
-
-    pythonProcess.stderr.on('data', (data) => {
-      stderr += data.toString()
-    })
-
-    pythonProcess.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`Python worker exited with code ${code}. stderr: ${stderr}`))
-        return
-      }
-
-      try {
-        const lines = stdout.trim().split('\n')
-        const lastLine = lines[lines.length - 1]
-        const response: WorkerResponse = JSON.parse(lastLine)
-        resolve(response)
-      } catch (error) {
-        reject(
-          new Error(
-            `Failed to parse worker response: ${(error as Error).message}. stdout: ${stdout}`
-          )
-        )
-      }
-    })
-
-    pythonProcess.on('error', (error) => {
-      reject(new Error(`Failed to spawn Python worker: ${error.message}`))
-    })
-
-    try {
-      pythonProcess.stdin.write(JSON.stringify(request) + '\n')
-      pythonProcess.stdin.end()
-    } catch (error) {
-      reject(new Error(`Failed to write to worker stdin: ${(error as Error).message}`))
-    }
+async function callStaticWorker(
+  request: WorkerRequest,
+  abortSignal?: AbortSignal
+): Promise<WorkerResponse> {
+  const workerPath = resolvePackagePath('workers', 'static_worker.py')
+  const result = await runAbortableProcess({
+    command: getPythonCommand(),
+    args: [workerPath],
+    cwd: process.cwd(),
+    stdin: `${JSON.stringify(request)}\n`,
+    timeoutMs: 120_000,
+    abortSignal,
   })
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `Python worker exited with code ${result.exitCode ?? 'unknown'}. stderr: ${result.stderr}`
+    )
+  }
+
+  try {
+    const lines = result.stdout.trim().split('\n')
+    const lastLine = lines[lines.length - 1]
+    return JSON.parse(lastLine) as WorkerResponse
+  } catch (error) {
+    throw new Error(
+      `Failed to parse worker response: ${(error as Error).message}. stdout: ${result.stdout}`
+    )
+  }
 }
 
 export function createDynamicDependenciesHandler(
@@ -243,11 +218,12 @@ export function createDynamicDependenciesHandler(
   database: DatabaseManager,
   dependencies?: DynamicDependenciesDependencies
 ) {
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const startTime = Date.now()
     const runWorker = dependencies?.callWorker || callStaticWorker
 
     try {
+      throwIfAnalysisAborted(abortSignal)
       const input = DynamicDependenciesInputSchema.parse(args)
 
       let sampleId = input.sample_id || 'dynamic-probe'
@@ -268,6 +244,7 @@ export function createDynamicDependenciesHandler(
         const workspace = await workspaceManager.getWorkspace(input.sample_id)
         const fs = await import('fs/promises')
         const files = await fs.readdir(workspace.original)
+        throwIfAnalysisAborted(abortSignal)
         if (files.length > 0) {
           samplePath = path.join(workspace.original, files[0])
         }
@@ -295,10 +272,14 @@ export function createDynamicDependenciesHandler(
 
       let workerResponse: WorkerResponse
       try {
-        workerResponse = await runWorker(workerRequest)
+        workerResponse = abortSignal
+          ? await runWorker(workerRequest, abortSignal)
+          : await runWorker(workerRequest)
       } catch (error) {
+        throwIfAnalysisAborted(abortSignal)
         return buildBootstrapFallback(startTime, (error as Error).message)
       }
+      throwIfAnalysisAborted(abortSignal)
 
       if (!workerResponse.ok) {
         return buildBootstrapFallback(
@@ -406,7 +387,7 @@ export function createDynamicDependenciesHandler(
       }
       if (!analysisBackends.qiling.available) {
         recommendations.push(
-          'Install Qiling for automated Windows API emulation and hook-based dynamic analysis.'
+          'Provide a separately managed, independently audited Qiling environment and set QILING_PYTHON; automatic installation is disabled by the release security baseline.'
         )
       } else if (!qilingRootfs || !qilingRootfsReady) {
         recommendations.push(
@@ -462,6 +443,7 @@ export function createDynamicDependenciesHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [(error as Error).message],

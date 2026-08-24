@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals'
 import fs from 'fs'
 import os from 'os'
@@ -26,7 +27,7 @@ describe('hash.resolver.plan tool', () => {
       Buffer.from('MZ\0kernel32.dll\0LoadLibraryA\0GetProcAddress\0hash=0x6A4ABC5B\0', 'ascii'),
       Buffer.from([0x5b, 0xbc, 0x4a, 0x6a, 0x11, 0x22, 0x33, 0x44]),
     ])
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: SAMPLE_ID,
       sha256: SAMPLE_HASH,
       md5: '6'.repeat(32),

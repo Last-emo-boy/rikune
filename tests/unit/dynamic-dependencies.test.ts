@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
+import { describe, test, expect, beforeEach, afterEach, jest } from '@jest/globals'
 import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
@@ -60,7 +60,11 @@ describe('dynamic.dependencies tool', () => {
       expect(data.recommendations.join(' ')).toContain('speakeasy-emulator')
     }
 
-    if ((speakeasy.legacy_distribution_summary || '').toLowerCase().includes('metrics aggregation server')) {
+    if (
+      (speakeasy.legacy_distribution_summary || '')
+        .toLowerCase()
+        .includes('metrics aggregation server')
+    ) {
       expect(data.recommendations.join(' ')).toContain('pip uninstall speakeasy')
     }
   })
@@ -90,7 +94,12 @@ describe('dynamic.dependencies tool', () => {
     expect(data.status).toBe('bootstrap_required')
     expect(data.components.worker?.available).toBe(false)
     expect(data.components.worker?.error).toContain('Python worker exited with code 1')
-    expect(data.recommendations.join(' ')).toContain('pip install -r requirements.txt')
+    expect(data.recommendations.join(' ')).toContain(
+      'pip install --require-hashes -r requirements.lock.txt'
+    )
+    expect(data.recommendations.join(' ')).toContain(
+      'pip install --require-hashes -r workers/requirements-dynamic.lock.txt'
+    )
     expect(data.setup_actions.map((item) => item.id)).toContain('install_python_requirements')
     expect(data.setup_actions.map((item) => item.id)).toContain('install_speakeasy_emulator')
   })
@@ -128,5 +137,49 @@ describe('dynamic.dependencies tool', () => {
     expect(data.components).toHaveProperty('winedbg')
     expect(data.components).toHaveProperty('frida_cli')
     expect(Array.isArray(data.required_user_inputs)).toBe(true)
+  })
+
+  test('forwards cancellation to the worker and waits for worker teardown', async () => {
+    let resolveStarted!: (signal: AbortSignal) => void
+    const started = new Promise<AbortSignal>((resolve) => {
+      resolveStarted = resolve
+    })
+    let resolveTeardown!: () => void
+    const teardown = new Promise<void>((resolve) => {
+      resolveTeardown = resolve
+    })
+    const callWorker = jest.fn(async (_request, signal?: AbortSignal) => {
+      if (!signal) throw new Error('missing AbortSignal')
+      resolveStarted(signal)
+      await new Promise<void>((resolve) => {
+        signal.addEventListener('abort', () => resolve(), { once: true })
+      })
+      await teardown
+      return {
+        job_id: 'cancelled-worker',
+        ok: true,
+        warnings: [],
+        errors: [],
+        data: {},
+        artifacts: [],
+        metrics: {},
+      }
+    })
+    const handler = createDynamicDependenciesHandler(workspaceManager, database, { callWorker })
+    const controller = new AbortController()
+    let settled = false
+    const running = handler({}, controller.signal).finally(() => {
+      settled = true
+    })
+
+    const receivedSignal = await started
+    controller.abort(new Error('cancel dependency probe'))
+    await Promise.resolve()
+
+    expect(receivedSignal).toBe(controller.signal)
+    expect(settled).toBe(false)
+
+    resolveTeardown()
+    await expect(running).rejects.toMatchObject({ name: 'AbortError' })
   })
 })

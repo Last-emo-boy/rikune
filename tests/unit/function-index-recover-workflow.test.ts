@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
 import fs from 'fs'
 import path from 'path'
@@ -54,7 +55,7 @@ describe('workflow.function_index_recover', () => {
 
   test('should recover functions, prefer recovered symbol names, and materialize a function index', async () => {
     const sampleId = 'sha256:' + 'e'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'e'.repeat(64),
       md5: 'e'.repeat(32),
@@ -177,7 +178,7 @@ describe('workflow.function_index_recover', () => {
 
   test('should fall back to smart_recover names when symbols recovery fails', async () => {
     const sampleId = 'sha256:' + 'f'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'f'.repeat(64),
       md5: 'f'.repeat(32),

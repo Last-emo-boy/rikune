@@ -28,6 +28,7 @@ import {
 } from '../../../tools/static-worker-client.js'
 import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
 import { getPythonCommand } from '../../../utils/shared-helpers.js'
+import { throwIfAnalysisAborted } from '../../../analysis/analysis-cancellation.js'
 
 // ============================================================================
 // Constants
@@ -215,7 +216,8 @@ async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse>
  */
 export function createPEImportsExtractHandler(deps: PluginToolDeps) {
   const { workspaceManager, database, cacheManager } = deps
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
+    throwIfAnalysisAborted(abortSignal)
     const input = args as PEImportsExtractInput
     const startTime = Date.now()
 
@@ -284,7 +286,9 @@ export function createPEImportsExtractHandler(deps: PluginToolDeps) {
       const workerResponse = await callPooledStaticWorker(workerRequest, {
         database,
         family: 'static_python.preview',
+        abortSignal,
       })
+      throwIfAnalysisAborted(abortSignal)
 
       if (!workerResponse.ok) {
         return {
@@ -318,6 +322,7 @@ export function createPEImportsExtractHandler(deps: PluginToolDeps) {
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [(error as Error).message],

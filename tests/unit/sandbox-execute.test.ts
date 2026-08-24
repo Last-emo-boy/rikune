@@ -1,4 +1,5 @@
-import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
+import { describe, test, expect, beforeEach, afterEach, jest } from '@jest/globals'
 import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
@@ -436,6 +437,64 @@ describe('sandbox.execute tool', () => {
     expect((data.evidence.runtime_api_calls || []).length).toBeGreaterThan(0)
     expect(data.timeline.some((item) => item.event_type === 'api_call')).toBe(true)
   })
+
+  test('forwards cancellation to the sandbox worker and waits for teardown', async () => {
+    const sampleId = await ingestSample(workspaceManager, database, Buffer.from('MZ cancel'))
+    let resolveStarted!: (signal: AbortSignal) => void
+    const started = new Promise<AbortSignal>((resolve) => {
+      resolveStarted = resolve
+    })
+    let resolveTeardown!: () => void
+    const teardown = new Promise<void>((resolve) => {
+      resolveTeardown = resolve
+    })
+    const callWorker = jest.fn(async (_request, signal?: AbortSignal) => {
+      if (!signal) throw new Error('missing AbortSignal')
+      resolveStarted(signal)
+      await new Promise<void>((resolve) => {
+        signal.addEventListener('abort', () => resolve(), { once: true })
+      })
+      await teardown
+      return {
+        job_id: 'cancelled-sandbox',
+        ok: true,
+        warnings: [],
+        errors: [],
+        data: {},
+        artifacts: [],
+        metrics: {},
+      }
+    })
+    const abortableHandler = createSandboxExecuteHandler(
+      workspaceManager,
+      database,
+      policyGuard,
+      { callWorker }
+    )
+    const controller = new AbortController()
+    let settled = false
+    const running = abortableHandler(
+      {
+        sample_id: sampleId,
+        approved: true,
+        persist_artifact: false,
+      },
+      controller.signal
+    ).finally(() => {
+      settled = true
+    })
+
+    const receivedSignal = await started
+    controller.abort(new Error('cancel sandbox'))
+    await Promise.resolve()
+
+    expect(receivedSignal).toBe(controller.signal)
+    expect(settled).toBe(false)
+
+    resolveTeardown()
+    await expect(running).rejects.toMatchObject({ name: 'AbortError' })
+    expect(database.findArtifacts(sampleId)).toHaveLength(0)
+  })
 })
 
 async function ingestSample(
@@ -447,7 +506,7 @@ async function ingestSample(
   const md5 = crypto.createHash('md5').update(data).digest('hex')
   const sampleId = `sha256:${sha256}`
 
-  database.insertSample({
+  database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
     id: sampleId,
     sha256,
     md5,

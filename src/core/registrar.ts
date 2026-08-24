@@ -6,6 +6,7 @@ import type {
   ElicitResult,
   Implementation,
 } from '@modelcontextprotocol/sdk/types.js'
+import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js'
 import type { ToolDefinition, PromptDefinition } from '../types.js'
 
 export interface ToolRegistrar {
@@ -54,7 +55,8 @@ export interface SamplingClient {
   getClientCapabilities(): ClientCapabilities | undefined
   getClientVersion(): Implementation | undefined
   createMessage(
-    params: CreateMessageRequest['params']
+    params: CreateMessageRequest['params'],
+    options?: RequestOptions
   ): Promise<CreateMessageResult | CreateMessageResultWithTools>
 }
 

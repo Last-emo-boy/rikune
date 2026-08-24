@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { describe, expect, test } from '@jest/globals'
 import fs from 'fs'
 import os from 'os'
@@ -102,7 +103,7 @@ describe('unpack-debug runtime helpers', () => {
     const sampleId = `sha256:${'d'.repeat(64)}`
 
     try {
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: 'd'.repeat(64),
         md5: 'd'.repeat(32),

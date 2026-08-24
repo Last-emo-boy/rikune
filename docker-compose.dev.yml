@@ -38,6 +38,4 @@ services:
       - RUNTIME_MODE=disabled
       - LOG_LEVEL=debug
 
-    # Expose dashboard port for browser access
-    ports:
-      - "18080:18080"
+    # The base profile's loopback-only dashboard/API port is inherited.

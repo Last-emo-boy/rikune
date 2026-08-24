@@ -138,8 +138,8 @@ export function validateConfig(config: Config): ValidationReport {
       diagnostics.push({
         category: 'api',
         key: 'api_key',
-        status: 'warn',
-        message: 'No API key set — auto-generated at runtime',
+        status: 'error',
+        message: 'API is enabled but API_KEY is missing',
       })
     }
   }

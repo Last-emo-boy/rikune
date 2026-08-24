@@ -55,6 +55,10 @@ interface PooledWorkerState {
     resolve: (value: StaticWorkerResponseLike) => void
     reject: (error: Error) => void
     timer: NodeJS.Timeout
+    abortSignal?: AbortSignal
+    abortListener?: () => void
+    terminalError?: Error
+    escalationTimer?: NodeJS.Timeout
   }
 }
 
@@ -156,6 +160,8 @@ export class RuntimeWorkerPool {
       poolCap?: number
       idleTtlMs?: number
       timeoutMs?: number
+      abortSignal?: AbortSignal
+      terminationGraceMs?: number
     } = {}
   ): Promise<{ response: StaticWorkerResponseLike; lease: RuntimeWorkerPoolLeaseMetadata }> {
     return this.executePooledWorker(request, {
@@ -179,6 +185,8 @@ export class RuntimeWorkerPool {
       poolCap?: number
       idleTtlMs?: number
       timeoutMs?: number
+      abortSignal?: AbortSignal
+      terminationGraceMs?: number
     }
   ): Promise<{ response: StaticWorkerResponseLike; lease: RuntimeWorkerPoolLeaseMetadata }> {
     return this.executePooledWorker(request, options)
@@ -194,6 +202,8 @@ export class RuntimeWorkerPool {
       poolCap?: number
       idleTtlMs?: number
       timeoutMs?: number
+      abortSignal?: AbortSignal
+      terminationGraceMs?: number
     }
   ): Promise<{ response: StaticWorkerResponseLike; lease: RuntimeWorkerPoolLeaseMetadata }> {
     const family = options.family
@@ -235,7 +245,13 @@ export class RuntimeWorkerPool {
     this.persistFamilyState(options.database, family, compatibilityKey, deploymentKey)
 
     try {
-      const response = await this.sendRequest(worker, request, options.timeoutMs)
+      const response = await this.sendRequest(
+        worker,
+        request,
+        options.timeoutMs,
+        options.abortSignal,
+        options.terminationGraceMs
+      )
       worker.busy = false
       worker.lastUsedAt = new Date().toISOString()
       this.scheduleIdleEviction(worker, options.database, idleTtlMs)
@@ -365,17 +381,19 @@ export class RuntimeWorkerPool {
       if (state.pending) {
         const pending = state.pending
         state.pending = undefined
-        clearTimeout(pending.timer)
-        pending.reject(new Error(`Static worker exited with code ${code}`))
+        this.cleanupPending(pending)
+        pending.reject(pending.terminalError || new Error(`Static worker exited with code ${code}`))
       }
       state.unhealthy = true
     })
 
     child.on('error', (error) => {
-      if (state.pending) {
+      // A failed spawn has no live process to await. For errors emitted by an
+      // existing child, only `close` is authoritative for releasing callers.
+      if (state.pending && !child.pid) {
         const pending = state.pending
         state.pending = undefined
-        clearTimeout(pending.timer)
+        this.cleanupPending(pending)
         pending.reject(error)
       }
       state.unhealthy = true
@@ -392,8 +410,14 @@ export class RuntimeWorkerPool {
       state.stdoutBuffer = state.stdoutBuffer.slice(newlineIndex + 1)
       if (line.length > 0 && state.pending) {
         const pending = state.pending
+        // Cancellation/timeout is a request to terminate, not confirmation
+        // that the worker has exited. Ignore late output until `close`.
+        if (pending.terminalError) {
+          newlineIndex = state.stdoutBuffer.indexOf('\n')
+          continue
+        }
         state.pending = undefined
-        clearTimeout(pending.timer)
+        this.cleanupPending(pending)
         try {
           pending.resolve(JSON.parse(line) as StaticWorkerResponseLike)
         } catch (error) {
@@ -411,21 +435,27 @@ export class RuntimeWorkerPool {
   private async sendRequest(
     worker: PooledWorkerState,
     request: Record<string, unknown>,
-    timeoutMs?: number
+    timeoutMs?: number,
+    abortSignal?: AbortSignal,
+    terminationGraceMs = 1_000
   ): Promise<StaticWorkerResponseLike> {
     if (worker.pending) {
       throw new Error(`Worker ${worker.id} is already busy`)
     }
 
+    if (abortSignal?.aborted) {
+      throw new Error('E_JOB_ABORTED: pooled worker request was cancelled')
+    }
+
     return new Promise<StaticWorkerResponseLike>((resolve, reject) => {
       const timer = setTimeout(
         () => {
-          worker.pending = undefined
-          terminateProcessTree(worker.child, 'SIGTERM')
-          reject(
+          this.beginPendingTermination(
+            worker,
             new Error(
               `Static worker timed out after ${timeoutMs || config.workers.static.timeout * 1000}ms`
-            )
+            ),
+            terminationGraceMs
           )
         },
         timeoutMs || config.workers.static.timeout * 1000
@@ -435,16 +465,59 @@ export class RuntimeWorkerPool {
         resolve,
         reject,
         timer,
+        abortSignal,
+      }
+
+      if (abortSignal) {
+        const abortListener = () => {
+          this.beginPendingTermination(
+            worker,
+            new Error('E_JOB_ABORTED: pooled worker request was cancelled'),
+            terminationGraceMs
+          )
+        }
+        worker.pending.abortListener = abortListener
+        abortSignal.addEventListener('abort', abortListener, { once: true })
       }
 
       try {
         worker.child.stdin.write(`${JSON.stringify(request)}\n`)
       } catch (error) {
+        const pending = worker.pending
         worker.pending = undefined
-        clearTimeout(timer)
+        if (pending) this.cleanupPending(pending)
         reject(error instanceof Error ? error : new Error(String(error)))
       }
     })
+  }
+
+  private cleanupPending(pending: NonNullable<PooledWorkerState['pending']>): void {
+    clearTimeout(pending.timer)
+    if (pending.escalationTimer) clearTimeout(pending.escalationTimer)
+    if (pending.abortSignal && pending.abortListener) {
+      pending.abortSignal.removeEventListener('abort', pending.abortListener)
+    }
+  }
+
+  private beginPendingTermination(worker: PooledWorkerState, error: Error, graceMs: number): void {
+    const pending = worker.pending
+    if (!pending || pending.terminalError) return
+    pending.terminalError = error
+    clearTimeout(pending.timer)
+    if (pending.abortSignal && pending.abortListener) {
+      pending.abortSignal.removeEventListener('abort', pending.abortListener)
+    }
+    worker.unhealthy = true
+    terminateProcessTree(worker.child, 'SIGTERM')
+    pending.escalationTimer = setTimeout(
+      () => {
+        // `.killed` only means a signal was sent. `close` remains the sole
+        // confirmation that the process tree can no longer mutate shared state.
+        terminateProcessTree(worker.child, 'SIGKILL')
+      },
+      Math.max(0, graceMs)
+    )
+    pending.escalationTimer.unref()
   }
 
   private evictIdleWorkers(
@@ -526,10 +599,11 @@ export class RuntimeWorkerPool {
     this.clearIdleEviction(worker)
 
     if (worker.pending) {
-      const pending = worker.pending
-      worker.pending = undefined
-      clearTimeout(pending.timer)
-      pending.reject(new Error('Runtime worker pool is shutting down'))
+      this.beginPendingTermination(
+        worker,
+        new Error('Runtime worker pool is shutting down'),
+        graceMs
+      )
     }
 
     try {
@@ -562,7 +636,6 @@ export class RuntimeWorkerPool {
       const errorListener = () => finish()
       timer = setTimeout(() => {
         terminateProcessTree(child, 'SIGKILL')
-        finish()
       }, graceMs)
       if (timer.unref) {
         timer.unref()
@@ -575,10 +648,8 @@ export class RuntimeWorkerPool {
 
       terminateProcessTree(child, 'SIGTERM')
 
-      if (typeof child.once !== 'function') {
-        clearTimeout(timer)
-        finish()
-      }
+      // Production ChildProcess always exposes `once`. A non-conforming test
+      // double cannot prove process exit and therefore must fail closed.
     })
   }
 

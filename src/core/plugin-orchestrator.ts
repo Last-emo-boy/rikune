@@ -16,6 +16,7 @@ import { PluginRuntimeBridge } from './plugin-runtime-bridge.js'
 import { createPluginContext } from './plugin-system/plugin-context.js'
 import { checkSystemDeps } from './plugin-system/system-deps.js'
 import { discoverBuiltInPlugins, discoverExternalPlugins } from './plugin-system/discovery.js'
+import { assertStaticImageStartupContract, assertStaticPluginSets } from './static-profile-lock.js'
 import type {
   Plugin,
   PluginContext,
@@ -277,8 +278,14 @@ export class PluginOrchestrator {
     this.deps = deps
 
     // Discover all plugins from filesystem
-    const builtInPlugins = await discoverBuiltInPlugins()
-    const externalPlugins = await discoverExternalPlugins()
+    const staticLock = assertStaticImageStartupContract()
+    if (staticLock && extraPlugins.length > 0) {
+      throw new Error('E_STATIC_PROFILE_CONTRACT: external/extra plugins are forbidden')
+    }
+    const builtInPlugins = await discoverBuiltInPlugins(
+      staticLock ? new Set(staticLock.plugins) : undefined
+    )
+    const externalPlugins = staticLock ? [] : await discoverExternalPlugins()
     const allPlugins = [...builtInPlugins, ...externalPlugins, ...extraPlugins]
 
     // Keep built-in-first precedence, but surface every rejected duplicate so
@@ -302,6 +309,14 @@ export class PluginOrchestrator {
     const enabledIds = new Set(enabled.map((p) => p.id))
     const roleAllowedIds = new Set(roleFiltered.map((p) => p.id))
     const sorted = this.topoSort(roleFiltered)
+    if (staticLock) {
+      assertStaticPluginSets({
+        lock: staticLock,
+        discovered: uniquePlugins.map((plugin) => plugin.id),
+        enabled: enabled.map((plugin) => plugin.id),
+        loaded: staticLock.plugins,
+      })
+    }
 
     // Record disabled plugins
     for (const p of uniquePlugins) {
@@ -340,6 +355,15 @@ export class PluginOrchestrator {
     // Load in topological order
     for (const plugin of sorted) {
       await this.loadOne(plugin, server, deps)
+    }
+
+    if (staticLock) {
+      assertStaticPluginSets({
+        lock: staticLock,
+        discovered: uniquePlugins.map((plugin) => plugin.id),
+        enabled: enabled.map((plugin) => plugin.id),
+        loaded: [...this.loadedPlugins.keys()],
+      })
     }
 
     // Append rejected duplicates after the retained definitions have reached

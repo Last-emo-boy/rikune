@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 /**
  * Unit tests for debug.network.plan.
  */
@@ -44,7 +45,7 @@ describe('debug.network.plan tool', () => {
     const sampleId = `sha256:${sampleHash}`
 
     try {
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: sampleHash,
         md5: '6'.repeat(32),

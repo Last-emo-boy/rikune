@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 /**
  * Unit tests for report.summarize tool
  * Requirements: 15.2, 24.2
@@ -126,7 +127,7 @@ describe('report.summarize tool', () => {
   test('should degrade to triage fallback for dotnet mode', async () => {
     // Create a test sample
     const sampleId = 'sha256:' + '0'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '0'.repeat(64),
       md5: '0'.repeat(32),
@@ -154,7 +155,7 @@ describe('report.summarize tool', () => {
     const sampleId = 'sha256:' + '1'.repeat(64)
     const sha256 = '1'.repeat(64)
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256,
       md5: '1'.repeat(32),
@@ -221,7 +222,7 @@ describe('report.summarize tool', () => {
   test('should handle invalid mode gracefully', async () => {
     // Create a test sample
     const sampleId = 'sha256:' + '2'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '2'.repeat(64),
       md5: '2'.repeat(32),
@@ -244,7 +245,7 @@ describe('report.summarize tool', () => {
   test('should include metrics in response', async () => {
     // Create a test sample
     const sampleId = 'sha256:' + '3'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '3'.repeat(64),
       md5: '3'.repeat(32),
@@ -268,7 +269,7 @@ describe('report.summarize tool', () => {
   test('should default to triage mode when mode not specified', async () => {
     // Create a test sample
     const sampleId = 'sha256:' + '4'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '4'.repeat(64),
       md5: '4'.repeat(32),
@@ -293,5 +294,14 @@ describe('report.summarize tool', () => {
     expect(result).toBeDefined()
     expect(result.metrics).toBeDefined()
     expect(result.metrics!.tool).toBe('report.summarize')
+  })
+
+  test('actual report handler rejects a pre-aborted analysis signal', async () => {
+    const controller = new AbortController()
+    controller.abort(new Error('cancel report'))
+
+    await expect(
+      handler({ sample_id: `sha256:${'7'.repeat(64)}` }, controller.signal)
+    ).rejects.toMatchObject({ name: 'AbortError' })
   })
 })

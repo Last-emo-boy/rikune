@@ -3,7 +3,6 @@
  * Extract managed assembly metadata without executing the sample.
  */
 
-import { spawn } from 'child_process'
 import path from 'path'
 import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult } from '../../../types.js'
@@ -17,6 +16,12 @@ import { lookupCachedResult, formatCacheWarning } from '../../../tools/cache-obs
 import { createRuntimeDetectHandler } from './runtime-detect.js'
 import { buildStaticWorkerRequest, callStaticWorker } from '../../../tools/static-worker-client.js'
 import { CACHE_TTL_7_DAYS } from '../../../constants/cache-ttl.js'
+import { runAbortableProcess } from '../../../worker/abortable-process.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'dotnet.metadata.extract'
 const TOOL_VERSION = '0.1.0'
@@ -232,7 +237,7 @@ interface DotNetMetadataProbeResult {
 }
 
 interface DotNetMetadataExtractDependencies {
-  runtimeDetectHandler?: (args: ToolArgs) => Promise<WorkerResult>
+  runtimeDetectHandler?: AbortableHandler<ToolArgs, WorkerResult>
   probeRunner?: (
     samplePath: string,
     options: {
@@ -241,6 +246,7 @@ interface DotNetMetadataExtractDependencies {
       maxTypes: number
       maxMethodsPerType: number
       timeoutMs?: number
+      abortSignal?: AbortSignal
     }
   ) => Promise<DotNetMetadataProbeResult>
 }
@@ -263,106 +269,74 @@ export async function runDotNetMetadataProbe(
     maxTypes: number
     maxMethodsPerType: number
     timeoutMs?: number
+    abortSignal?: AbortSignal
   }
 ): Promise<DotNetMetadataProbeResult> {
-  return new Promise((resolve) => {
-    const projectPath = resolvePackagePath(
-      'src',
-      'plugins',
-      'static-triage',
-      'helpers',
-      'DotNetMetadataProbe',
-      'DotNetMetadataProbe.csproj'
-    )
-    const args = [
-      'run',
-      '--project',
-      projectPath,
-      '--configuration',
-      'Release',
-      '--',
-      samplePath,
-      `--include-types=${options.includeTypes}`,
-      `--include-methods=${options.includeMethods}`,
-      `--max-types=${options.maxTypes}`,
-      `--max-methods-per-type=${options.maxMethodsPerType}`,
-    ]
-
-    const child = spawn('dotnet', args, {
-      cwd: getPackageRoot(),
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    })
-
-    let stdout = ''
-    let stderr = ''
-    let settled = false
-    const effectiveTimeoutMs = Math.max(10000, options.timeoutMs || DEFAULT_TIMEOUT_MS)
-
-    const finish = (result: DotNetMetadataProbeResult) => {
-      if (settled) {
-        return
-      }
-      settled = true
-      clearTimeout(timer)
-      resolve(result)
-    }
-
-    const timer = setTimeout(() => {
-      child.kill()
-      finish({
-        ok: false,
-        errors: [`dotnet metadata probe timed out after ${effectiveTimeoutMs}ms`],
-      })
-    }, effectiveTimeoutMs)
-
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString()
-    })
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString()
-    })
-
-    child.on('error', (error: NodeJS.ErrnoException) => {
-      finish({
-        ok: false,
-        errors: [
-          error.code === 'ENOENT'
-            ? 'dotnet CLI is not available in PATH'
-            : `Failed to spawn dotnet metadata probe: ${error.message}`,
-        ],
-      })
-    })
-
-    child.on('close', (code) => {
-      const output = stdout.trim()
-      if (code !== 0 && output.length === 0) {
-        finish({
-          ok: false,
-          errors: [
-            `dotnet metadata probe failed with exit code ${code ?? 'unknown'}: ${stderr.trim() || 'no stderr'}`,
-          ],
-        })
-        return
-      }
-
-      try {
-        const parsed = JSON.parse(output || '{}') as DotNetMetadataProbeResult
-        if (!parsed.ok && stderr.trim().length > 0) {
-          parsed.errors = [...(parsed.errors || []), stderr.trim()]
-        }
-        finish(parsed)
-      } catch (error) {
-        finish({
-          ok: false,
-          errors: [
-            `Failed to parse dotnet metadata probe output: ${(error as Error).message}`,
-            stderr.trim() || stdout.trim() || 'no output',
-          ],
-        })
-      }
-    })
+  const projectPath = resolvePackagePath(
+    'src',
+    'plugins',
+    'static-triage',
+    'helpers',
+    'DotNetMetadataProbe',
+    'DotNetMetadataProbe.csproj'
+  )
+  const args = [
+    'run',
+    '--project',
+    projectPath,
+    '--configuration',
+    'Release',
+    '--',
+    samplePath,
+    `--include-types=${options.includeTypes}`,
+    `--include-methods=${options.includeMethods}`,
+    `--max-types=${options.maxTypes}`,
+    `--max-methods-per-type=${options.maxMethodsPerType}`,
+  ]
+  const effectiveTimeoutMs = Math.max(10000, options.timeoutMs || DEFAULT_TIMEOUT_MS)
+  const result = await runAbortableProcess({
+    command: 'dotnet',
+    args,
+    cwd: getPackageRoot(),
+    timeoutMs: effectiveTimeoutMs,
+    abortSignal: options.abortSignal,
   })
+
+  if (result.timedOut) {
+    return {
+      ok: false,
+      errors: [`dotnet metadata probe timed out after ${effectiveTimeoutMs}ms`],
+    }
+  }
+  if (result.error && /enoent|not found/i.test(result.error)) {
+    return { ok: false, errors: ['dotnet CLI is not available in PATH'] }
+  }
+
+  const output = result.stdout.trim()
+  if (result.exitCode !== 0 && output.length === 0) {
+    return {
+      ok: false,
+      errors: [
+        `dotnet metadata probe failed with exit code ${result.exitCode ?? 'unknown'}: ${result.stderr.trim() || result.error || 'no stderr'}`,
+      ],
+    }
+  }
+
+  try {
+    const parsed = JSON.parse(output || '{}') as DotNetMetadataProbeResult
+    if (!parsed.ok && result.stderr.trim().length > 0) {
+      parsed.errors = [...(parsed.errors || []), result.stderr.trim()]
+    }
+    return parsed
+  } catch (error) {
+    return {
+      ok: false,
+      errors: [
+        `Failed to parse dotnet metadata probe output: ${(error as Error).message}`,
+        result.stderr.trim() || result.stdout.trim() || 'no output',
+      ],
+    }
+  }
 }
 
 export function createDotNetMetadataExtractHandler(
@@ -376,11 +350,12 @@ export function createDotNetMetadataExtractHandler(
     createRuntimeDetectHandler(workspaceManager, database, cacheManager)
   const probeRunner = dependencies?.probeRunner || runDotNetMetadataProbe
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const input = DotNetMetadataExtractInputSchema.parse(args)
     const startTime = Date.now()
 
     try {
+      throwIfAnalysisAborted(abortSignal)
       const sample = database.findSample(input.sample_id)
       if (!sample) {
         return {
@@ -389,7 +364,11 @@ export function createDotNetMetadataExtractHandler(
         }
       }
 
-      const runtimeResult = await runtimeDetectHandler({ sample_id: input.sample_id })
+      const runtimeResult = await invokeAbortable(
+        runtimeDetectHandler,
+        { sample_id: input.sample_id },
+        abortSignal
+      )
       const runtimeData = (runtimeResult.ok ? runtimeResult.data : undefined) as
         | RuntimeDetectData
         | undefined
@@ -427,6 +406,7 @@ export function createDotNetMetadataExtractHandler(
 
       if (!input.force_refresh) {
         const cachedLookup = await lookupCachedResult(cacheManager, cacheKey)
+        throwIfAnalysisAborted(abortSignal)
         if (cachedLookup) {
           return {
             ok: true,
@@ -447,6 +427,7 @@ export function createDotNetMetadataExtractHandler(
       }
 
       const workspace = await workspaceManager.getWorkspace(input.sample_id)
+      throwIfAnalysisAborted(abortSignal)
       const files = await (await import('fs/promises')).readdir(workspace.original)
       if (files.length === 0) {
         return {
@@ -465,7 +446,9 @@ export function createDotNetMetadataExtractHandler(
         includeMethods: input.include_methods,
         maxTypes: input.max_types,
         maxMethodsPerType: input.max_methods_per_type,
+        abortSignal,
       })
+      throwIfAnalysisAborted(abortSignal)
 
       // Fallback to Python/dnfile worker when dotnet CLI is unavailable or SDK is missing
       if (
@@ -491,7 +474,8 @@ export function createDotNetMetadataExtractHandler(
           },
           toolVersion: TOOL_VERSION,
         })
-        const workerResponse = await callStaticWorker(workerRequest, { database })
+        const workerResponse = await callStaticWorker(workerRequest, { database, abortSignal })
+        throwIfAnalysisAborted(abortSignal)
         if (workerResponse.ok && workerResponse.data) {
           // The Python handler returns {ok, data, warnings, metrics} which execute()
           // wraps as WorkerResponse.data — unwrap the inner data layer
@@ -541,6 +525,7 @@ export function createDotNetMetadataExtractHandler(
       }
 
       await cacheManager.setCachedResult(cacheKey, data, CACHE_TTL_MS, sample.sha256)
+      throwIfAnalysisAborted(abortSignal)
 
       return {
         ok: true,
@@ -552,6 +537,7 @@ export function createDotNetMetadataExtractHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [normalizeError(error)],

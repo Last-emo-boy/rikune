@@ -1199,11 +1199,12 @@ PYTHONUNBUFFERED = "1"</pre>
   -RuntimeBackend hyperv-vm `
   -HyperVVmName "rikune-runtime" `
   -HyperVSnapshotName "clean-runtime" `
-  -HyperVRuntimeEndpoint "http://192.168.1.50:18081" `
+  -HyperVRuntimeEndpoint "https://runtime-vm.example.internal:18081" `
   -HyperVRestoreOnRelease
 
 <span class="comment"># Linux analyzer + remote Windows Host Agent</span>
-./rikune.sh install --profile hybrid --windows-host &lt;windows-host&gt; --windows-user &lt;windows-user&gt;
+./rikune.sh install --profile hybrid --windows-host &lt;windows-host&gt; --windows-user &lt;windows-user&gt; \
+  --host-agent-endpoint https://runtime.example.internal
 
 <span class="comment"># Full Linux toolchain image</span>
 .\rikune.ps1 install -Profile full</pre>

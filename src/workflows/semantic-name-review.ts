@@ -24,6 +24,11 @@ import {
   mergeSetupActions,
 } from '../setup-guidance.js'
 import { PollingGuidanceSchema, buildPollingGuidance } from '../polling-guidance.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'workflow.semantic_name_review'
 
@@ -418,7 +423,10 @@ export function createSemanticNameReviewWorkflowHandler(
     dependencies?.reconstructWorkflowHandler ||
     createReconstructWorkflowHandler(workspaceManager, database, cacheManager)
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
+    throwIfAnalysisAborted(abortSignal)
+    const runHandler = (handler: AbortableHandler<ToolArgs, WorkerResult>, handlerArgs: ToolArgs) =>
+      invokeAbortable(handler, handlerArgs, abortSignal)
     const startTime = Date.now()
     const warnings: string[] = []
     const errors: string[] = []
@@ -481,7 +489,7 @@ export function createSemanticNameReviewWorkflowHandler(
         }
       }
 
-      const reviewResult = await renameReviewHandler({
+      const reviewResult = await runHandler(renameReviewHandler, {
         sample_id: input.sample_id,
         address: input.address,
         symbol: input.symbol,
@@ -577,7 +585,7 @@ export function createSemanticNameReviewWorkflowHandler(
       }
 
       if (canRefreshExport) {
-        const exportResult = await reconstructWorkflowHandler({
+        const exportResult = await runHandler(reconstructWorkflowHandler, {
           sample_id: input.sample_id,
           path: input.export_path,
           topk: input.export_topk,
@@ -736,6 +744,7 @@ export function createSemanticNameReviewWorkflowHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [error instanceof Error ? error.message : String(error)],

@@ -1,7 +1,15 @@
 #!/usr/bin/env node
 
+import { readFileSync } from 'node:fs'
+
 const rawArgs = process.argv.slice(2)
 const subcommand = rawArgs[0]
+
+if (rawArgs.length === 1 && (subcommand === '--version' || subcommand === '-v')) {
+  const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  process.stdout.write(`${packageJson.version}\n`)
+  process.exit(0)
+}
 
 if (subcommand === 'docker-stdio' || subcommand === 'docker-run') {
   const { runDockerLauncherCli } = await import('../dist/npm-docker-launcher.js')

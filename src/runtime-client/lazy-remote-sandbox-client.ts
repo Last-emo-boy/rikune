@@ -23,11 +23,14 @@ import {
   type RuntimeEventStreamOptions,
   type RuntimeEventSubscription,
   type RuntimeExecuteRequest,
+  type RuntimeExecuteOptions,
   type RuntimeExecuteResponse,
   type RuntimeHealthResponse,
   type RuntimeEndpointUpdateOptions,
   type RuntimeUploadOptions,
+  type RuntimeDownloadOptions,
 } from './runtime-client.js'
+import { throwIfAnalysisAborted } from '../analysis/analysis-cancellation.js'
 
 type RuntimeClient = ReturnType<typeof createRuntimeClient>
 
@@ -48,10 +51,12 @@ export class HostAgentSandboxStartError extends Error {
 export function createLazyRemoteSandboxRuntimeClient(config: Config): RuntimeClient {
   let client: RuntimeClient | null = null
   let startPromise: Promise<RuntimeClient> | null = null
+  let startAbortController: AbortController | null = null
   let hostAgentFetch: TrustedFetch | null = null
   let closed = false
 
-  async function startSandbox(): Promise<RuntimeClient> {
+  async function startSandbox(signal?: AbortSignal): Promise<RuntimeClient> {
+    throwIfAnalysisAborted(signal)
     if (closed) {
       throw new Error('Remote-sandbox runtime client is closed')
     }
@@ -59,9 +64,26 @@ export function createLazyRemoteSandboxRuntimeClient(config: Config): RuntimeCli
       return client
     }
     if (startPromise) {
-      return startPromise
+      const forwardPendingAbort = () => startAbortController?.abort(signal?.reason)
+      signal?.addEventListener('abort', forwardPendingAbort, { once: true })
+      try {
+        const pending = await startPromise
+        throwIfAnalysisAborted(signal)
+        return pending
+      } finally {
+        signal?.removeEventListener('abort', forwardPendingAbort)
+      }
     }
 
+    const controller = new AbortController()
+    startAbortController = controller
+    const forwardAbort = () => controller.abort(signal?.reason)
+    signal?.addEventListener('abort', forwardAbort, { once: true })
+    const timeout = setTimeout(
+      () => controller.abort(new Error('Remote sandbox start timed out')),
+      60_000
+    )
+    timeout.unref?.()
     startPromise = (async () => {
       if (!config.runtime.hostAgentEndpoint) {
         throw new Error('runtime.hostAgentEndpoint is required for remote-sandbox runtime mode')
@@ -93,7 +115,7 @@ export function createLazyRemoteSandboxRuntimeClient(config: Config): RuntimeCli
           timeoutMs: config.runtime.healthCheckTimeoutMs,
           runtimeApiKey: config.runtime.apiKey,
         }),
-        signal: AbortSignal.timeout(60_000),
+        signal: controller.signal,
       })
 
       if (!startRes.ok) {
@@ -146,13 +168,24 @@ export function createLazyRemoteSandboxRuntimeClient(config: Config): RuntimeCli
     })()
 
     try {
-      return await startPromise
+      const started = await startPromise
+      throwIfAnalysisAborted(signal)
+      return started
     } finally {
+      clearTimeout(timeout)
+      signal?.removeEventListener('abort', forwardAbort)
+      if (startAbortController === controller) {
+        startAbortController = null
+      }
       startPromise = null
     }
   }
 
-  async function recover(options?: { forceRefreshCapabilities?: boolean }): Promise<boolean> {
+  async function recover(options?: {
+    forceRefreshCapabilities?: boolean
+    signal?: AbortSignal
+  }): Promise<boolean> {
+    throwIfAnalysisAborted(options?.signal)
     if (closed) {
       return false
     }
@@ -160,12 +193,16 @@ export function createLazyRemoteSandboxRuntimeClient(config: Config): RuntimeCli
     client = null
     await previous?.close?.()
     try {
-      const next = await startSandbox()
+      const next = await startSandbox(options?.signal)
       if (options?.forceRefreshCapabilities) {
-        await next.getCapabilities({ forceRefresh: true })
+        await next.getCapabilities({ forceRefresh: true, signal: options.signal })
       }
+      throwIfAnalysisAborted(options?.signal)
       return true
     } catch (err) {
+      if (options?.signal?.aborted) {
+        throwIfAnalysisAborted(options.signal)
+      }
       logger.warn({ err }, 'Remote-sandbox lazy launch/recovery attempt failed')
       return false
     }
@@ -180,23 +217,23 @@ export function createLazyRemoteSandboxRuntimeClient(config: Config): RuntimeCli
     },
 
     async getCapabilities(
-      options: { forceRefresh?: boolean } = {}
+      options: { forceRefresh?: boolean; signal?: AbortSignal } = {}
     ): Promise<RuntimeBackendCapability[] | null> {
-      return (await startSandbox()).getCapabilities(options)
+      return (await startSandbox(options.signal)).getCapabilities(options)
     },
 
     async validateRuntimeContract(
       hint: Parameters<RuntimeClient['validateRuntimeContract']>[0],
-      options: { forceRefresh?: boolean } = {}
+      options: { forceRefresh?: boolean; signal?: AbortSignal } = {}
     ): Promise<RuntimeContractValidationResult> {
-      return (await startSandbox()).validateRuntimeContract(hint, options)
+      return (await startSandbox(options.signal)).validateRuntimeContract(hint, options)
     },
 
     async execute(
       req: RuntimeExecuteRequest,
-      opts?: { onProgress?: (progress: number, message?: string) => void }
+      opts?: RuntimeExecuteOptions
     ): Promise<RuntimeExecuteResponse> {
-      return (await startSandbox()).execute(req, opts)
+      return (await startSandbox(opts?.signal)).execute(req, opts)
     },
 
     async uploadSample(
@@ -205,15 +242,26 @@ export function createLazyRemoteSandboxRuntimeClient(config: Config): RuntimeCli
       inboxHostDir: string,
       options?: RuntimeUploadOptions
     ): Promise<void> {
-      return (await startSandbox()).uploadSample(taskId, localSamplePath, inboxHostDir, options)
+      return (await startSandbox(options?.signal)).uploadSample(
+        taskId,
+        localSamplePath,
+        inboxHostDir,
+        options
+      )
     },
 
     async downloadArtifacts(
       taskId: string,
       outboxHostDir: string,
-      artifactNames: string[]
+      artifactNames: string[],
+      options?: RuntimeDownloadOptions
     ): Promise<string[]> {
-      return (await startSandbox()).downloadArtifacts(taskId, outboxHostDir, artifactNames)
+      return (await startSandbox(options?.signal)).downloadArtifacts(
+        taskId,
+        outboxHostDir,
+        artifactNames,
+        options
+      )
     },
 
     invalidateCapabilitiesCache(): void {
@@ -222,6 +270,7 @@ export function createLazyRemoteSandboxRuntimeClient(config: Config): RuntimeCli
 
     async close(): Promise<void> {
       closed = true
+      startAbortController?.abort(new Error('Remote-sandbox runtime client closed'))
       const pending = startPromise
       if (pending) {
         await pending.catch(() => {})

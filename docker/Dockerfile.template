@@ -13,13 +13,13 @@ ARG HTTP_PROXY=""
 ARG HTTPS_PROXY=""
 ARG http_proxy=""
 ARG https_proxy=""
-ARG NO_PROXY="localhost,127.0.0.1,deb.debian.org,security.debian.org,mirrors.aliyun.com,archive.ubuntu.com,security.ubuntu.com,aliyuncs.com"
+ARG NO_PROXY="localhost,127.0.0.1,deb.debian.org,security.debian.org,archive.ubuntu.com,security.ubuntu.com"
 {{FEATURE_ARGS}}
 
 # =============================================================================
 # Stage 1: TypeScript Builder (always)
 # =============================================================================
-FROM node:22-slim AS builder
+FROM node:22-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436 AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
@@ -34,8 +34,12 @@ ENV HTTP_PROXY="${HTTP_PROXY}" \
     https_proxy="${https_proxy}" \
     NO_PROXY="${NO_PROXY}"
 
-RUN npm config set registry https://registry.npmmirror.com && \
-    npm config set audit false && \
+# Native addons must compile from the npm tarball sources. This prevents
+# install scripts from fetching unverified prebuilt binaries outside the lock.
+ENV npm_config_build_from_source=true \
+    npm_config_nodedir=/usr/local
+
+RUN npm config set audit false && \
     npm config set fund false
 
 WORKDIR /app
@@ -43,7 +47,8 @@ COPY package*.json ./
 COPY turbo.json ./
 COPY tsconfig*.json ./
 COPY packages/ ./packages/
-RUN npm ci --legacy-peer-deps --no-audit --no-fund
+RUN npm ci --legacy-peer-deps --no-audit --no-fund && \
+    node -e "const Database=require('better-sqlite3');const db=new Database(':memory:');db.exec('SELECT 1');db.close()"
 
 COPY scripts/ ./scripts/
 COPY src/ ./src/
@@ -53,7 +58,7 @@ RUN test -f /app/dist/index.js
 # =============================================================================
 # Stage 2: Python Base (baseline + global packages)
 # =============================================================================
-FROM python:3.11-slim-bookworm AS python-base
+FROM python:3.12-slim-bookworm@sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134 AS python-base
 
 ARG HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY
 
@@ -63,12 +68,6 @@ ENV HTTP_PROXY="${HTTP_PROXY}" \
     https_proxy="${https_proxy}" \
     NO_PROXY="${NO_PROXY}"
 
-RUN rm -f /etc/apt/sources.list.d/* && cat > /etc/apt/sources.list <<EOF
-deb https://mirrors.aliyun.com/debian bookworm main contrib non-free non-free-firmware
-deb https://mirrors.aliyun.com/debian bookworm-updates main contrib non-free non-free-firmware
-deb https://mirrors.aliyun.com/debian-security bookworm-security main contrib non-free non-free-firmware
-EOF
-
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -77,22 +76,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     file \
     git \
     libyara-dev \
-    python3-venv \
     xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./requirements.txt
+COPY requirements.lock.txt ./requirements.lock.txt
 COPY workers/ ./workers/
 # Plugin-specific workers (auto-generated from src/plugins/*/workers/)
 {{PLUGIN_WORKER_COPY}}
 
-RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
-    pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
-
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir -r workers/requirements.txt
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock.txt
 # @if dynamic-python
-RUN pip install --no-cache-dir -r workers/requirements-dynamic.txt
+RUN pip install --no-cache-dir --require-hashes -r workers/requirements-dynamic.lock.txt
 # @endif dynamic-python
 
 RUN ls -la /app/workers/ && \
@@ -114,7 +108,7 @@ RUN python3 -c "import yara_x, pandare, frida, psutil; import speakeasy; print('
 # =============================================================================
 # Runtime
 # =============================================================================
-FROM python:3.11-slim-bookworm AS runtime
+FROM python:3.12-slim-bookworm@sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134 AS runtime
 
 ARG HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY
 
@@ -127,12 +121,6 @@ ENV HTTP_PROXY="${HTTP_PROXY}" \
 LABEL maintainer="rikune"
 LABEL version="{{RIKUNE_VERSION}}"
 LABEL description="MCP server for Windows binary reverse engineering"
-
-RUN rm -f /etc/apt/sources.list.d/* && cat > /etc/apt/sources.list <<EOF
-deb https://mirrors.aliyun.com/debian bookworm main contrib non-free non-free-firmware
-deb https://mirrors.aliyun.com/debian bookworm-updates main contrib non-free non-free-firmware
-deb https://mirrors.aliyun.com/debian-security bookworm-security main contrib non-free non-free-firmware
-EOF
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
@@ -155,6 +143,13 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package.json ./
+COPY LICENSE DISCLOSURE ./
+RUN chown root:root /app/LICENSE /app/DISCLOSURE && \
+    chmod 0444 /app/LICENSE /app/DISCLOSURE
+{{STATIC_PROFILE_LOCK_COPY}}
+COPY scripts/secure-fs-helper.py scripts/verify-hybrid-runtime.mjs ./scripts/
+RUN chown root:root ./scripts/secure-fs-helper.py ./scripts/verify-hybrid-runtime.mjs && \
+    chmod 0555 ./scripts/secure-fs-helper.py ./scripts/verify-hybrid-runtime.mjs
 
 # Data files (API semantics, etc.)
 RUN mkdir -p ./data
@@ -170,7 +165,7 @@ COPY src/api/dashboard/ ./dist/api/dashboard/
 
 # -- Python base (always) --
 COPY --from=python-base /usr/local/bin /usr/local/bin
-COPY --from=python-base /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=python-base /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=python-base /app/workers ./workers
 # Plugin-specific workers (auto-generated from src/plugins/*/workers/)
 {{PLUGIN_WORKER_COPY_FROM}}
@@ -185,7 +180,7 @@ COPY src/plugins/static-triage/helpers/ ./src/plugins/static-triage/helpers/
 # -- Validate installed tools --
 {{VALIDATION_COMMANDS}}
 
-RUN useradd -m -u 1000 -s /bin/bash appuser
+RUN useradd --no-create-home --home-dir /nonexistent -u 1000 -s /usr/sbin/nologin appuser
 
 RUN mkdir -p /app/storage/samples /app/storage/artifacts /app/storage/uploads /app/storage/.metadata && \
     chown -R appuser:appuser /app/storage
@@ -203,24 +198,38 @@ ENV NODE_ENV=production \
     CACHE_ROOT=/app/cache \
     HOME=/tmp/rikune-home \
     RUNNING_IN_DOCKER=true \
+    API_ENABLED=false \
+    API_PORT=18080 \
+    API_STORAGE_ROOT=/app/storage \
     UPLOAD_PORT=18081 \
     AUDIT_LOG_PATH=/app/logs/audit.log \
     XDG_CONFIG_HOME=/tmp/rikune-home/.config \
     XDG_CACHE_HOME=/tmp/rikune-home/.cache \
     SANDBOX_PYTHON_PATH=/usr/local/bin/python3
 {{RUNTIME_ENV_VARS}}
+{{STATIC_PROFILE_ENV}}
 
 RUN mkdir -p /app/workspaces /app/data /app/cache /tmp/rikune-home /app/logs /samples /tmp {{EXTRA_DIRS}} && \
-    chown -R appuser:appuser /app && \
+    chown -R appuser:appuser /app/workspaces /app/data /app/cache /app/logs /app/storage /app/uploads /tmp/rikune-home && \
 {{EXTRA_CHOWN}}    chmod 1777 /tmp
+RUN chown root:root /app /app/package.json && \
+    chmod go-w /app /app/package.json && \
+    find /app/dist /app/node_modules /app/packages /app/workers /app/src /app/scripts \
+      -xdev -exec chown -h root:root {} + && \
+    find /app/dist /app/node_modules /app/packages /app/workers /app/src /app/scripts \
+      -xdev ! -type l -exec chmod go-w {} +
+{{STATIC_PROFILE_IMAGE_CONTRACT}}
 
 WORKDIR /app
 
-COPY --chown=appuser:appuser docker-entrypoint.sh /docker-entrypoint.sh
-RUN sed -i 's/\r$//' /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN sed -i 's/\r$//' /docker-entrypoint.sh && \
+    chown root:root /docker-entrypoint.sh && \
+    chmod 0555 /docker-entrypoint.sh
 
+{{STATIC_PROFILE_USER}}
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["node", "dist/index.js"]
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD node -e "console.log('MCP Server healthy')" || exit 1
+    CMD node --input-type=module --eval "if(!['true','1'].includes(process.env.API_ENABLED||''))process.exit(0);const c=new AbortController();const t=setTimeout(()=>c.abort(),5000);try{const r=await fetch('http://127.0.0.1:18080/api/v1/health',{signal:c.signal});process.exit(r.ok?0:1)}catch{process.exit(1)}finally{clearTimeout(t)}" || exit 1

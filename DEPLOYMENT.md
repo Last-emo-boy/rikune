@@ -55,9 +55,16 @@ Static Docker is the default safe profile. It disables runtime execution and kee
 Manual equivalent:
 
 ```bash
-npm install
+RIKUNE_REMOVE_PRIVATE_ENV_PATH="$PWD/.docker-runtime.env" node scripts/write-docker-runtime-env.mjs
+unset RIKUNE_API_KEY RIKUNE_ANALYZER_API_KEY RUNTIME_HOST_AGENT_API_KEY \
+  HOST_AGENT_API_KEY HOST_AGENT_RUNTIME_API_KEY RUNTIME_API_KEY
+npm ci --include=dev
 npm run build
 npm run docker:generate:all
+RIKUNE_DOCKER_ENV_PATH="$PWD/.docker-runtime.env" \
+RIKUNE_DOCKER_ENV_DATA_ROOT="${RIKUNE_DATA_ROOT:-$HOME/.rikune}" \
+RIKUNE_DOCKER_ENV_PROFILE=static \
+  node scripts/write-docker-runtime-env.mjs
 docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d --build analyzer
 ```
 
@@ -66,6 +73,8 @@ Expected runtime configuration:
 ```env
 RUNTIME_MODE=disabled
 API_ENABLED=true
+RIKUNE_API_KEY=<generated-secret>
+RIKUNE_ANALYZER_API_KEY=<same-generated-secret>
 PLUGINS=*
 ```
 
@@ -96,10 +105,11 @@ The Host Agent must run in the logged-on user session for Windows Sandbox compat
 For Linux/macOS Analyzer plus remote Windows runtime host:
 
 ```bash
-./rikune.sh install --profile hybrid --windows-host <windows-host> --windows-user <windows-user>
+./rikune.sh install --profile hybrid --windows-host <windows-host> --windows-user <windows-user> \
+  --host-agent-endpoint https://runtime.example.internal
 ```
 
-The script syncs the repository to Windows, runs the Windows runtime installer, generates compose files, writes `.docker-runtime.env`, and starts the Analyzer.
+The script syncs the repository to Windows, runs the Windows runtime installer, generates compose files, writes a mode-`0600` `.docker-runtime.env`, and starts the Analyzer. The HTTPS endpoint should terminate at a trusted reverse proxy/VPN path to the loopback Host Agent. Direct plaintext HTTP requires `--allow-insecure-runtime-http` and is only supported as an explicit opt-in on an isolated trusted network. Provide strong runtime keys through a protected environment or hidden prompt, never through CLI arguments.
 
 ### Hyper-V Runtime
 
@@ -153,7 +163,7 @@ Common Analyzer variables:
 | --- | --- |
 | `API_ENABLED` | Enable HTTP API/dashboard |
 | `API_PORT` | HTTP API port, default commonly 18080 |
-| `API_KEY` | Optional Analyzer API key |
+| `API_KEY` | Required Analyzer API key whenever the HTTP API is enabled |
 | `PLUGINS` | Plugin filter |
 | `RUNTIME_MODE` | `disabled`, `manual`, `remote-sandbox`, or `auto-sandbox` |
 | `RUNTIME_ENDPOINT` | Manual Runtime Node endpoint |
@@ -163,6 +173,8 @@ Common Analyzer variables:
 | `RIKUNE_DATA_ROOT` | Persistent Docker data root |
 | `GHIDRA_INSTALL_DIR` | Ghidra install directory |
 | `JAVA_HOME` | Java home for Ghidra |
+
+Runtime and Host Agent keys must contain at least 32 printable non-space ASCII characters. Keep them in the installer-protected environment files (`0600` on POSIX; restricted ACL on Windows), rotate them after suspected exposure, and never transmit them over remote plaintext HTTP.
 
 ## MCP Client Configuration
 
@@ -238,6 +250,8 @@ Runtime-related tools should report whether a result came from:
 Safe simulation is not live runtime evidence. Treat it as guidance or a fallback.
 
 ## Common Commands
+
+Run `rikune.sh install`, `rikune.ps1 install`, or the secure env writer shown above before invoking Compose directly. The generated env file is secret material and must not be committed.
 
 ```bash
 npm run docker:generate:all

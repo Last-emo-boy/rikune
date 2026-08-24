@@ -12,6 +12,7 @@ import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { CacheManager } from '../../src/cache-manager.js'
 import { PolicyGuard } from '../../src/policy-guard.js'
+import { SampleOperationGate } from '../../src/sample/sample-operation-gate.js'
 import { createSampleIngestHandler } from '../../src/tools/sample-ingest.js'
 import { createTriageWorkflowHandler } from '../../src/workflows/triage.js'
 import fs from 'fs/promises'
@@ -23,17 +24,20 @@ describe('Full Pipeline E2E', () => {
   let database: DatabaseManager
   let cacheManager: CacheManager
   let policyGuard: PolicyGuard
+  let sampleOperationGate: SampleOperationGate
   let testDir: string
 
   beforeAll(async () => {
     testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'e2e-pipeline-'))
     workspaceManager = new WorkspaceManager(path.join(testDir, 'ws'))
     database = new DatabaseManager(path.join(testDir, 'test.db'))
+    sampleOperationGate = new SampleOperationGate(database)
     cacheManager = new CacheManager(path.join(testDir, 'cache'), database)
     policyGuard = new PolicyGuard(path.join(testDir, 'audit.log'))
   })
 
   afterAll(async () => {
+    sampleOperationGate.close()
     database.close()
     await fs.rm(testDir, { recursive: true, force: true })
   })
@@ -61,7 +65,12 @@ describe('Full Pipeline E2E', () => {
     await fs.writeFile(samplePath, peBuffer)
 
     // Step 1: Ingest
-    const ingestHandler = createSampleIngestHandler(workspaceManager, database, policyGuard)
+    const ingestHandler = createSampleIngestHandler(
+      workspaceManager,
+      database,
+      policyGuard,
+      sampleOperationGate
+    )
     const ingestResult = await ingestHandler({ path: samplePath })
 
     expect(ingestResult.ok).toBe(true)
@@ -85,7 +94,12 @@ describe('Full Pipeline E2E', () => {
   })
 
   test('ingest with invalid file returns error', async () => {
-    const ingestHandler = createSampleIngestHandler(workspaceManager, database, policyGuard)
+    const ingestHandler = createSampleIngestHandler(
+      workspaceManager,
+      database,
+      policyGuard,
+      sampleOperationGate
+    )
     const result = await ingestHandler({ path: '/nonexistent/file.exe' })
 
     expect(result.ok).toBe(false)

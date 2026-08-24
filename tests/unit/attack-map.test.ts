@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from '../../src/database.js'
 import { describe, test, expect, beforeEach, afterEach, jest } from '@jest/globals'
 import fs from 'fs/promises'
 import path from 'path'
@@ -20,9 +21,11 @@ describe('attack.map tool', () => {
   let workspaceManager: WorkspaceManager
   let database: DatabaseManager
   let cacheManager: CacheManager
+  let jobQueue: JobQueue | undefined
   let handler: ReturnType<typeof createAttackMapHandler>
 
   beforeEach(async () => {
+    jobQueue = undefined
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'attack-map-test-'))
     workspaceManager = new WorkspaceManager(path.join(tempDir, 'workspaces'))
     database = new DatabaseManager(path.join(tempDir, 'test.db'))
@@ -31,6 +34,7 @@ describe('attack.map tool', () => {
   })
 
   afterEach(async () => {
+    jobQueue?.close()
     database.close()
     await fs.rm(tempDir, { recursive: true, force: true })
   })
@@ -178,7 +182,7 @@ describe('attack.map tool', () => {
   })
 
   test('should defer medium samples to the background queue when allowed', async () => {
-    const jobQueue = new JobQueue(database)
+    jobQueue = new JobQueue(database)
     const deferredHandler = createAttackMapHandler({
       workspaceManager,
       database,
@@ -257,7 +261,7 @@ async function ingestSample(
   const md5 = crypto.createHash('md5').update(data).digest('hex')
   const sampleId = `sha256:${sha256}`
 
-  database.insertSample({
+  database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
     id: sampleId,
     sha256,
     md5,

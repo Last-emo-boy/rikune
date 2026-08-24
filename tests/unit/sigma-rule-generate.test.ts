@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
 import fs from 'fs'
 import path from 'path'
@@ -20,7 +21,7 @@ describe('sigma.rule.generate tool', () => {
     tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rikune-sigma-rule-generate-'))
     workspaceManager = new WorkspaceManager(path.join(tempRoot, 'workspaces'))
     database = new DatabaseManager(path.join(tempRoot, 'rikune.db'))
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: sampleHash,
       md5: '9'.repeat(32),

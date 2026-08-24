@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from '../../src/database.js'
 import { describe, expect, test } from '@jest/globals'
 import fs from 'fs'
 import os from 'os'
@@ -27,7 +28,7 @@ describe('runtime hardening', () => {
         created_at: new Date().toISOString(),
         source: 'unit-test',
       }
-      database.insertSample(sample)
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, sample)
 
       const runState = createOrReuseAnalysisRun(database, {
         sample,
@@ -68,6 +69,7 @@ describe('runtime hardening', () => {
       expect(functionMapStage?.status).toBe('interrupted')
       expect(functionMapStage?.recovery_state).toBe('interrupted')
     } finally {
+      jobQueue.close()
       database.close()
       fs.rmSync(tempDir, { recursive: true, force: true })
     }

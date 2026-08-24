@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
 import fs from 'fs'
 import path from 'path'
@@ -319,7 +320,7 @@ describe('report.summarize runtime evidence integration', () => {
 
   test('should merge imported runtime evidence into triage output', async () => {
     const sampleId = 'sha256:' + '3'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '3'.repeat(64),
       md5: '3'.repeat(32),
@@ -435,7 +436,7 @@ describe('report.summarize runtime evidence integration', () => {
 
   test('should attach binary role profile and priorities to report summary output', async () => {
     const sampleId = 'sha256:' + 'a'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'a'.repeat(64),
       md5: 'a'.repeat(32),
@@ -635,7 +636,7 @@ describe('report.summarize runtime evidence integration', () => {
 
   test('should attach rust recovery profile and compiler artifacts to report summary output', async () => {
     const sampleId = 'sha256:' + 'c'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'c'.repeat(64),
       md5: 'c'.repeat(32),
@@ -762,7 +763,7 @@ describe('report.summarize runtime evidence integration', () => {
 
   test('should return runtime-evidence fallback when triage fails', async () => {
     const sampleId = 'sha256:' + '4'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '4'.repeat(64),
       md5: '4'.repeat(32),
@@ -814,7 +815,7 @@ describe('report.summarize runtime evidence integration', () => {
 
   test('should limit runtime evidence to the requested session selector when evidence_scope=session', async () => {
     const sampleId = 'sha256:' + '6'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '6'.repeat(64),
       md5: '6'.repeat(32),
@@ -880,7 +881,7 @@ describe('report.summarize runtime evidence integration', () => {
 
   test('should include runtime selection diff when compare_evidence_scope is provided', async () => {
     const sampleId = 'sha256:' + '9'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '9'.repeat(64),
       md5: '9'.repeat(32),
@@ -947,7 +948,7 @@ describe('report.summarize runtime evidence integration', () => {
 
   test('should surface semantic function explanations in triage summaries', async () => {
     const sampleId = 'sha256:' + '7'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '7'.repeat(64),
       md5: '7'.repeat(32),
@@ -1019,7 +1020,7 @@ describe('report.summarize runtime evidence integration', () => {
 
   test('should scope semantic function explanations by semantic session selector', async () => {
     const sampleId = 'sha256:' + '8'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '8'.repeat(64),
       md5: '8'.repeat(32),
@@ -1111,7 +1112,7 @@ describe('report.summarize runtime evidence integration', () => {
   test('should load scoped static analysis artifacts and expose provenance/diffs', async () => {
     const sampleId = 'sha256:' + 'd'.repeat(64)
     const createdAt = '2026-03-14T00:00:00.000Z'
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'd'.repeat(64),
       md5: 'd'.repeat(32),

@@ -68,6 +68,9 @@ describe('Configuration Loading', () => {
     delete process.env.API_PUBLIC_BASE_URL
     delete process.env.RIKUNE_API_PUBLIC_BASE_URL
     delete process.env.RIKUNE_ANALYZER_PUBLIC_URL
+    delete process.env.API_ENABLED
+    delete process.env.API_KEY
+    delete process.env.API_PORT
   })
 
   describe('loadConfigFromFile', () => {
@@ -279,6 +282,7 @@ describe('Configuration Loading', () => {
       expect(config.cache.enabled).toBe(true)
       expect(config.cache.root).toBe(getDefaultCacheRoot())
       expect(config.logging.auditPath).toBe(getDefaultAuditLogPath())
+      expect(config.api.enabled).toBe(false)
     })
 
     test('should load default user config path when no explicit config path is provided', () => {
@@ -397,6 +401,14 @@ describe('Configuration Loading', () => {
   })
 
   describe('ConfigSchema validation', () => {
+    test('should require a non-empty API key when the API is enabled', () => {
+      expect(ConfigSchema.safeParse({ api: { enabled: true } }).success).toBe(false)
+      expect(ConfigSchema.safeParse({ api: { enabled: true, apiKey: '   ' } }).success).toBe(false)
+      expect(
+        ConfigSchema.safeParse({ api: { enabled: true, apiKey: 'test-api-key' } }).success
+      ).toBe(true)
+    })
+
     test('should accept valid complete configuration', () => {
       const validConfig = {
         server: { port: 3000, host: 'localhost' },

@@ -19,6 +19,7 @@ import {
   resolveSampleFile,
   resolveAnalysisBackends,
 } from '../../docker-shared.js'
+import { throwIfAnalysisAborted } from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'angr.analyze'
 const TOOL_VERSION = '0.2.0'
@@ -376,9 +377,10 @@ export function createAngrAnalyzeHandler(
   database: DatabaseManager,
   dependencies?: SharedBackendDependencies
 ) {
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const startTime = Date.now()
     try {
+      throwIfAnalysisAborted(abortSignal)
       const input = angrAnalyzeInputSchema.parse(args)
       const samplePath = await resolveSampleFile(workspaceManager, database, input.sample_id)
       const backends = (dependencies?.resolveBackends || resolveAnalysisBackends)()
@@ -395,8 +397,10 @@ export function createAngrAnalyzeHandler(
           sample_path: samplePath,
           max_functions: input.max_functions,
         },
-        input.timeout_sec * 1000
+        input.timeout_sec * 1000,
+        { abortSignal }
       )
+      throwIfAnalysisAborted(abortSignal)
 
       const parsed = result.parsed && typeof result.parsed === 'object' ? result.parsed : {}
       const arch = typeof parsed?.arch === 'string' ? parsed.arch : null
@@ -465,6 +469,7 @@ export function createAngrAnalyzeHandler(
             sessionTag: input.session_tag,
           }
         )
+        throwIfAnalysisAborted(abortSignal)
         artifacts.push(artifact)
       }
 
@@ -504,6 +509,7 @@ export function createAngrAnalyzeHandler(
         metrics: buildMetrics(startTime, angrAnalyzeToolDefinition.name),
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [normalizeError(error)],

@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { describe, test, expect, beforeEach, afterEach, jest } from '@jest/globals'
 import fs from 'fs'
 import path from 'path'
@@ -63,7 +64,7 @@ describe('code.function.explain.prepare tool', () => {
   })
 
   async function setupSample(sampleId: string, hashChar: string) {
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: hashChar.repeat(64),
       md5: hashChar.repeat(32),

@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from '../../src/database.js'
 import { describe, expect, test } from '@jest/globals'
 import fs from 'fs'
 import os from 'os'
@@ -71,7 +72,7 @@ describe('analysis budget scheduler', () => {
     const scheduler = new AnalysisBudgetScheduler(database)
 
     try {
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: 'sha256:' + 'a'.repeat(64),
         sha256: 'a'.repeat(64),
         md5: 'a'.repeat(32),
@@ -80,7 +81,7 @@ describe('analysis budget scheduler', () => {
         created_at: new Date().toISOString(),
         source: 'unit-test',
       })
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: 'sha256:' + 'b'.repeat(64),
         sha256: 'b'.repeat(64),
         md5: 'b'.repeat(32),
@@ -115,6 +116,7 @@ describe('analysis budget scheduler', () => {
       expect(previewEvent?.execution_bucket).toBe('preview-static')
       expect(database.findLatestSchedulerEventForJob(deepJobId)).toBeUndefined()
     } finally {
+      jobQueue.close()
       database.close()
       fs.rmSync(tempDir, { recursive: true, force: true })
     }
@@ -128,7 +130,7 @@ describe('analysis budget scheduler', () => {
 
     try {
       for (const fill of ['c', 'd', 'e']) {
-        database.insertSample({
+        database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
           id: 'sha256:' + fill.repeat(64),
           sha256: fill.repeat(64),
           md5: fill.repeat(32),
@@ -177,6 +179,7 @@ describe('analysis budget scheduler', () => {
       expect(manualEvent?.reason).toContain('manual_only_bucket_requires_explicit_approval')
       expect(manualEvent?.execution_bucket).toBe('manual-execution')
     } finally {
+      jobQueue.close()
       database.close()
       fs.rmSync(tempDir, { recursive: true, force: true })
     }
@@ -189,7 +192,7 @@ describe('analysis budget scheduler', () => {
     const scheduler = new AnalysisBudgetScheduler(database)
 
     try {
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: 'sha256:' + 'g'.repeat(64),
         sha256: 'g'.repeat(64),
         md5: 'g'.repeat(32),
@@ -223,6 +226,7 @@ describe('analysis budget scheduler', () => {
       expect(event?.decision).toBe('admitted')
       expect(event?.cost_class).toBe('expensive')
     } finally {
+      jobQueue.close()
       database.close()
       fs.rmSync(tempDir, { recursive: true, force: true })
     }
@@ -238,7 +242,7 @@ describe('analysis budget scheduler', () => {
     })
 
     try {
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: 'sha256:' + 'f'.repeat(64),
         sha256: 'f'.repeat(64),
         md5: 'f'.repeat(32),
@@ -268,6 +272,7 @@ describe('analysis budget scheduler', () => {
       expect(metadata.memory_limit_mb).toBe(1024)
       expect(metadata.control_plane_headroom_mb).toBe(900)
     } finally {
+      jobQueue.close()
       database.close()
       fs.rmSync(tempDir, { recursive: true, force: true })
     }

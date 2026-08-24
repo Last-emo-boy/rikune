@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 const { WorkspaceManager } = await import('../../dist/workspace-manager.js')
-const { DatabaseManager } = await import('../../dist/database.js')
+const { DATABASE_FIXTURE_CAPABILITY, DatabaseManager } = await import('../../dist/database.js')
 const { CacheManager } = await import('../../dist/cache-manager.js')
 const { PolicyGuard } = await import('../../dist/policy-guard.js')
 const { createAnalyzeAutoWorkflowHandler } = await import('../../dist/workflows/analyze-auto.js')
@@ -199,7 +199,7 @@ function createBinaryProfilePayload(sampleId) {
 }
 
 async function setupSample(sampleId, hashChar) {
-  database.insertSample({
+  database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
     id: sampleId,
     sha256: hashChar.repeat(64),
     md5: hashChar.repeat(32),

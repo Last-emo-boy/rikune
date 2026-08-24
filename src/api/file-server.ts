@@ -6,6 +6,7 @@
 import fs from 'fs/promises'
 import http, { type IncomingMessage, type ServerResponse } from 'http'
 import path from 'path'
+import { fileURLToPath } from 'url'
 import { logger } from '../logger.js'
 import { AuthMiddleware } from './auth-middleware.js'
 import { handleHealthCheck, handleReadinessCheck, setHealthDependencies } from './routes/health.js'
@@ -18,8 +19,9 @@ import { RateLimiter } from './rate-limiter.js'
 import { handleSseConnection } from './sse-events.js'
 import { handleDashboardApi } from './routes/dashboard-api.js'
 import { isRikuneError } from '../errors.js'
-import { randomUUID } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import { RIKUNE_VERSION } from '../version.js'
+import type { SampleOperationGate } from '../sample/sample-operation-gate.js'
 
 export interface FileServerConfig {
   port: number
@@ -32,6 +34,7 @@ export interface FileServerDependencies {
   database: DatabaseManager
   workspaceManager: WorkspaceManager
   finalizationService: SampleFinalizationService
+  sampleOperationGate?: SampleOperationGate
 }
 
 class HttpRequestError extends Error {
@@ -50,23 +53,33 @@ export class FileServer {
   private effectivePort: number
   private readonly authMiddleware: AuthMiddleware
   private readonly rateLimiter: RateLimiter
+  private dashboardScriptHash: string | null = null
 
   constructor(
     private readonly config: FileServerConfig,
     private readonly dependencies: FileServerDependencies
   ) {
     this.effectivePort = config.port
+    const apiKey = config.apiKey?.trim()
     this.authMiddleware = new AuthMiddleware({
-      apiKey: config.apiKey,
-      enabled: Boolean(config.apiKey),
+      apiKey,
+      enabled: true,
     })
     this.rateLimiter = new RateLimiter()
   }
 
   async start(): Promise<void> {
+    if (!this.config.apiKey?.trim()) {
+      throw new Error('HTTP File Server requires a non-empty API_KEY')
+    }
+
+    await this.loadDashboardScriptHash()
+
     await new Promise<void>((resolve, reject) => {
       this.server = http.createServer((req, res) => {
-        void this.handleRequest(req, res)
+        void this.handleRequest(req, res).catch((error) => {
+          this.handleUnhandledRequestError(req, res, error)
+        })
       })
 
       this.server.on('error', reject)
@@ -84,6 +97,7 @@ export class FileServer {
   async stop(): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       if (!this.server) {
+        this.rateLimiter.destroy()
         resolve()
         return
       }
@@ -105,12 +119,6 @@ export class FileServer {
   }
 
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const url = new URL(
-      req.url || '/',
-      `http://127.0.0.1:${this.effectivePort || this.config.port}`
-    )
-    const pathname = url.pathname
-
     // ── Request ID (accept from client or generate) ─────────────────
     const requestId = (req.headers['x-request-id'] as string) || randomUUID()
     res.setHeader('X-Request-Id', requestId)
@@ -119,16 +127,44 @@ export class FileServer {
     res.setHeader('X-Content-Type-Options', 'nosniff')
     res.setHeader('X-Frame-Options', 'DENY')
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+    // script-src drops 'unsafe-inline': the dashboard's single inline script is
+    // allowlisted by SHA-256 hash (computed at startup from the served file).
+    // script-src-attr 'none' additionally forbids inline event-handler
+    // attributes even if one ever slips into the markup.
+    const scriptSrc = this.dashboardScriptHash
+      ? `script-src 'self' 'sha256-${this.dashboardScriptHash}'`
+      : "script-src 'self'"
     res.setHeader(
       'Content-Security-Policy',
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src 'self'; connect-src 'self'"
+      `default-src 'self'; ${scriptSrc}; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`
     )
+
+    let url: URL
+    try {
+      url = new URL(req.url || '/', `http://127.0.0.1:${this.effectivePort || this.config.port}`)
+    } catch {
+      this.sendJson(res, 400, {
+        error: 'Bad Request',
+        message: 'Invalid request URL',
+      })
+      return
+    }
+    const pathname = url.pathname
 
     // ── CORS — allow same-origin and explicitly configured origins only ─
     const origin = req.headers.origin
     if (origin) {
+      let originUrl: URL
+      try {
+        originUrl = new URL(origin)
+      } catch {
+        this.sendJson(res, 400, {
+          error: 'Bad Request',
+          message: 'Invalid Origin header',
+        })
+        return
+      }
       // Only reflect origin for localhost / same-host requests
-      const originUrl = new URL(origin)
       if (originUrl.hostname === 'localhost' || originUrl.hostname === '127.0.0.1') {
         res.setHeader('Access-Control-Allow-Origin', origin)
       }
@@ -174,6 +210,7 @@ export class FileServer {
       }
 
       if (pathname === '/api/v1/events' && req.method === 'GET') {
+        if (!this.checkDashboardAuth(req, res, url.searchParams)) return
         handleSseConnection(req, res, url.searchParams)
         return
       }
@@ -275,13 +312,64 @@ export class FileServer {
     }
   }
 
+  private handleUnhandledRequestError(
+    req: IncomingMessage,
+    res: ServerResponse,
+    error: unknown
+  ): void {
+    const requestId =
+      (typeof req.headers['x-request-id'] === 'string' && req.headers['x-request-id']) ||
+      randomUUID()
+    logger.error({ err: error, requestId }, 'Unhandled HTTP File Server request failure')
+    if (res.headersSent) {
+      res.destroy(error instanceof Error ? error : undefined)
+      return
+    }
+    res.setHeader('X-Request-Id', requestId)
+    this.sendJson(res, 500, {
+      error: true,
+      code: 'E_INTERNAL',
+      message: 'Internal server error',
+      recoverable: false,
+      requestId,
+    })
+  }
+
+  private resolveDashboardHtmlPath(): string {
+    const thisDir = path.dirname(fileURLToPath(import.meta.url))
+    return path.join(thisDir, 'dashboard', 'index.html')
+  }
+
+  /**
+   * Hash the dashboard's single inline script so the CSP can allowlist it by
+   * SHA-256 instead of 'unsafe-inline'. Fail-closed: when the hash is
+   * unavailable the policy falls back to script-src 'self' and the inline
+   * script is blocked.
+   */
+  private async loadDashboardScriptHash(): Promise<void> {
+    try {
+      const html = await fs.readFile(this.resolveDashboardHtmlPath(), 'utf-8')
+      const match = html.match(/<script>([\s\S]*?)<\/script>/)
+      this.dashboardScriptHash = match
+        ? createHash('sha256').update(match[1], 'utf8').digest('base64')
+        : null
+    } catch (error) {
+      this.dashboardScriptHash = null
+      logger.warn(
+        { err: error },
+        'Dashboard script hash unavailable; dashboard inline script will be blocked by CSP'
+      )
+    }
+  }
+
   private async serveDashboardHtml(res: ServerResponse): Promise<void> {
     try {
-      const { fileURLToPath } = await import('url')
-      const thisDir = path.dirname(fileURLToPath(import.meta.url))
-      const htmlPath = path.join(thisDir, 'dashboard', 'index.html')
-      const html = await fs.readFile(htmlPath, 'utf-8')
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      const html = await fs.readFile(this.resolveDashboardHtmlPath(), 'utf-8')
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'Referrer-Policy': 'no-referrer',
+      })
       res.end(html)
     } catch {
       res.writeHead(500, { 'Content-Type': 'text/plain' })
@@ -640,9 +728,18 @@ export class FileServer {
       return
     }
 
-    const artifactPath = await this.resolveArtifactPath(artifact.sample_id, artifact.path)
-    await fs.rm(artifactPath, { force: true })
-    this.dependencies.database.deleteArtifact(artifactId)
+    const operationLease = this.dependencies.sampleOperationGate?.acquireShared([
+      artifact.sample_id,
+    ])
+    try {
+      const artifactPath = await this.resolveArtifactPath(artifact.sample_id, artifact.path)
+      operationLease?.assertOwned()
+      await fs.rm(artifactPath, { force: true })
+      operationLease?.assertOwned()
+      this.dependencies.database.deleteArtifact(artifactId)
+    } finally {
+      operationLease?.release()
+    }
 
     this.sendJson(res, 200, {
       ok: true,

@@ -22,6 +22,10 @@ import { PEStructureAnalyzeDataSchema } from '../../../plugins/pe-analysis/tools
 import { CompilerPackerDetectDataSchema } from '../../static-triage/tools/compiler-packer-detect.js'
 import { createTriageWorkflowHandler } from '../../../workflows/triage.js'
 import {
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../../../analysis/analysis-cancellation.js'
+import {
   loadDynamicTraceEvidence,
   type DynamicTraceSummary,
 } from '../../../artifacts/dynamic-trace.js'
@@ -2340,9 +2344,9 @@ export function createReportSummarizeHandler(
   database: DatabaseManager,
   cacheManager: CacheManager,
   deps?: {
-    triageHandler?: (args: ToolArgs) => Promise<WorkerResult>
-    binaryRoleProfileHandler?: (args: ToolArgs) => Promise<WorkerResult>
-    rustBinaryAnalyzeHandler?: (args: ToolArgs) => Promise<WorkerResult>
+    triageHandler?: AbortableHandler<ToolArgs, WorkerResult>
+    binaryRoleProfileHandler?: AbortableHandler<ToolArgs, WorkerResult>
+    rustBinaryAnalyzeHandler?: AbortableHandler<ToolArgs, WorkerResult>
   }
 ) {
   const triageHandler =
@@ -2354,10 +2358,11 @@ export function createReportSummarizeHandler(
     deps?.rustBinaryAnalyzeHandler ||
     createRustBinaryAnalyzeHandler(workspaceManager, database, cacheManager)
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const startTime = Date.now()
 
     try {
+      throwIfAnalysisAborted(abortSignal)
       const parsedInput = ReportSummarizeInputSchema.parse(args)
       const sample = database.findSample(parsedInput.sample_id)
       if (!sample) {
@@ -2419,6 +2424,7 @@ export function createReportSummarizeHandler(
           sessionTag: input.evidence_session_tag,
         }
       )
+      throwIfAnalysisAborted(abortSignal)
       if (input.force_refresh) {
         warnings.push(
           'report.summarize is persisted-state only in the converged runtime; force_refresh does not trigger fresh heavy analysis.'
@@ -2478,6 +2484,7 @@ export function createReportSummarizeHandler(
           sessionTag: input.evidence_session_tag,
         }
       )
+      throwIfAnalysisAborted(abortSignal)
       const unpackDebugDiffs = unpackDebugDiffSelection.artifacts
         .map((item) => AnalysisDiffDigestSchema.safeParse(item.payload))
         .filter(
@@ -2517,6 +2524,7 @@ export function createReportSummarizeHandler(
           sessionTag: input.semantic_session_tag,
         }
       )
+      throwIfAnalysisAborted(abortSignal)
       const functionExplanations = functionExplanationBundle.summaries
       const triageResult: WorkerResult = fastProfilePayload
         ? {
@@ -2539,6 +2547,7 @@ export function createReportSummarizeHandler(
           sessionTag: input.static_session_tag,
         }
       )
+      throwIfAnalysisAborted(abortSignal)
       const provenance = {
         runtime: buildRuntimeArtifactProvenance(
           dynamicEvidence,
@@ -2597,6 +2606,7 @@ export function createReportSummarizeHandler(
                 sampleSizeTier === 'large' || sampleSizeTier === 'oversized' ? 'quick' : 'balanced',
             }),
       })
+      throwIfAnalysisAborted(abortSignal)
       const allArtifacts = database.findArtifacts(input.sample_id)
       const selectionDiffs: z.infer<typeof AnalysisSelectionDiffSchema> = {}
       if (input.compare_evidence_scope) {
@@ -2609,6 +2619,7 @@ export function createReportSummarizeHandler(
             sessionTag: input.compare_evidence_session_tag,
           }
         )
+        throwIfAnalysisAborted(abortSignal)
         selectionDiffs.runtime = buildArtifactSelectionDiff(
           'runtime',
           provenance.runtime,
@@ -2629,6 +2640,7 @@ export function createReportSummarizeHandler(
             sessionTag: input.compare_semantic_session_tag,
           }
         )
+        throwIfAnalysisAborted(abortSignal)
         selectionDiffs.semantic_explanations = buildArtifactSelectionDiff(
           'semantic_explanations',
           provenance.semantic_explanations,
@@ -2650,6 +2662,7 @@ export function createReportSummarizeHandler(
             sessionTag: input.compare_static_session_tag,
           }
         )
+        throwIfAnalysisAborted(abortSignal)
         selectionDiffs.static_capabilities = buildArtifactSelectionDiff(
           'static_capabilities',
           provenance.static_capabilities,
@@ -2970,6 +2983,7 @@ export function createReportSummarizeHandler(
         metrics: toolMetrics(startTime),
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       if (error instanceof z.ZodError) {
         const invalidMode = error.issues.find(
           (issue) => issue.path[0] === 'mode' && issue.code === z.ZodIssueCode.invalid_enum_value

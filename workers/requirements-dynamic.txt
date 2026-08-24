@@ -1,14 +1,11 @@
-# Optional dynamic-analysis dependencies (install only in isolated lab environments)
-# These are intentionally separated from the static baseline requirements.
-# Latest verified on PyPI 2026-03-10.
+# Optional dynamic-analysis direct dependencies for CPython 3.12 on linux/amd64.
+# Install only in isolated lab environments using the complete hashed closure in
+# requirements-dynamic.lock.txt; these remain separate from the static baseline.
 # Note: the PyPI package named `speakeasy` is an unrelated metrics server.
 # Use `speakeasy-emulator`, which provides the `speakeasy` malware-emulation module.
-# Unicorn still imports `pkg_resources`, so keep setuptools below 81 for now.
-# Qiling is installed via a dedicated isolated environment because it requires
-# unicorn>=2 while Speakeasy still pins unicorn==1.0.2.
+# The exact beta is the first compatible line using maintained Unicorn 2.x.
 
-speakeasy-emulator==1.5.11
-setuptools<81
+speakeasy-emulator==2.0.0b4
 frida==17.8.0
 frida-tools==14.6.1
 psutil==7.2.2

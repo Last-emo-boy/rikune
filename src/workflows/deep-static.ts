@@ -28,6 +28,7 @@ import {
   deriveAnalysisBudgetProfile,
   mergeCoverageEnvelope,
 } from '../analysis/analysis-coverage.js'
+import { throwIfAnalysisAborted } from '../analysis/analysis-cancellation.js'
 
 /**
  * Input schema for deep static workflow
@@ -118,6 +119,7 @@ export interface DeepStaticWorkflowResult {
 
 export interface DeepStaticWorkflowProgressCallbacks {
   onProgress?: (progress: number, stage: string) => void
+  abortSignal?: AbortSignal
 }
 
 function buildDeepStaticCoverage(params: {
@@ -267,11 +269,13 @@ export async function deepStaticWorkflow(
   callbacks?: DeepStaticWorkflowProgressCallbacks
 ): Promise<DeepStaticWorkflowResult> {
   const startTime = Date.now()
+  const abortSignal = callbacks?.abortSignal
   const reportProgress = (progress: number, stage: string) => {
     callbacks?.onProgress?.(progress, stage)
   }
 
   try {
+    throwIfAnalysisAborted(abortSignal)
     logger.info(
       {
         sample_id: sampleId,
@@ -283,7 +287,14 @@ export async function deepStaticWorkflow(
 
     // Step 1: Execute quick triage workflow (Requirement 16.1)
     logger.info({ sample_id: sampleId }, 'Step 1: Executing quick triage')
-    const triageResult = await triageWorkflow(sampleId, workspaceManager, database, cacheManager)
+    const triageResult = await triageWorkflow(
+      sampleId,
+      workspaceManager,
+      database,
+      cacheManager,
+      abortSignal
+    )
+    throwIfAnalysisAborted(abortSignal)
 
     if (!triageResult.ok) {
       return {
@@ -301,7 +312,9 @@ export async function deepStaticWorkflow(
     const analysisResult = await decompilerWorker.analyze(sampleId, {
       timeout: ghidraTimeout,
       maxCpu: '4',
+      abortSignal,
     })
+    throwIfAnalysisAborted(abortSignal)
 
     logger.info(
       {
@@ -315,7 +328,8 @@ export async function deepStaticWorkflow(
     // Step 3: Execute function ranking (Requirement 16.3)
     logger.info({ sample_id: sampleId }, 'Step 3: Ranking functions')
     const topK = options?.top_functions || 10
-    const rankedFunctions = await decompilerWorker.rankFunctions(sampleId, topK)
+    const rankedFunctions = await decompilerWorker.rankFunctions(sampleId, topK, abortSignal)
+    throwIfAnalysisAborted(abortSignal)
 
     logger.info(
       {
@@ -338,6 +352,7 @@ export async function deepStaticWorkflow(
 
     const decompiledFunctions = []
     for (const func of rankedFunctions) {
+      throwIfAnalysisAborted(abortSignal)
       try {
         logger.debug(
           {
@@ -351,8 +366,10 @@ export async function deepStaticWorkflow(
           sampleId,
           func.address,
           false, // Don't include xrefs for performance
-          30000 // 30 second timeout per function
+          30000, // 30 second timeout per function
+          abortSignal
         )
+        throwIfAnalysisAborted(abortSignal)
 
         const funcResult: any = {
           address: func.address,
@@ -365,9 +382,16 @@ export async function deepStaticWorkflow(
         // Optionally include CFG
         if (options?.include_cfg) {
           try {
-            const cfg = await decompilerWorker.getFunctionCFG(sampleId, func.address, 30000)
+            const cfg = await decompilerWorker.getFunctionCFG(
+              sampleId,
+              func.address,
+              30000,
+              abortSignal
+            )
+            throwIfAnalysisAborted(abortSignal)
             funcResult.cfg = cfg
           } catch (error) {
+            throwIfAnalysisAborted(abortSignal)
             logger.warn(
               {
                 address: func.address,
@@ -380,6 +404,7 @@ export async function deepStaticWorkflow(
 
         decompiledFunctions.push(funcResult)
       } catch (error) {
+        throwIfAnalysisAborted(abortSignal)
         logger.warn(
           {
             address: func.address,
@@ -441,6 +466,7 @@ export async function deepStaticWorkflow(
       },
     }
   } catch (error) {
+    throwIfAnalysisAborted(abortSignal)
     const errorMessage = error instanceof Error ? error.message : String(error)
     const elapsedMs = Date.now() - startTime
 
@@ -480,7 +506,8 @@ export function createDeepStaticWorkflowHandler(
     isError: isError || undefined,
   })
 
-  return async (args: unknown): Promise<ToolResult> => {
+  return async (args: unknown, abortSignal?: AbortSignal): Promise<ToolResult> => {
+    throwIfAnalysisAborted(abortSignal)
     try {
       const input = deepStaticWorkflowInputSchema.parse(args)
 
@@ -559,7 +586,8 @@ export function createDeepStaticWorkflowHandler(
         workspaceManager,
         database,
         cacheManager,
-        input.options
+        input.options,
+        { abortSignal }
       )
 
       if (!result.ok) {
@@ -588,6 +616,7 @@ export function createDeepStaticWorkflowHandler(
         ),
       })
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       const errorMessage = error instanceof Error ? error.message : String(error)
       logger.error(
         {

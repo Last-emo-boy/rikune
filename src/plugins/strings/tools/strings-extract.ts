@@ -42,6 +42,7 @@ import {
   resolveCanonicalEvidenceOrCache,
 } from '../../../analysis/analysis-evidence.js'
 import { CACHE_TTL_30_DAYS } from '../../../constants/cache-ttl.js'
+import { throwIfAnalysisAborted } from '../../../analysis/analysis-cancellation.js'
 
 // ============================================================================
 // Constants
@@ -877,7 +878,8 @@ export function createStringsExtractHandler(
   jobQueue?: JobQueue,
   options: { allowDeferred?: boolean } = {}
 ) {
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
+    throwIfAnalysisAborted(abortSignal)
     const input = StringsExtractInputSchema.parse(args)
     const startTime = Date.now()
 
@@ -929,6 +931,7 @@ export function createStringsExtractHandler(
             enrich_result: input.enrich_result,
           },
         })
+        throwIfAnalysisAborted(abortSignal)
         if (resolved) {
           const normalizedCachedData = normalizeStringsExtractData(resolved.record.result, input)
           const warnings =
@@ -1014,6 +1017,7 @@ export function createStringsExtractHandler(
 
       // 3. Get sample path from workspace
       const { samplePath } = await resolvePrimarySamplePath(workspaceManager, input.sample_id)
+      throwIfAnalysisAborted(abortSignal)
 
       // 4. Prepare worker request
       const workerRequest: WorkerRequest = buildStaticWorkerRequest({
@@ -1040,7 +1044,9 @@ export function createStringsExtractHandler(
       const workerResponse = await callPooledStaticWorker(workerRequest, {
         database,
         family: input.mode === 'full' ? 'static_python.full' : 'static_python.preview',
+        abortSignal,
       })
+      throwIfAnalysisAborted(abortSignal)
 
       if (!workerResponse.ok) {
         return {
@@ -1069,8 +1075,9 @@ export function createStringsExtractHandler(
             'Large-sample full strings were bounded inline and persisted as chunk artifacts.',
           ],
           buildLabel: (index, itemCount) => `strings chunk ${index + 1} (${itemCount} strings)`,
-          persistChunk: async ({ index, itemCount, items }) =>
-            persistStringXrefJsonArtifact(
+          persistChunk: async ({ index, itemCount, items }) => {
+            throwIfAnalysisAborted(abortSignal)
+            const artifact = await persistStringXrefJsonArtifact(
               workspaceManager,
               database,
               input.sample_id,
@@ -1089,8 +1096,12 @@ export function createStringsExtractHandler(
                 },
               },
               input.session_tag
-            ),
+            )
+            throwIfAnalysisAborted(abortSignal)
+            return artifact
+          },
         })
+        throwIfAnalysisAborted(abortSignal)
         if (chunked.manifest) {
           normalizedData = {
             ...normalizedData,
@@ -1128,6 +1139,7 @@ export function createStringsExtractHandler(
       }
 
       if (input.persist_artifact !== false) {
+        throwIfAnalysisAborted(abortSignal)
         const artifact = await persistStringXrefJsonArtifact(
           workspaceManager,
           database,
@@ -1153,7 +1165,9 @@ export function createStringsExtractHandler(
       }
 
       // 6. Cache result
+      throwIfAnalysisAborted(abortSignal)
       await cacheManager.setCachedResult(cacheKey, resultData, CACHE_TTL_MS, sample.sha256)
+      throwIfAnalysisAborted(abortSignal)
       persistCanonicalEvidence(database, {
         sample,
         evidenceFamily: 'strings',
@@ -1214,6 +1228,7 @@ export function createStringsExtractHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [(error as Error).message],

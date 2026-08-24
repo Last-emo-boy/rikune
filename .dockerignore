@@ -80,6 +80,8 @@ openspec/
 # -----------------------------------------------------------------------------
 scripts/*
 !scripts/copy-static-assets.mjs
+!scripts/secure-fs-helper.py
+!scripts/verify-hybrid-runtime.mjs
 !scripts/validate-docker-full-stack.sh
 
 # -----------------------------------------------------------------------------
@@ -121,6 +123,8 @@ config.json
 # Security
 # -----------------------------------------------------------------------------
 LICENSE
+!LICENSE
+!DISCLOSURE
 .eslintignore
 .eslintrc.json
 .prettierignore

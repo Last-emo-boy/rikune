@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals'
 import fs from 'fs'
 import os from 'os'
@@ -28,7 +29,7 @@ describe('static.resource.graph tool', () => {
       Buffer.alloc(96, 0),
       Buffer.from('http://payload.example.net/install user32.dll kernel32.dll', 'ascii'),
     ])
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: SAMPLE_ID,
       sha256: SAMPLE_HASH,
       md5: '1'.repeat(32),

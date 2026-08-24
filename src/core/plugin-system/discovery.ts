@@ -86,7 +86,7 @@ async function resolveDirectoryEntrypoint(pluginDir: string): Promise<string | n
  * Discover built-in plugins from `src/plugins/` (compiled to `dist/plugins/`).
  * Each subdirectory with an `index.js` entry point is loaded as a plugin.
  */
-export async function discoverBuiltInPlugins(): Promise<Plugin[]> {
+export async function discoverBuiltInPlugins(allowedIds?: ReadonlySet<string>): Promise<Plugin[]> {
   for (const pluginsDir of [
     path.join(RUNTIME_ROOT, 'plugins'),
     path.join(PROJECT_ROOT, 'dist', 'plugins'),
@@ -94,7 +94,7 @@ export async function discoverBuiltInPlugins(): Promise<Plugin[]> {
   ]) {
     try {
       await fs.access(pluginsDir)
-      return discoverPluginsFromDir(pluginsDir, 'built-in', { scanFlatFiles: false })
+      return discoverPluginsFromDir(pluginsDir, 'built-in', { scanFlatFiles: false, allowedIds })
     } catch {
       // Try the next runtime layout.
     }
@@ -121,6 +121,7 @@ export async function discoverPluginsFromDir(
   source: string,
   options: {
     scanFlatFiles?: boolean
+    allowedIds?: ReadonlySet<string>
   } = {}
 ): Promise<Plugin[]> {
   try {
@@ -135,6 +136,7 @@ export async function discoverPluginsFromDir(
   // Scan subdirectories for index.js entry points
   for (const entry of entries) {
     if (entry.isDirectory()) {
+      if (options.allowedIds && !options.allowedIds.has(entry.name)) continue
       const pluginDir = path.join(pluginsDir, entry.name)
       const indexPath = await resolveDirectoryEntrypoint(pluginDir)
       const manifestPath = path.join(pluginsDir, entry.name, 'plugin.json')

@@ -24,6 +24,11 @@ import {
   mergeSetupActions,
 } from '../setup-guidance.js'
 import { PollingGuidanceSchema, buildPollingGuidance } from '../polling-guidance.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'workflow.function_explanation_review'
 
@@ -394,7 +399,10 @@ export function createFunctionExplanationReviewWorkflowHandler(
     dependencies?.reconstructWorkflowHandler ||
     createReconstructWorkflowHandler(workspaceManager, database, cacheManager)
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
+    throwIfAnalysisAborted(abortSignal)
+    const runHandler = (handler: AbortableHandler<ToolArgs, WorkerResult>, handlerArgs: ToolArgs) =>
+      invokeAbortable(handler, handlerArgs, abortSignal)
     const startTime = Date.now()
     const warnings: string[] = []
     const errors: string[] = []
@@ -457,7 +465,7 @@ export function createFunctionExplanationReviewWorkflowHandler(
         }
       }
 
-      const reviewResult = await explainReviewHandler({
+      const reviewResult = await runHandler(explainReviewHandler, {
         sample_id: input.sample_id,
         address: input.address,
         symbol: input.symbol,
@@ -548,7 +556,7 @@ export function createFunctionExplanationReviewWorkflowHandler(
       }
 
       if (canRefreshExport) {
-        const exportResult = await reconstructWorkflowHandler({
+        const exportResult = await runHandler(reconstructWorkflowHandler, {
           sample_id: input.sample_id,
           path: input.export_path,
           topk: input.export_topk,
@@ -689,6 +697,7 @@ export function createFunctionExplanationReviewWorkflowHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [error instanceof Error ? error.message : String(error)],

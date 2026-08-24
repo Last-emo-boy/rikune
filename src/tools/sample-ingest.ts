@@ -11,6 +11,7 @@ import type { ToolDefinition, ToolArgs, WorkerResult } from '../types.js'
 import type { WorkspaceManager } from '../workspace-manager.js'
 import type { DatabaseManager } from '../database.js'
 import type { PolicyGuard } from '../policy-guard.js'
+import type { SampleOperationGate } from '../sample/sample-operation-gate.js'
 import { withLogging, logError, logWarning } from '../logger.js'
 import { MAX_SAMPLE_SIZE, createSampleFinalizationService } from '../sample/sample-finalization.js'
 import { ToolSurfaceRoleSchema } from '../tool-surface-guidance.js'
@@ -226,12 +227,14 @@ async function stageSidecarsIntoWorkspace(
 export function createSampleIngestHandler(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
-  policyGuard: PolicyGuard
+  policyGuard: PolicyGuard,
+  sampleOperationGate: SampleOperationGate
 ) {
   const finalizationService = createSampleFinalizationService(
     workspaceManager,
     database,
-    policyGuard
+    policyGuard,
+    sampleOperationGate
   )
 
   return async (args: ToolArgs): Promise<WorkerResult> => {

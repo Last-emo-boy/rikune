@@ -182,7 +182,7 @@ export function createGhidraAnalyzeHandler(deps: PluginToolDeps) {
     isError,
   })
 
-  return async (args: unknown): Promise<ToolResult> => {
+  return async (args: unknown, abortSignal?: AbortSignal): Promise<ToolResult> => {
     try {
       // Validate input
       const input = ghidraAnalyzeInputSchema.parse(args)
@@ -272,6 +272,7 @@ export function createGhidraAnalyzeHandler(deps: PluginToolDeps) {
         languageId: input.options?.language_id,
         cspec: input.options?.cspec,
         scriptPaths: input.options?.script_paths,
+        abortSignal,
       }
 
       // If job queue is available, enqueue the analysis

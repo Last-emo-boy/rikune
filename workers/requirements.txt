@@ -1,4 +1,6 @@
-# Python worker dependency baseline (root-synced, latest verified on PyPI 2026-03-10)
+# Python worker direct dependencies for CPython 3.12 on linux/amd64.
+# Production installs use the root requirements.lock.txt, which resolves this
+# file together with ../requirements.txt as one dependency environment.
 pefile==2024.8.26
 lief==0.17.5
 yara-python==4.5.4

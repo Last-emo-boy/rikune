@@ -2,6 +2,9 @@
   "name": "rikune",
   "version": "1.4.0",
   "description": "MCP server for Windows binary reverse engineering, PE triage, Ghidra-assisted analysis, and reconstruction workflows.",
+  "contentPolicy": {
+    "class": "dual-use"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
@@ -30,19 +33,25 @@
     "plugin-sdk.js",
     "plugin-sdk.d.ts",
     "CHANGELOG.md",
+    "DISCLOSURE",
+    "scripts/secure-fs-helper.py",
     "README_zh.md",
     "dist/**/*.js",
     "dist/**/*.d.ts",
     "dist/**/*.html",
+    "dist/**/*.json",
+    "dist/**/*.py",
     "dist/resources/**/*",
     "src/plugins/kb-collaboration/data/*.json",
+    "src/plugins/vuln-scanner/data/*.json",
     "workers/frida_worker.py",
     "workers/rizin_preview_worker.py",
     "workers/static_worker.py",
     "workers/speakeasy_compat.py",
     "workers/requirements.txt",
     "workers/requirements-dynamic.txt",
-    "workers/requirements-qiling.txt",
+    "workers/requirements-dynamic.lock.txt",
+    "workers/requirements-dynamic.windows.lock.txt",
     "workers/yara_rules/*.yar",
     "src/plugins/**/workers/*.py",
     "src/plugins/ghidra/scripts/*.java",
@@ -51,9 +60,12 @@
     "src/plugins/static-triage/helpers/DotNetMetadataProbe/DotNetMetadataProbe.csproj",
     "src/plugins/static-triage/helpers/DotNetMetadataProbe/Program.cs",
     "requirements.txt",
+    "requirements.lock.txt",
+    "requirements.windows.lock.txt",
     "COPILOT_INSTALLATION.md",
     "src/plugins/android/scripts/**/*.js",
     "src/plugins/android/scripts/README.md",
+    "src/plugins/angr/requirements.lock.txt",
     "src/plugins/frida/scripts/**/*.js",
     "src/plugins/frida/scripts/README.md"
   ],
@@ -95,7 +107,7 @@
     "docker:generate:all": "node scripts/generate-docker.mjs --all-profiles",
     "docker:generate:minimal": "node scripts/generate-docker.mjs --profile=static --exclude=ghidra,retdec,memory-forensics",
     "docker:generate:full": "node scripts/generate-docker.mjs --profile=full",
-    "docs:api": "node scripts/generate-api-docs.js",
+    "docs:api": "npm run docs:tool-catalog",
     "docs:tool-catalog": "tsx scripts/generate-tool-catalog-doc.mjs",
     "docker:up:static": "npm run build && npm run docker:generate:static && docker compose -f docker-compose.analyzer.yml up -d analyzer",
     "docker:up:full": "npm run build && npm run docker:generate && docker compose -f docker-compose.yml up -d mcp-server",
@@ -135,8 +147,8 @@
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@rikune/plugin-sdk": "1.2.0",
-    "@rikune/shared": "1.2.0",
+    "@rikune/plugin-sdk": "1.4.0",
+    "@rikune/shared": "1.4.0",
     "better-sqlite3": "^12.6.2",
     "node-windows": "^1.0.0-beta.8",
     "pino": "^10.3.1",
@@ -158,11 +170,17 @@
     "eslint-plugin-prettier": "^5.5.5",
     "fast-check": "^4.6.0",
     "jest": "^30.2.0",
+    "pm2": "7.0.3",
     "prettier": "^3.8.1",
     "ts-jest": "^29.4.6",
     "tsx": "^4.22.4",
     "turbo": "^2.9.6",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "pm2": {
+      "js-yaml": "4.3.1"
+    }
   },
   "engines": {
     "node": ">=22.0.0"

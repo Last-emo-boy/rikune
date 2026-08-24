@@ -16,6 +16,7 @@ import type {
 } from '../types.js'
 import { zodToJsonSchema } from './zod-schema-converter.js'
 import { toTransportToolName, buildToolNameMappings } from './tool-name-normalization.js'
+import { DEFAULT_SAMPLE_REFERENCE_SPEC } from '../sample/sample-operation-gate.js'
 
 type ToolHandler = (args: ToolArgs) => Promise<WorkerResult | ToolResult>
 type PromptHandler = (args: PromptArgs) => Promise<PromptResult>
@@ -129,6 +130,7 @@ export class MCPRegistry {
   private static readonly SAMPLE_ENTRY_TOOLS = new Set([
     'sample.request_upload',
     'sample.ingest',
+    'sample.delete',
     'sample.profile.get',
     'workflow.search',
     'workflow.run',
@@ -173,9 +175,16 @@ export class MCPRegistry {
       throw new Error(`Tool name collision while registering ${canonicalName} as ${transportName}`)
     }
 
+    const guardedDefinition: ToolDefinition = {
+      ...definition,
+      // Every registered definition owns an explicit extraction contract. The
+      // default is a frozen, exact top-level/FK contract rather than a recursive
+      // field-name heuristic; tools with different shapes must override it.
+      sampleReferences: definition.sampleReferences ?? DEFAULT_SAMPLE_REFERENCE_SPEC,
+    }
     this.logger.info({ tool: canonicalName, transport_tool: transportName }, 'Registering tool')
-    this.canonicalToolDefinitions.set(canonicalName, definition)
-    this.tools.set(transportName, { ...definition, canonicalName, name: transportName })
+    this.canonicalToolDefinitions.set(canonicalName, guardedDefinition)
+    this.tools.set(transportName, { ...guardedDefinition, canonicalName, name: transportName })
     this.toolAliases.set(canonicalName, transportName)
     this.toolAliases.set(transportName, transportName)
     this.handlers.set(transportName, handler)

@@ -109,6 +109,14 @@ export interface BinaryDiffResult {
   recommended_next_tools?: string[]
 }
 
+export function resolveRizinDiffWorkerPath(): string {
+  return path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    'workers',
+    'rizin_diff_worker.py'
+  )
+}
+
 // ============================================================================
 // Rizin diff via Python worker
 // ============================================================================
@@ -117,13 +125,7 @@ export async function runRizinDiff(
   binaryPathA: string,
   binaryPathB: string
 ): Promise<RizinDiffResult> {
-  const workerScript = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    'plugins',
-    'binary-diff',
-    'workers',
-    'rizin_diff_worker.py'
-  )
+  const workerScript = resolveRizinDiffWorkerPath()
 
   try {
     const { stdout } = await execFileAsync('python3', [workerScript, binaryPathA, binaryPathB], {

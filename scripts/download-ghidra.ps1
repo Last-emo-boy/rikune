@@ -2,8 +2,8 @@
 # 闁归潧顑呮慨鈺傜▔鐎ｎ厽绁?Ghidra 闁煎瓨纰嶅﹢?# 闁活潿鍔嬬花顒傛喆閿濆懎鏋€ Docker 闁哄瀚紓鎾诲籍閼稿灚锟ユ繛澶嬫磻缁?GitHub 濞戞挸顑堝ù鍥儍閸曨垱锛栧Λ?# =============================================================================
 
 param(
-    [string]$Version = "12.0.4",
-    [string]$Date = "20240730",
+    [string]$Version = "12.1.3",
+    [string]$Date = "20260817",
     [string]$OutputDir = ".\downloads"
 )
 
@@ -20,7 +20,7 @@ Write-Host "========================================" -ForegroundColor Cyan
 
 # 闁哄瀚紓鎾寸▔鐎ｎ厽绁?URL
 $filename = "ghidra_${Version}_PUBLIC_${Date}.zip"
-$url = "https://github.com/NationalSecurityAgency/ghidra/releases/download/ghidra_${Version}_BUILD/$filename"
+$url = "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_${Version}_build/$filename"
 
 Write-Host "`n濞戞挸顑堝ù鍥ㄧ┍閳╁啩绱?" -ForegroundColor Cyan
 Write-Host "  闁绘鐗婂﹢浼存晬?Version" -ForegroundColor White
@@ -44,6 +44,12 @@ Write-Host "  闁烩晩鍠楅悥锝夋晬?OutputDir\$filename" -ForegroundColor 
 try {
     # 濞达綀娉曢弫?Invoke-WebRequest 濞戞挸顑堝ù鍥晬閸喐鏆滈柟闀愮劍閺屽洭鎮欓崷顓犳暰濞磋偐濯寸槐?    $ProgressPreference = 'SilentlyContinue'  # 缂佸倷鑳堕弫銈嗘交濞戞ê顔婇柡澶嗗墲濡绮?    
     Invoke-WebRequest -Uri $url -OutFile "$OutputDir\$filename" -UseBasicParsing
+
+    $expectedSha256 = "93a5d11a9ad510622acaaf908c556a7b9b764d338e78a7567f3689bf5081fd54"
+    $actualSha256 = (Get-FileHash -Algorithm SHA256 "$OutputDir\$filename").Hash.ToLowerInvariant()
+    if ($actualSha256 -ne $expectedSha256) {
+        throw "Ghidra SHA256 mismatch: expected $expectedSha256, got $actualSha256"
+    }
     
     $ProgressPreference = 'Continue'
     

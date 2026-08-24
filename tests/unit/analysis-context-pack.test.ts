@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals'
 import { createHash } from 'crypto'
 import fs from 'fs/promises'
@@ -67,7 +68,7 @@ describe('analysis.context.pack', () => {
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'rikune-context-pack-'))
     workspaceManager = new WorkspaceManager(path.join(tempRoot, 'workspaces'))
     database = new DatabaseManager(path.join(tempRoot, 'rikune.db'))
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: SAMPLE_ID,
       sha256: SHA256,
       md5: 'b'.repeat(32),
@@ -365,7 +366,7 @@ describe('analysis.context.pack', () => {
   test('rebuilds evidence references from same-sample canonical artifact records', async () => {
     const otherSha = 'd'.repeat(64)
     const otherSampleId = `sha256:${otherSha}`
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: otherSampleId,
       sha256: otherSha,
       md5: 'e'.repeat(32),
@@ -1031,7 +1032,7 @@ describe('analysis.context.pack', () => {
 
     const otherSha = 'd'.repeat(64)
     const otherSampleId = `sha256:${otherSha}`
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: otherSampleId,
       sha256: otherSha,
       md5: 'e'.repeat(32),

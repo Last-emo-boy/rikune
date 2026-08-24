@@ -14,6 +14,7 @@ import { z } from 'zod'
 import type { ArtifactRef, ToolArgs, ToolDefinition, WorkerResult } from '../../../types.js'
 import type { WorkspaceManager } from '../../../workspace-manager.js'
 import type { DatabaseManager } from '../../../database.js'
+import type { SampleFinalizationService } from '../../../sample/sample-finalization.js'
 import { createWorkerResultOutputSchema } from '../../sdk.js'
 import { resolvePrimarySamplePath } from '../../../sample/sample-workspace.js'
 import {
@@ -153,10 +154,6 @@ export const unpackChildHandoffToolDefinition: ToolDefinition = {
 
 function sha256(data: Buffer): string {
   return createHash('sha256').update(data).digest('hex')
-}
-
-function md5(data: Buffer): string {
-  return createHash('md5').update(data).digest('hex')
 }
 
 function readUInt16(buffer: Buffer, offset: number): number {
@@ -427,36 +424,26 @@ async function persistPayloadArtifact(
 }
 
 async function registerChildSample(
-  workspaceManager: WorkspaceManager,
-  database: DatabaseManager,
+  finalizer: SampleFinalizationService,
   parentId: string,
   candidate: PayloadCandidate
 ): Promise<RegisteredChild> {
   const childSha256 = candidate.sha256
   const sampleId = `sha256:${childSha256}`
-  const existing = database.findSample(sampleId)
   const filename = `child_${candidate.source}_${childSha256.slice(0, 12)}${extensionForMagic(candidate.magic)}`
-
-  if (!existing) {
-    const workspace = await workspaceManager.createWorkspace(sampleId)
-    await fs.writeFile(path.join(workspace.original, filename), candidate.bytes)
-    database.insertSample({
-      id: sampleId,
-      sha256: childSha256,
-      md5: md5(candidate.bytes),
-      size: candidate.bytes.length,
-      file_type: candidate.magic,
-      source: `unpack_child_handoff:parent=${parentId}:source=${candidate.source}:offset=${candidate.offset}`,
-      created_at: new Date().toISOString(),
-    })
-  }
+  const finalized = await finalizer.finalizeBuffer({
+    data: candidate.bytes,
+    filename,
+    source: `unpack_child_handoff:parent=${parentId}:source=${candidate.source}:offset=${candidate.offset}`,
+    auditOperation: TOOL_NAME,
+  })
 
   return {
     sample_id: sampleId,
     sha256: childSha256,
     size: candidate.bytes.length,
     filename,
-    existed: Boolean(existing),
+    existed: Boolean(finalized.existed),
   }
 }
 
@@ -480,7 +467,8 @@ function summarize(candidates: PayloadCandidate[], registered: RegisteredChild[]
 
 export function createUnpackChildHandoffHandler(
   workspaceManager: WorkspaceManager,
-  database: DatabaseManager
+  database: DatabaseManager,
+  finalizer: SampleFinalizationService
 ) {
   return async (args: ToolArgs): Promise<WorkerResult> => {
     const started = Date.now()
@@ -606,9 +594,7 @@ export function createUnpackChildHandoffHandler(
           )
         }
         if (input.register_children) {
-          registeredChildren.push(
-            await registerChildSample(workspaceManager, database, input.sample_id, candidate)
-          )
+          registeredChildren.push(await registerChildSample(finalizer, input.sample_id, candidate))
         }
       }
 

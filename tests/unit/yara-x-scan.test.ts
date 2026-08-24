@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, test } from '@jest/globals'
+import { DATABASE_FIXTURE_CAPABILITY } from '../../src/database.js'
+import { afterEach, beforeEach, describe, expect, test, jest } from '@jest/globals'
 import { createHash } from 'crypto'
 import fs from 'fs'
 import os from 'os'
@@ -163,7 +164,7 @@ describe('yara_x.scan tool', () => {
     workspaceManager = new WorkspaceManager(path.join(tempRoot, 'workspaces'))
     database = new DatabaseManager(path.join(tempRoot, 'rikune.db'))
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: SAMPLE_ID,
       sha256: SAMPLE_HASH,
       md5: '7'.repeat(32),
@@ -685,5 +686,65 @@ describe('yara_x.scan tool', () => {
     )
     expect(yaraXResult.score_breakdown.query_score).toBeGreaterThan(0)
     expect(yaraXResult.matched_profile_fields.join(' ')).toContain('query terms')
+  })
+
+  test('forwards abort to YARA-X Python and prevents late artifact persistence', async () => {
+    let resolveStarted!: (signal: AbortSignal) => void
+    const started = new Promise<AbortSignal>((resolve) => {
+      resolveStarted = resolve
+    })
+    let resolveTeardown!: () => void
+    const teardown = new Promise<void>((resolve) => {
+      resolveTeardown = resolve
+    })
+    const runPythonJson = jest.fn(
+      async (
+        _pythonPath: string,
+        _script: string,
+        _payload: unknown,
+        _timeoutMs: number,
+        options?: { abortSignal?: AbortSignal }
+      ) => {
+        const signal = options?.abortSignal
+        if (!signal) throw new Error('missing AbortSignal')
+        resolveStarted(signal)
+        await new Promise<void>((resolve) => {
+          signal.addEventListener('abort', () => resolve(), { once: true })
+        })
+        await teardown
+        return {
+          stdout: '',
+          stderr: '',
+          parsed: { match_count: 0, matching_rules: [], module_outputs: {} },
+        }
+      }
+    )
+    const handler = createYaraXScanHandler(workspaceManager, database, {
+      resolveBackends: createBackendResolution,
+      runPythonJson,
+    })
+    const controller = new AbortController()
+    let settled = false
+    const running = handler(
+      {
+        sample_id: SAMPLE_ID,
+        rules_text: 'rule Cancelled { condition: true }',
+        persist_artifact: true,
+      },
+      controller.signal
+    ).finally(() => {
+      settled = true
+    })
+
+    const receivedSignal = await started
+    controller.abort(new Error('cancel YARA-X'))
+    await Promise.resolve()
+
+    expect(receivedSignal).toBe(controller.signal)
+    expect(settled).toBe(false)
+
+    resolveTeardown()
+    await expect(running).rejects.toMatchObject({ name: 'AbortError' })
+    expect(database.findArtifacts(SAMPLE_ID)).toHaveLength(0)
   })
 })

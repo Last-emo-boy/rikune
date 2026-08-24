@@ -22,6 +22,7 @@ import {
   getConfiguredGhidraLogRoot,
   getConfiguredGhidraProjectRoot,
   getSampleScopedGhidraProjectRoot,
+  getSampleScopedGhidraLogRoot,
 } from '../ghidra/ghidra-config.js'
 import {
   findBestGhidraAnalysis,
@@ -288,6 +289,8 @@ export interface GhidraProcessDiagnostics {
   stdout_encoding: string
   stderr_encoding: string
   spawn_error?: string
+  log_persistence_error?: string
+  tree_termination_error?: string
   log_path?: string
   runtime_log_path?: string
   java_exception?: {
@@ -457,7 +460,14 @@ export function normalizeGhidraError(
 ): NormalizedGhidraError | undefined {
   const diagnostics = getGhidraDiagnostics(error)
   const message = error instanceof Error ? error.message : String(error)
-  const corpus = [message, diagnostics?.stderr, diagnostics?.stdout, diagnostics?.spawn_error]
+  const corpus = [
+    message,
+    diagnostics?.stderr,
+    diagnostics?.stdout,
+    diagnostics?.spawn_error,
+    diagnostics?.log_persistence_error,
+    diagnostics?.tree_termination_error,
+  ]
     .filter((item): item is string => typeof item === 'string' && item.length > 0)
     .join('\n')
 
@@ -469,6 +479,12 @@ export function normalizeGhidraError(
     diagnostics?.raw_cmd ? `raw_cmd=${diagnostics.raw_cmd}` : '',
     typeof diagnostics?.exit_code === 'number' ? `exit_code=${diagnostics.exit_code}` : '',
     diagnostics?.spawn_error ? `spawn_error=${diagnostics.spawn_error}` : '',
+    diagnostics?.log_persistence_error
+      ? `log_persistence_error=${diagnostics.log_persistence_error}`
+      : '',
+    diagnostics?.tree_termination_error
+      ? `tree_termination_error=${diagnostics.tree_termination_error}`
+      : '',
     diagnostics?.log_path ? `log_path=${diagnostics.log_path}` : '',
     diagnostics?.runtime_log_path ? `runtime_log_path=${diagnostics.runtime_log_path}` : '',
     diagnostics?.java_exception
@@ -678,13 +694,28 @@ export function normalizeGhidraError(
  * Manages Ghidra Headless execution and result processing
  */
 export class DecompilerWorker {
+  private readonly processTerminationGraceMs = 5_000
+
   constructor(
     private database: DatabaseManager,
     private workspaceManager: WorkspaceManager
   ) {}
 
-  private async delay(ms: number): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, ms))
+  private async delay(ms: number, abortSignal?: AbortSignal): Promise<void> {
+    if (abortSignal?.aborted) {
+      throw new Error('E_CANCELLED: Ghidra operation cancelled')
+    }
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        abortSignal?.removeEventListener('abort', onAbort)
+        resolve()
+      }, ms)
+      const onAbort = () => {
+        clearTimeout(timer)
+        reject(new Error('E_CANCELLED: Ghidra operation cancelled'))
+      }
+      abortSignal?.addEventListener('abort', onAbort, { once: true })
+    })
   }
 
   private isProjectLockFailure(error: unknown): boolean {
@@ -705,16 +736,26 @@ export class DecompilerWorker {
     operationLabel: string,
     operation: () => Promise<T>,
     context: Record<string, unknown>,
-    attempts: number = 5,
-    initialDelayMs: number = 1500
+    options: {
+      abortSignal?: AbortSignal
+      attempts?: number
+      initialDelayMs?: number
+    } = {}
   ): Promise<T> {
+    const { abortSignal, attempts = 5, initialDelayMs = 1500 } = options
     let delayMs = initialDelayMs
     let lastError: unknown
 
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      if (abortSignal?.aborted) {
+        throw new Error('E_CANCELLED: Ghidra operation cancelled')
+      }
       try {
         return await operation()
       } catch (error) {
+        if (abortSignal?.aborted) {
+          throw new Error('E_CANCELLED: Ghidra operation cancelled', { cause: error })
+        }
         lastError = error
         if (!this.isProjectLockFailure(error) || attempt >= attempts) {
           throw error
@@ -731,7 +772,7 @@ export class DecompilerWorker {
           `${operationLabel} hit a transient Ghidra project lock; retrying`
         )
 
-        await this.delay(delayMs)
+        await this.delay(delayMs, abortSignal)
         delayMs *= 2
       }
     }
@@ -772,13 +813,10 @@ export class DecompilerWorker {
   }
 
   private buildGhidraCommandLogPath(sampleId: string, stage: string, projectKey?: string): string {
-    const sha256 = sampleId.startsWith('sha256:') ? sampleId.slice('sha256:'.length) : sampleId
-    const bucket1 = sha256.slice(0, 2)
-    const bucket2 = sha256.slice(2, 4)
     const stageKey = stage.replace(/[^a-z0-9._-]+/gi, '_')
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
     const filename = `${timestamp}_${stageKey}${projectKey ? `_${projectKey}` : ''}.command.log`
-    return path.join(ghidraConfig.logRoot, bucket1, bucket2, sha256, filename)
+    return path.join(getSampleScopedGhidraLogRoot(sampleId), filename)
   }
 
   private buildGhidraRuntimeLogPath(sampleId: string, stage: string, projectKey?: string): string {
@@ -826,6 +864,38 @@ export class DecompilerWorker {
     fs.mkdirSync(path.dirname(logFilePath), { recursive: true })
     fs.writeFileSync(logFilePath, `${payload}\n`, 'utf8')
     return logFilePath
+  }
+
+  private tryPersistGhidraCommandLog(
+    logFilePath: string | undefined,
+    invocation: ProcessInvocation,
+    cwd: string,
+    decoded: DecodedProcessStreams,
+    exitCode: number | null,
+    signal: NodeJS.Signals | null,
+    timedOut: boolean,
+    cancelled: boolean,
+    spawnError?: string
+  ): { logPath?: string; error?: string } {
+    try {
+      return {
+        logPath: this.persistGhidraCommandLog(
+          logFilePath,
+          invocation,
+          cwd,
+          decoded,
+          exitCode,
+          signal,
+          timedOut,
+          cancelled,
+          spawnError
+        ),
+      }
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : String(error),
+      }
+    }
   }
 
   private getAlternateWorkspaceRoot(): string | null {
@@ -922,9 +992,78 @@ export class DecompilerWorker {
       env: {
         ...process.env,
       },
+      detached: process.platform !== 'win32',
       windowsHide: true,
       windowsVerbatimArguments: invocation.windowsVerbatimArguments === true,
     })
+  }
+
+  private spawnWindowsTreeKiller(pid: number): ChildProcess {
+    return spawn('taskkill', ['/T', '/F', '/PID', String(pid)], {
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+  }
+
+  private signalPosixProcessGroup(childProcess: ChildProcess, signal: NodeJS.Signals): void {
+    const pid = childProcess.pid
+    if (pid) {
+      try {
+        process.kill(-pid, signal)
+        return
+      } catch {
+        // Fall back to the direct handle if group delivery is unavailable.
+      }
+    }
+
+    try {
+      childProcess.kill(signal)
+    } catch {
+      // The close/group-exit checks remain authoritative.
+    }
+  }
+
+  private isPosixProcessGroupAlive(pid: number | undefined): boolean {
+    if (!pid) return false
+    // Linux keeps an empty-looking process group addressable while an orphaned
+    // zombie awaits reaping. Zombies cannot execute or mutate state, so inspect
+    // /proc and only treat non-zombie group members as live. Other POSIX systems
+    // fall back to the conservative kill(0) check below.
+    if (process.platform === 'linux' && fs.existsSync('/proc')) {
+      try {
+        for (const entry of fs.readdirSync('/proc')) {
+          if (!/^\d+$/.test(entry)) continue
+          let stat: string
+          try {
+            stat = fs.readFileSync(path.join('/proc', entry, 'stat'), 'utf8')
+          } catch {
+            continue
+          }
+          const commandEnd = stat.lastIndexOf(')')
+          if (commandEnd < 0) continue
+          const fields = stat.slice(commandEnd + 2).split(' ')
+          const state = fields[0]
+          const processGroupId = Number(fields[2])
+          if (processGroupId === pid && state !== 'Z' && state !== 'X') {
+            return true
+          }
+        }
+        return false
+      } catch {
+        return true
+      }
+    }
+
+    try {
+      process.kill(-pid, 0)
+      return true
+    } catch (error) {
+      const code =
+        typeof error === 'object' && error !== null && 'code' in error
+          ? String((error as NodeJS.ErrnoException).code)
+          : undefined
+      return code !== 'ESRCH'
+    }
   }
 
   private buildProcessDiagnostics(
@@ -937,7 +1076,9 @@ export class DecompilerWorker {
     cancelled: boolean,
     spawnError?: string,
     logPath?: string,
-    runtimeLogPath?: string
+    runtimeLogPath?: string,
+    logPersistenceError?: string,
+    treeTerminationError?: string
   ): GhidraProcessDiagnostics {
     const javaException = parseJavaExceptionSummary(
       `${decoded.stderr.text}\n${decoded.stdout.text}`
@@ -956,6 +1097,8 @@ export class DecompilerWorker {
       stdout_encoding: decoded.stdout.encoding,
       stderr_encoding: decoded.stderr.encoding,
       spawn_error: spawnError,
+      log_persistence_error: logPersistenceError,
+      tree_termination_error: treeTerminationError,
       log_path: logPath,
       runtime_log_path: runtimeLogPath,
       java_exception: javaException,
@@ -995,7 +1138,7 @@ export class DecompilerWorker {
     return new Promise((resolve, reject) => {
       if (abortSignal?.aborted) {
         const decoded = decodeProcessStreams(Buffer.alloc(0), Buffer.alloc(0))
-        const persistedLogPath = this.persistGhidraCommandLog(
+        const persistedLog = this.tryPersistGhidraCommandLog(
           logFilePath,
           invocation,
           cwd,
@@ -1014,8 +1157,9 @@ export class DecompilerWorker {
           false,
           true,
           undefined,
-          persistedLogPath,
-          runtimeLogPath
+          persistedLog.logPath,
+          runtimeLogPath,
+          persistedLog.error
         )
         reject(
           new GhidraProcessError(
@@ -1032,104 +1176,263 @@ export class DecompilerWorker {
       let timedOut = false
       let cancelled = false
       let settled = false
+      let closeObserved = false
+      let terminationRequested = false
+      let observedExitCode: number | null = null
+      let observedSignal: NodeJS.Signals | null = null
+      let spawnError: string | undefined
+      let treeTerminationError: string | undefined
+      let windowsTreeSupervisionFinished = false
+      let timeoutTimer: NodeJS.Timeout | undefined
+      let forceKillTimer: NodeJS.Timeout | undefined
+      let windowsFinalWatchdogTimer: NodeJS.Timeout | undefined
+      let treeExitPollTimer: NodeJS.Timeout | undefined
       const childProcess: ChildProcess = this.spawnGhidraProcess(invocation, cwd)
       let onAbort: (() => void) | undefined
 
-      const settle = (fn: () => void): void => {
-        if (settled) {
-          return
-        }
-        settled = true
+      const cleanup = (): void => {
+        if (timeoutTimer) clearTimeout(timeoutTimer)
+        if (forceKillTimer) clearTimeout(forceKillTimer)
+        if (windowsFinalWatchdogTimer) clearTimeout(windowsFinalWatchdogTimer)
+        if (treeExitPollTimer) clearTimeout(treeExitPollTimer)
+        timeoutTimer = undefined
+        forceKillTimer = undefined
+        windowsFinalWatchdogTimer = undefined
+        treeExitPollTimer = undefined
         if (abortSignal && onAbort) {
           abortSignal.removeEventListener('abort', onAbort)
         }
-        fn()
       }
 
-      const timeoutTimer = setTimeout(() => {
-        timedOut = true
-        settle(() => {
-          childProcess.kill('SIGTERM')
+      const rejectOnce = (error: GhidraProcessError): void => {
+        if (settled) return
+        settled = true
+        cleanup()
+        reject(error)
+      }
 
-          // Force kill after 5 seconds if still running
-          setTimeout(() => {
-            if (!childProcess.killed) {
-              childProcess.kill('SIGKILL')
-            }
-          }, 5000)
+      const resolveOnce = (output: GhidraCommandOutput): void => {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve(output)
+      }
 
-          const decoded = decodeProcessStreams(
-            Buffer.concat(stdoutChunks),
-            Buffer.concat(stderrChunks)
-          )
-          const persistedLogPath = this.persistGhidraCommandLog(
-            logFilePath,
-            invocation,
-            cwd,
-            decoded,
-            null,
-            null,
-            true,
-            cancelled
-          )
-          const diagnostics = this.buildProcessDiagnostics(
-            invocation,
-            cwd,
-            decoded,
-            null,
-            null,
-            true,
-            cancelled,
-            undefined,
-            persistedLogPath,
-            runtimeLogPath
-          )
-          reject(new GhidraProcessError(timeoutMessage, diagnostics, 'E_TIMEOUT'))
-        })
-      }, timeoutMs)
+      const finishWithObservedOutput = (): void => {
+        if (settled) return
+        const decoded = decodeProcessStreams(
+          Buffer.concat(stdoutChunks),
+          Buffer.concat(stderrChunks)
+        )
+        const persistedLog = this.tryPersistGhidraCommandLog(
+          logFilePath,
+          invocation,
+          cwd,
+          decoded,
+          observedExitCode,
+          observedSignal,
+          timedOut,
+          cancelled,
+          spawnError
+        )
+        const diagnostics = this.buildProcessDiagnostics(
+          invocation,
+          cwd,
+          decoded,
+          observedExitCode,
+          observedSignal,
+          timedOut,
+          cancelled,
+          spawnError,
+          persistedLog.logPath,
+          runtimeLogPath,
+          persistedLog.error,
+          treeTerminationError
+        )
 
-      onAbort = () => {
-        cancelled = true
-        settle(() => {
-          childProcess.kill('SIGTERM')
-          setTimeout(() => {
-            if (!childProcess.killed) {
-              childProcess.kill('SIGKILL')
-            }
-          }, 5000)
-          const decoded = decodeProcessStreams(
-            Buffer.concat(stdoutChunks),
-            Buffer.concat(stderrChunks)
-          )
-          const persistedLogPath = this.persistGhidraCommandLog(
-            logFilePath,
-            invocation,
-            cwd,
-            decoded,
-            null,
-            null,
-            false,
-            true
-          )
-          const diagnostics = this.buildProcessDiagnostics(
-            invocation,
-            cwd,
-            decoded,
-            null,
-            null,
-            false,
-            true,
-            undefined,
-            persistedLogPath
-          )
-          reject(
+        if (timedOut) {
+          rejectOnce(new GhidraProcessError(timeoutMessage, diagnostics, 'E_TIMEOUT'))
+          return
+        }
+
+        if (cancelled) {
+          rejectOnce(
             new GhidraProcessError(
               'E_CANCELLED: Ghidra command cancelled by user',
               diagnostics,
               'E_CANCELLED'
             )
           )
+          return
+        }
+
+        if (spawnError) {
+          rejectOnce(
+            new GhidraProcessError(
+              `Failed to spawn or supervise Ghidra process: ${spawnError}${persistedLog.logPath ? ` | log_path=${persistedLog.logPath}` : ''}`,
+              diagnostics,
+              'E_SPAWN'
+            )
+          )
+          return
+        }
+
+        if (observedExitCode !== 0) {
+          rejectOnce(
+            new GhidraProcessError(
+              this.buildProcessFailureMessage(failureMessage, diagnostics),
+              diagnostics,
+              'E_GHIDRA_PROCESS'
+            )
+          )
+          return
+        }
+
+        if (persistedLog.error) {
+          rejectOnce(
+            new GhidraProcessError(
+              `Failed to persist Ghidra command log: ${persistedLog.error}`,
+              diagnostics,
+              'E_GHIDRA_PROCESS'
+            )
+          )
+          return
+        }
+
+        resolveOnce({
+          stdout: decoded.stdout.text,
+          stderr: decoded.stderr.text,
+          diagnostics,
+          command_log_path: persistedLog.logPath,
+          runtime_log_path: runtimeLogPath,
         })
+      }
+
+      let maybeFinalize: () => void
+
+      const schedulePosixTreeExitCheck = (): void => {
+        if (settled || treeExitPollTimer) return
+        treeExitPollTimer = setTimeout(() => {
+          treeExitPollTimer = undefined
+          maybeFinalize()
+        }, 100)
+      }
+
+      maybeFinalize = (): void => {
+        if (settled || !closeObserved) return
+        if (terminationRequested) {
+          if (process.platform === 'win32') {
+            if (!windowsTreeSupervisionFinished) return
+          } else if (this.isPosixProcessGroupAlive(childProcess.pid)) {
+            schedulePosixTreeExitCheck()
+            return
+          }
+        }
+        finishWithObservedOutput()
+      }
+
+      const recordTreeTerminationError = (error: unknown): void => {
+        const message = error instanceof Error ? error.message : String(error)
+        treeTerminationError = treeTerminationError
+          ? `${treeTerminationError}; ${message}`
+          : message
+      }
+
+      const startWindowsTreeTermination = (): void => {
+        const pid = childProcess.pid
+        if (!pid) {
+          recordTreeTerminationError('Cannot terminate Windows process tree without a PID')
+          return
+        }
+
+        let killer: ChildProcess
+        try {
+          killer = this.spawnWindowsTreeKiller(pid)
+        } catch (error) {
+          recordTreeTerminationError(error)
+          return
+        }
+
+        let killerErrored = false
+        killer.once('error', (error: Error) => {
+          killerErrored = true
+          recordTreeTerminationError(error)
+        })
+        killer.once('close', (code: number | null) => {
+          if (code === 0) {
+            windowsTreeSupervisionFinished = true
+            if (forceKillTimer) {
+              clearTimeout(forceKillTimer)
+              forceKillTimer = undefined
+            }
+            if (windowsFinalWatchdogTimer) {
+              clearTimeout(windowsFinalWatchdogTimer)
+              windowsFinalWatchdogTimer = undefined
+            }
+          } else if (!killerErrored) {
+            recordTreeTerminationError(`taskkill exited with code ${String(code)}`)
+          }
+          maybeFinalize()
+        })
+      }
+
+      const requestTermination = (): void => {
+        if (terminationRequested || settled) return
+        terminationRequested = true
+        if (timeoutTimer) {
+          clearTimeout(timeoutTimer)
+          timeoutTimer = undefined
+        }
+
+        if (process.platform === 'win32') {
+          // Windows does not expose POSIX process groups. taskkill /T /F is the
+          // supported whole-tree primitive, and its own close event is awaited.
+          startWindowsTreeTermination()
+        } else {
+          this.signalPosixProcessGroup(childProcess, 'SIGTERM')
+        }
+
+        forceKillTimer = setTimeout(() => {
+          forceKillTimer = undefined
+          if (settled) return
+          if (process.platform === 'win32') {
+            if (!windowsTreeSupervisionFinished) {
+              startWindowsTreeTermination()
+              windowsFinalWatchdogTimer = setTimeout(() => {
+                windowsFinalWatchdogTimer = undefined
+                if (settled || windowsTreeSupervisionFinished) return
+                recordTreeTerminationError(
+                  'Unable to confirm Windows process-tree exit after two taskkill attempts'
+                )
+                try {
+                  childProcess.kill('SIGKILL')
+                } catch (error) {
+                  recordTreeTerminationError(error)
+                }
+                // A broken or unavailable taskkill cannot be allowed to hang the
+                // caller forever. Preserve the failure in diagnostics, require
+                // direct-child close, and settle with the original terminal cause.
+                windowsTreeSupervisionFinished = true
+                maybeFinalize()
+              }, this.processTerminationGraceMs)
+            }
+          } else {
+            this.signalPosixProcessGroup(childProcess, 'SIGKILL')
+          }
+          maybeFinalize()
+        }, this.processTerminationGraceMs)
+      }
+
+      timeoutTimer = setTimeout(() => {
+        if (terminationRequested || settled) return
+        timedOut = true
+        requestTermination()
+      }, timeoutMs)
+
+      onAbort = () => {
+        if (terminationRequested || settled) return
+        cancelled = true
+        requestTermination()
       }
 
       if (abortSignal) {
@@ -1145,110 +1448,20 @@ export class DecompilerWorker {
       })
 
       childProcess.on('close', (code: number | null, signal: NodeJS.Signals | null) => {
-        settle(() => {
-          clearTimeout(timeoutTimer)
-          const decoded = decodeProcessStreams(
-            Buffer.concat(stdoutChunks),
-            Buffer.concat(stderrChunks)
-          )
-          const persistedLogPath = this.persistGhidraCommandLog(
-            logFilePath,
-            invocation,
-            cwd,
-            decoded,
-            code,
-            signal,
-            timedOut,
-            cancelled
-          )
-          const diagnostics = this.buildProcessDiagnostics(
-            invocation,
-            cwd,
-            decoded,
-            code,
-            signal,
-            timedOut,
-            cancelled,
-            undefined,
-            persistedLogPath,
-            runtimeLogPath
-          )
-
-          if (timedOut) {
-            reject(new GhidraProcessError(timeoutMessage, diagnostics, 'E_TIMEOUT'))
-            return
-          }
-
-          if (cancelled) {
-            reject(
-              new GhidraProcessError(
-                'E_CANCELLED: Ghidra command cancelled by user',
-                diagnostics,
-                'E_CANCELLED'
-              )
-            )
-            return
-          }
-
-          if (code !== 0) {
-            reject(
-              new GhidraProcessError(
-                this.buildProcessFailureMessage(failureMessage, diagnostics),
-                diagnostics,
-                'E_GHIDRA_PROCESS'
-              )
-            )
-            return
-          }
-
-          resolve({
-            stdout: decoded.stdout.text,
-            stderr: decoded.stderr.text,
-            diagnostics,
-            command_log_path: persistedLogPath,
-            runtime_log_path: runtimeLogPath,
-          })
-        })
+        closeObserved = true
+        observedExitCode = code
+        observedSignal = signal
+        maybeFinalize()
       })
 
       childProcess.on('error', (error: Error) => {
-        settle(() => {
-          clearTimeout(timeoutTimer)
-          const decoded = decodeProcessStreams(
-            Buffer.concat(stdoutChunks),
-            Buffer.concat(stderrChunks)
-          )
-          const persistedLogPath = this.persistGhidraCommandLog(
-            logFilePath,
-            invocation,
-            cwd,
-            decoded,
-            null,
-            null,
-            timedOut,
-            cancelled,
-            error.message
-          )
-          const diagnostics = this.buildProcessDiagnostics(
-            invocation,
-            cwd,
-            decoded,
-            null,
-            null,
-            timedOut,
-            cancelled,
-            error.message,
-            persistedLogPath,
-            runtimeLogPath
-          )
-          reject(
-            new GhidraProcessError(
-              `Failed to spawn Ghidra process: ${error.message}${persistedLogPath ? ` | log_path=${persistedLogPath}` : ''}`,
-              diagnostics,
-              'E_SPAWN'
-            )
-          )
-        })
+        if (settled) return
+        spawnError = error.message
+        if (!childProcess.pid) {
+          finishWithObservedOutput()
+          return
+        }
+        requestTermination()
       })
     })
   }
@@ -2281,7 +2494,14 @@ export class DecompilerWorker {
    * @param topK - Number of top functions to return (default: 20)
    * @returns Array of ranked functions with scores and reasons
    */
-  async rankFunctions(sampleId: string, topK: number = 20): Promise<RankedFunction[]> {
+  async rankFunctions(
+    sampleId: string,
+    topK: number = 20,
+    abortSignal?: AbortSignal
+  ): Promise<RankedFunction[]> {
+    if (abortSignal?.aborted) {
+      throw new Error('E_CANCELLED: function ranking cancelled')
+    }
     logger.debug({ sampleId, topK }, 'Ranking functions')
 
     // 1. Get all functions from database
@@ -2336,7 +2556,17 @@ export class DecompilerWorker {
     const normalizeApiName = (value: string): string => value.toLowerCase()
 
     // 3. Calculate score for each function
-    const rankedFunctions: RankedFunction[] = functions.map((func) => {
+    const rankedFunctions: RankedFunction[] = []
+    for (let index = 0; index < functions.length; index += 1) {
+      // Ranking is CPU-only. Yield in bounded batches so an AbortSignal event
+      // can be delivered without moving the work to an abandonable promise.
+      if (index % 256 === 0) {
+        await new Promise<void>((resolve) => setImmediate(resolve))
+        if (abortSignal?.aborted) {
+          throw new Error('E_CANCELLED: function ranking cancelled')
+        }
+      }
+      const func = functions[index]
       let score = 0.0
       const reasons: string[] = []
       const xrefSummary: FunctionXrefSummary[] = []
@@ -2425,20 +2655,23 @@ export class DecompilerWorker {
         }
       }
 
-      return {
+      rankedFunctions.push({
         address: func.address,
         name: func.name || 'unknown',
         score,
         reasons,
         xref_summary: xrefSummary.length > 0 ? xrefSummary : undefined,
-      }
-    })
+      })
+    }
 
     // 4. Sort by score descending
     rankedFunctions.sort((a, b) => b.score - a.score)
 
     // 5. Update functions table with scores and tags (Requirement 9.7)
     for (const rankedFunc of rankedFunctions) {
+      if (abortSignal?.aborted) {
+        throw new Error('E_CANCELLED: function ranking cancelled')
+      }
       this.database.updateFunction(sampleId, rankedFunc.address, {
         score: rankedFunc.score,
         tags: JSON.stringify(rankedFunc.reasons),
@@ -2468,8 +2701,12 @@ export class DecompilerWorker {
       stringQuery?: string
       limit?: number
       timeout?: number
+      abortSignal?: AbortSignal
     }
   ): Promise<FunctionSearchResult> {
+    if (options.abortSignal?.aborted) {
+      throw new Error('E_CANCELLED: function search cancelled')
+    }
     const apiQuery = options.apiQuery?.trim() || ''
     const stringQuery = options.stringQuery?.trim() || ''
     const limit = Math.max(1, options.limit || 20)
@@ -2491,10 +2728,12 @@ export class DecompilerWorker {
             apiQuery,
             '',
             limit,
-            options.timeout || 30000
+            options.timeout || 30000,
+            options.abortSignal
           )
         }
       } catch (error) {
+        if (options.abortSignal?.aborted) throw error
         logger.warn(
           {
             sampleId,
@@ -2519,7 +2758,8 @@ export class DecompilerWorker {
       apiQuery,
       stringQuery,
       limit,
-      options.timeout || 30000
+      options.timeout || 30000,
+      options.abortSignal
     )
   }
 
@@ -2531,8 +2771,12 @@ export class DecompilerWorker {
       depth?: number
       limit?: number
       timeout?: number
+      abortSignal?: AbortSignal
     }
   ): Promise<CrossReferenceAnalysis> {
+    if (options.abortSignal?.aborted) {
+      throw new Error('E_CANCELLED: cross-reference analysis cancelled')
+    }
     if (!ghidraConfig.isValid) {
       throw new Error(
         'Ghidra is not properly configured. Please set GHIDRA_PATH or GHIDRA_INSTALL_DIR environment variable.'
@@ -2567,7 +2811,8 @@ export class DecompilerWorker {
           depth,
           limit,
           timeout,
-          sampleId
+          sampleId,
+          options.abortSignal
         )
 
         const result = this.parseCrossReferenceOutput(
@@ -2587,7 +2832,8 @@ export class DecompilerWorker {
         sampleId,
         targetType: options.targetType,
         query: options.query,
-      }
+      },
+      { abortSignal: options.abortSignal }
     )
   }
 
@@ -2606,8 +2852,12 @@ export class DecompilerWorker {
     sampleId: string,
     addressOrSymbol: string,
     includeXrefs: boolean = false,
-    timeout: number = 30000
+    timeout: number = 30000,
+    abortSignal?: AbortSignal
   ): Promise<DecompiledFunction> {
+    if (abortSignal?.aborted) {
+      throw new Error('E_CANCELLED: function decompilation cancelled')
+    }
     // Check if Ghidra is configured
     if (!ghidraConfig.isValid) {
       throw new Error(
@@ -2657,7 +2907,8 @@ export class DecompilerWorker {
             addressOrSymbol,
             includeXrefs,
             timeout,
-            sampleId
+            sampleId,
+            abortSignal
           )
 
           const parsed = this.parseDecompileOutput(output.stdout, output.stderr, output.diagnostics)
@@ -2673,7 +2924,8 @@ export class DecompilerWorker {
           sampleId,
           addressOrSymbol,
           includeXrefs,
-        }
+        },
+        { abortSignal }
       )
 
       logger.info(
@@ -3095,12 +3347,16 @@ export class DecompilerWorker {
     addressOrSymbol: string,
     includeXrefs: boolean,
     timeout: number,
-    sampleId?: string
+    sampleId?: string,
+    abortSignal?: AbortSignal
   ): Promise<GhidraCommandOutput> {
     const scriptOrder = ['DecompileFunction.java']
     let lastError: unknown
 
     for (const scriptName of scriptOrder) {
+      if (abortSignal?.aborted) {
+        throw new Error('E_CANCELLED: function decompilation cancelled')
+      }
       const command = ghidraConfig.analyzeHeadlessPath
       const logFilePath = sampleId
         ? this.buildGhidraCommandLogPath(sampleId, `decompile_${scriptName}`, projectKey)
@@ -3140,13 +3396,14 @@ export class DecompilerWorker {
           args,
           projectPath,
           timeout,
-          undefined,
+          abortSignal,
           `E_TIMEOUT: Function decompilation exceeded timeout of ${timeout}ms`,
           `Function decompilation failed (${scriptName})`,
           logFilePath,
           ghidraRuntimeLogPath
         )
       } catch (error) {
+        if (abortSignal?.aborted) throw error
         lastError = error
         const diagnostics = getGhidraDiagnostics(error)
         logger.warn(
@@ -3249,8 +3506,12 @@ export class DecompilerWorker {
   async getFunctionCFG(
     sampleId: string,
     addressOrSymbol: string,
-    timeout: number = 30000
+    timeout: number = 30000,
+    abortSignal?: AbortSignal
   ): Promise<ControlFlowGraph> {
+    if (abortSignal?.aborted) {
+      throw new Error('E_CANCELLED: function CFG extraction cancelled')
+    }
     // Check if Ghidra is configured
     if (!ghidraConfig.isValid) {
       throw new Error(
@@ -3298,7 +3559,8 @@ export class DecompilerWorker {
             samplePath,
             addressOrSymbol,
             timeout,
-            sampleId
+            sampleId,
+            abortSignal
           )
 
           const parsed = this.parseCFGOutput(output.stdout, output.stderr, output.diagnostics)
@@ -3313,7 +3575,8 @@ export class DecompilerWorker {
         {
           sampleId,
           addressOrSymbol,
-        }
+        },
+        { abortSignal }
       )
 
       logger.info(
@@ -3362,12 +3625,16 @@ export class DecompilerWorker {
     samplePath: string,
     addressOrSymbol: string,
     timeout: number,
-    sampleId?: string
+    sampleId?: string,
+    abortSignal?: AbortSignal
   ): Promise<GhidraCommandOutput> {
     const scriptOrder = ['ExtractCFG.java']
     let lastError: unknown
 
     for (const scriptName of scriptOrder) {
+      if (abortSignal?.aborted) {
+        throw new Error('E_CANCELLED: function CFG extraction cancelled')
+      }
       const command = ghidraConfig.analyzeHeadlessPath
       const logFilePath = sampleId
         ? this.buildGhidraCommandLogPath(sampleId, `cfg_${scriptName}`, projectKey)
@@ -3405,13 +3672,14 @@ export class DecompilerWorker {
           args,
           projectPath,
           timeout,
-          undefined,
+          abortSignal,
           `E_TIMEOUT: CFG extraction exceeded timeout of ${timeout}ms`,
           `CFG extraction failed (${scriptName})`,
           logFilePath,
           ghidraRuntimeLogPath
         )
       } catch (error) {
+        if (abortSignal?.aborted) throw error
         lastError = error
         const diagnostics = getGhidraDiagnostics(error)
         logger.warn(
@@ -3435,7 +3703,8 @@ export class DecompilerWorker {
     apiQuery: string,
     stringQuery: string,
     limit: number,
-    timeout: number
+    timeout: number,
+    abortSignal?: AbortSignal
   ): Promise<FunctionSearchResult> {
     const resolved = this.resolveGhidraAnalysisForCapability(sampleId, 'function_index')
     await this.workspaceManager.getWorkspace(sampleId)
@@ -3456,7 +3725,8 @@ export class DecompilerWorker {
           stringQuery,
           limit,
           timeout,
-          sampleId
+          sampleId,
+          abortSignal
         )
 
         const result = this.parseSearchOutput(output.stdout, output.stderr, output.diagnostics)
@@ -3472,7 +3742,8 @@ export class DecompilerWorker {
         sampleId,
         apiQuery,
         stringQuery,
-      }
+      },
+      { abortSignal }
     )
   }
 
@@ -3541,7 +3812,8 @@ export class DecompilerWorker {
     stringQuery: string,
     limit: number,
     timeout: number,
-    sampleId?: string
+    sampleId?: string,
+    abortSignal?: AbortSignal
   ): Promise<GhidraCommandOutput> {
     const command = ghidraConfig.analyzeHeadlessPath
     const logFilePath = sampleId
@@ -3581,7 +3853,7 @@ export class DecompilerWorker {
       args,
       projectPath,
       timeout,
-      undefined,
+      abortSignal,
       `E_TIMEOUT: Function search exceeded timeout of ${timeout}ms`,
       'Function search failed',
       logFilePath,
@@ -3598,7 +3870,8 @@ export class DecompilerWorker {
     depth: number,
     limit: number,
     timeout: number,
-    sampleId?: string
+    sampleId?: string,
+    abortSignal?: AbortSignal
   ): Promise<GhidraCommandOutput> {
     const command = ghidraConfig.analyzeHeadlessPath
     const logFilePath = sampleId
@@ -3639,7 +3912,7 @@ export class DecompilerWorker {
       args,
       projectPath,
       timeout,
-      undefined,
+      abortSignal,
       `E_TIMEOUT: Cross-reference analysis exceeded timeout of ${timeout}ms`,
       'Cross-reference analysis failed',
       logFilePath,

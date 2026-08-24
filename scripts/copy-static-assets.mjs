@@ -22,6 +22,9 @@ function copyDirectoryRecursive(source, target) {
   }
 
   for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+    if (entry.name === '__pycache__' || /\.py[co]$/iu.test(entry.name)) {
+      continue
+    }
     const sourcePath = path.join(source, entry.name)
     const targetPath = path.join(target, entry.name)
     if (entry.isDirectory()) {
@@ -53,12 +56,34 @@ function copyPluginScripts() {
     if (!fs.existsSync(scriptsDir)) {
       continue
     }
-    copyDirectoryRecursive(
-      scriptsDir,
-      path.join(DIST_ROOT, 'resources', 'scripts', pluginId.name)
-    )
+    copyDirectoryRecursive(scriptsDir, path.join(DIST_ROOT, 'resources', 'scripts', pluginId.name))
+  }
+}
+
+function copyPluginRuntimeAssets() {
+  const pluginsRoot = path.join(ROOT, 'src', 'plugins')
+  if (!fs.existsSync(pluginsRoot)) {
+    return
+  }
+
+  for (const pluginId of fs.readdirSync(pluginsRoot, { withFileTypes: true })) {
+    if (!pluginId.isDirectory()) {
+      continue
+    }
+
+    for (const assetDirectory of ['data', 'workers']) {
+      const sourceDirectory = path.join(pluginsRoot, pluginId.name, assetDirectory)
+      if (!fs.existsSync(sourceDirectory)) {
+        continue
+      }
+      copyDirectoryRecursive(
+        sourceDirectory,
+        path.join(DIST_ROOT, 'plugins', pluginId.name, assetDirectory)
+      )
+    }
   }
 }
 
 copyDashboardAssets()
 copyPluginScripts()
+copyPluginRuntimeAssets()

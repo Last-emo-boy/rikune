@@ -4,7 +4,6 @@
  */
 
 import { createHash, randomUUID } from 'crypto'
-import { spawn } from 'child_process'
 import fs from 'fs/promises'
 import path from 'path'
 import { listRuntimeDynamicTraceArtifactTypes } from '@rikune/shared'
@@ -55,6 +54,12 @@ import {
 } from '../../../analysis/analysis-provenance.js'
 import { CACHE_TTL_7_DAYS } from '../../../constants/cache-ttl.js'
 import { CODE_RECONSTRUCT_EXPORT_METADATA } from './code-analysis-metadata.js'
+import { runAbortableProcess } from '../../../worker/abortable-process.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'code.reconstruct.export'
 const TOOL_VERSION = '0.2.16'
@@ -611,11 +616,11 @@ interface HarnessValidationResult {
 }
 
 interface CodeReconstructExportDependencies {
-  reconstructFunctionsHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  importsExtractHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  exportsExtractHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  packerDetectHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  stringsExtractHandler?: (args: ToolArgs) => Promise<WorkerResult>
+  reconstructFunctionsHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  importsExtractHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  exportsExtractHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  packerDetectHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  stringsExtractHandler?: AbortableHandler<ToolArgs, WorkerResult>
   searchFunctions?: (
     sampleId: string,
     options: {
@@ -623,6 +628,7 @@ interface CodeReconstructExportDependencies {
       stringQuery?: string
       limit?: number
       timeout?: number
+      abortSignal?: AbortSignal
     }
   ) => Promise<FunctionSearchResult>
   runtimeEvidenceLoader?: (
@@ -635,11 +641,13 @@ interface CodeReconstructExportDependencies {
     moduleRewriteFiles: string[]
     compilerPath?: string | null
     timeoutMs: number
+    abortSignal?: AbortSignal
   }) => Promise<NativeBuildValidationResult>
   harnessValidator?: (args: {
     executablePath: string
     cwd: string
     timeoutMs: number
+    abortSignal?: AbortSignal
   }) => Promise<HarnessValidationResult>
 }
 
@@ -1394,11 +1402,13 @@ async function buildFunctionStringSearchHints(
           stringQuery?: string
           limit?: number
           timeout?: number
+          abortSignal?: AbortSignal
         }
       ) => Promise<FunctionSearchResult>)
     | undefined,
   warnings: string[],
-  enabled: boolean
+  enabled: boolean,
+  abortSignal?: AbortSignal
 ): Promise<Map<string, FunctionStringSearchHint>> {
   const hints = new Map<string, FunctionStringSearchHint>()
   if (!enabled || !searchFunctions) {
@@ -1406,12 +1416,15 @@ async function buildFunctionStringSearchHints(
   }
 
   for (const query of buildStringSearchQueries(stringsData)) {
+    throwIfAnalysisAborted(abortSignal)
     try {
       const result = await searchFunctions(sampleId, {
         stringQuery: query.query,
         limit: 6,
         timeout: 45000,
+        abortSignal,
       })
+      throwIfAnalysisAborted(abortSignal)
       for (const match of result.matches || []) {
         const entry = hints.get(match.address) || {
           modules: new Set<string>(),
@@ -1429,6 +1442,7 @@ async function buildFunctionStringSearchHints(
         hints.set(match.address, entry)
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       warnings.push(`string reverse lookup failed for "${query.query}": ${normalizeError(error)}`)
     }
   }
@@ -4455,7 +4469,8 @@ async function runCommandWithTimeout(
   command: string,
   args: string[],
   cwd: string,
-  timeoutMs: number
+  timeoutMs: number,
+  abortSignal?: AbortSignal
 ): Promise<{
   command: string
   exitCode: number | null
@@ -4464,87 +4479,31 @@ async function runCommandWithTimeout(
   stderr: string
   error: string | null
 }> {
-  return new Promise((resolve) => {
-    const commandDisplay = quoteCommand(command, args)
-    const effectiveTimeoutMs = Math.max(5000, timeoutMs)
-    const child = spawn(command, args, {
-      cwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    })
-
-    let stdout = ''
-    let stderr = ''
-    let settled = false
-    let timedOut = false
-
-    const finish = (result: {
-      command: string
-      exitCode: number | null
-      timedOut: boolean
-      stdout: string
-      stderr: string
-      error: string | null
-    }) => {
-      if (settled) {
-        return
-      }
-      settled = true
-      clearTimeout(timer)
-      resolve(result)
-    }
-
-    const timer = setTimeout(() => {
-      timedOut = true
-      child.kill()
-      finish({
-        command: commandDisplay,
-        exitCode: null,
-        timedOut: true,
-        stdout,
-        stderr,
-        error: `command timed out after ${effectiveTimeoutMs}ms`,
-      })
-    }, effectiveTimeoutMs)
-
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString()
-    })
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString()
-    })
-
-    child.on('error', (error: NodeJS.ErrnoException) => {
-      finish({
-        command: commandDisplay,
-        exitCode: null,
-        timedOut: false,
-        stdout,
-        stderr,
-        error: error.message,
-      })
-    })
-
-    child.on('close', (code) => {
-      if (timedOut) {
-        return
-      }
-      finish({
-        command: commandDisplay,
-        exitCode: code ?? null,
-        timedOut: false,
-        stdout,
-        stderr,
-        error: code === 0 ? null : `command failed with exit code ${code ?? 'unknown'}`,
-      })
-    })
-  })
+  const result = await runAbortableProcess({ command, args, cwd, timeoutMs, abortSignal })
+  return {
+    command: quoteCommand(command, args),
+    exitCode: result.exitCode,
+    timedOut: result.timedOut,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    error: result.error,
+  }
 }
 
-async function resolveCommandFromPath(commandNames: string[]): Promise<string | null> {
+async function resolveCommandFromPath(
+  commandNames: string[],
+  abortSignal?: AbortSignal
+): Promise<string | null> {
   const locator = process.platform === 'win32' ? 'where.exe' : 'which'
   for (const commandName of commandNames) {
-    const result = await runCommandWithTimeout(locator, [commandName], getPackageRoot(), 5000)
+    throwIfAnalysisAborted(abortSignal)
+    const result = await runCommandWithTimeout(
+      locator,
+      [commandName],
+      getPackageRoot(),
+      5000,
+      abortSignal
+    )
     if (result.exitCode !== 0) {
       continue
     }
@@ -4559,11 +4518,15 @@ async function resolveCommandFromPath(commandNames: string[]): Promise<string | 
   return null
 }
 
-async function collectWindowsClangCandidates(root: string): Promise<string[]> {
+async function collectWindowsClangCandidates(
+  root: string,
+  abortSignal?: AbortSignal
+): Promise<string[]> {
   const candidates: string[] = []
   try {
     const level1 = await fs.readdir(root, { withFileTypes: true })
     for (const entry of level1) {
+      throwIfAnalysisAborted(abortSignal)
       if (!entry.isDirectory() || !entry.name.toLowerCase().includes('clang+llvm')) {
         continue
       }
@@ -4572,6 +4535,7 @@ async function collectWindowsClangCandidates(root: string): Promise<string[]> {
       try {
         const level2 = await fs.readdir(level1Path, { withFileTypes: true })
         for (const nested of level2) {
+          throwIfAnalysisAborted(abortSignal)
           if (!nested.isDirectory() || !nested.name.toLowerCase().includes('clang+llvm')) {
             continue
           }
@@ -4580,6 +4544,7 @@ async function collectWindowsClangCandidates(root: string): Promise<string[]> {
           try {
             const level3 = await fs.readdir(level2Path, { withFileTypes: true })
             for (const deeper of level3) {
+              throwIfAnalysisAborted(abortSignal)
               if (!deeper.isDirectory() || !deeper.name.toLowerCase().includes('clang+llvm')) {
                 continue
               }
@@ -4630,12 +4595,14 @@ export async function resolveNativeCCompilerPath(
   options: {
     env?: NodeJS.ProcessEnv
     platform?: NodeJS.Platform
-    commandResolver?: (commandNames: string[]) => Promise<string | null>
+    commandResolver?: (commandNames: string[], abortSignal?: AbortSignal) => Promise<string | null>
+    abortSignal?: AbortSignal
   } = {}
 ): Promise<NativeCCompilerSelection | null> {
   const env = options.env || process.env
   const platform = options.platform || process.platform
   const commandResolver = options.commandResolver || resolveCommandFromPath
+  throwIfAnalysisAborted(options.abortSignal)
   const candidates: NativeCCompilerSelection[] = []
   const pushCandidate = (compilerPath: string | null | undefined, compiler?: string) => {
     if (!compilerPath) {
@@ -4657,13 +4624,14 @@ export async function resolveNativeCCompilerPath(
     if (env.CC.includes(path.sep) || (path.win32.isAbsolute(env.CC) && platform === 'win32')) {
       pushCandidate(env.CC)
     } else {
-      const located = await commandResolver([env.CC])
+      const located = await commandResolver([env.CC], options.abortSignal)
       pushCandidate(located || env.CC, normalizeCompilerName(env.CC))
     }
   }
 
   for (const commandName of compilerCommandNames(platform)) {
-    const located = await commandResolver([commandName])
+    throwIfAnalysisAborted(options.abortSignal)
+    const located = await commandResolver([commandName], options.abortSignal)
     pushCandidate(located, normalizeCompilerName(commandName))
   }
 
@@ -4672,6 +4640,7 @@ export async function resolveNativeCCompilerPath(
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0)
   for (const entry of pathEntries) {
+    throwIfAnalysisAborted(options.abortSignal)
     for (const commandName of compilerCommandNames(platform)) {
       pushCandidate(path.join(entry, commandName), normalizeCompilerName(commandName))
     }
@@ -4689,15 +4658,17 @@ export async function resolveNativeCCompilerPath(
 
   if (platform === 'win32') {
     for (const candidate of [
-      ...(await collectWindowsClangCandidates('E:\\')),
-      ...(await collectWindowsClangCandidates('C:\\')),
+      ...(await collectWindowsClangCandidates('E:\\', options.abortSignal)),
+      ...(await collectWindowsClangCandidates('C:\\', options.abortSignal)),
     ]) {
+      throwIfAnalysisAborted(options.abortSignal)
       pushCandidate(candidate, 'clang')
     }
   }
 
   const seen = new Set<string>()
   for (const candidate of candidates) {
+    throwIfAnalysisAborted(options.abortSignal)
     const key = candidate.compiler_path.toLowerCase()
     if (seen.has(key)) {
       continue
@@ -4769,8 +4740,12 @@ async function runNativeBuildValidation(args: {
   moduleRewriteFiles: string[]
   compilerPath?: string | null
   timeoutMs: number
+  abortSignal?: AbortSignal
 }): Promise<NativeBuildValidationResult> {
-  const compiler = await resolveNativeCCompilerPath(args.compilerPath)
+  throwIfAnalysisAborted(args.abortSignal)
+  const compiler = await resolveNativeCCompilerPath(args.compilerPath, {
+    abortSignal: args.abortSignal,
+  })
   if (!compiler) {
     return {
       attempted: true,
@@ -4805,7 +4780,8 @@ async function runNativeBuildValidation(args: {
     compiler.compiler_path,
     buildArgs,
     args.exportRoot,
-    args.timeoutMs
+    args.timeoutMs,
+    args.abortSignal
   )
 
   return {
@@ -4837,7 +4813,9 @@ async function runHarnessValidation(args: {
   executablePath: string
   cwd: string
   timeoutMs: number
+  abortSignal?: AbortSignal
 }): Promise<HarnessValidationResult> {
+  throwIfAnalysisAborted(args.abortSignal)
   if (!(await pathExists(args.executablePath))) {
     return {
       attempted: true,
@@ -4854,7 +4832,13 @@ async function runHarnessValidation(args: {
     }
   }
 
-  const result = await runCommandWithTimeout(args.executablePath, [], args.cwd, args.timeoutMs)
+  const result = await runCommandWithTimeout(
+    args.executablePath,
+    [],
+    args.cwd,
+    args.timeoutMs,
+    args.abortSignal
+  )
   const combinedOutput = `${result.stdout}\n${result.stderr}`
   const matchedEntries = (combinedOutput.match(/match=ok/g) || []).length
   const mismatchedEntries = (combinedOutput.match(/match=mismatch/g) || []).length
@@ -5306,7 +5290,13 @@ export function createCodeReconstructExportHandler(
     dependencies?.searchFunctions ||
     ((
       sampleId: string,
-      options: { apiQuery?: string; stringQuery?: string; limit?: number; timeout?: number }
+      options: {
+        apiQuery?: string
+        stringQuery?: string
+        limit?: number
+        timeout?: number
+        abortSignal?: AbortSignal
+      }
     ) => decompilerWorker.searchFunctions(sampleId, options))
   const runtimeEvidenceLoader =
     dependencies?.runtimeEvidenceLoader ||
@@ -5319,7 +5309,10 @@ export function createCodeReconstructExportHandler(
         sessionTag: options?.sessionTag,
       }))
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
+    throwIfAnalysisAborted(abortSignal)
+    const runHandler = (handler: AbortableHandler<ToolArgs, WorkerResult>, handlerArgs: ToolArgs) =>
+      invokeAbortable(handler, handlerArgs, abortSignal)
     const input = CodeReconstructExportInputSchema.parse(args)
     const startTime = Date.now()
 
@@ -5448,7 +5441,7 @@ export function createCodeReconstructExportHandler(
         }
       )
 
-      const reconstructResult = await reconstructFunctionsHandler({
+      const reconstructResult = await runHandler(reconstructFunctionsHandler, {
         sample_id: input.sample_id,
         topk: input.topk,
         include_xrefs: true,
@@ -5496,7 +5489,7 @@ export function createCodeReconstructExportHandler(
       const sampleFormat = classifySampleFormat(originalFilename, sample.file_type)
       let importsData: ImportsData | undefined
       if (input.include_imports && sampleFormat.isPeLike) {
-        const importsResult = await importsExtractHandler({
+        const importsResult = await runHandler(importsExtractHandler, {
           sample_id: input.sample_id,
           group_by_dll: true,
         })
@@ -5511,7 +5504,7 @@ export function createCodeReconstructExportHandler(
 
       let exportsData: PEExportsData | undefined
       if (sampleFormat.isPeLike) {
-        const exportsResult = await exportsExtractHandler({
+        const exportsResult = await runHandler(exportsExtractHandler, {
           sample_id: input.sample_id,
         })
         if (exportsResult.ok && exportsResult.data) {
@@ -5525,7 +5518,7 @@ export function createCodeReconstructExportHandler(
 
       let packerData: PackerDetectData | undefined
       if (sampleFormat.isPeLike) {
-        const packerResult = await packerDetectHandler({
+        const packerResult = await runHandler(packerDetectHandler, {
           sample_id: input.sample_id,
         })
         if (packerResult.ok && packerResult.data) {
@@ -5539,7 +5532,7 @@ export function createCodeReconstructExportHandler(
 
       let stringsData: StringsSummary | undefined
       if (input.include_strings) {
-        const stringsResult = await stringsExtractHandler({
+        const stringsResult = await runHandler(stringsExtractHandler, {
           sample_id: input.sample_id,
           min_len: 6,
           max_strings: 350,
@@ -5561,7 +5554,8 @@ export function createCodeReconstructExportHandler(
         stringsData,
         searchFunctions,
         warnings,
-        Boolean(decompileReadyAnalysis)
+        Boolean(decompileReadyAnalysis),
+        abortSignal
       )
 
       const mergedFunctions = [...reconstructedFunctions]
@@ -5571,7 +5565,8 @@ export function createCodeReconstructExportHandler(
         .slice(0, 4)
 
       for (const address of supplementalAddresses) {
-        const supplemental = await reconstructFunctionsHandler({
+        throwIfAnalysisAborted(abortSignal)
+        const supplemental = await runHandler(reconstructFunctionsHandler, {
           sample_id: input.sample_id,
           address,
           include_xrefs: true,
@@ -5677,6 +5672,7 @@ export function createCodeReconstructExportHandler(
       const moduleRewriteFiles: string[] = []
 
       for (const module of modules) {
+        throwIfAnalysisAborted(abortSignal)
         const safeName = sanitizeModuleName(module.name)
         const interfaceFile = path.join(srcRoot, `${safeName}.interface.h`)
         const pseudoFile = path.join(srcRoot, `${safeName}.pseudo.c`)
@@ -5771,7 +5767,9 @@ export function createCodeReconstructExportHandler(
           moduleRewriteFiles,
           compilerPath: input.compiler_path || null,
           timeoutMs: input.build_timeout_ms,
+          abortSignal,
         })
+        throwIfAnalysisAborted(abortSignal)
         if (
           buildValidation.status === 'passed' &&
           input.run_harness &&
@@ -5781,7 +5779,9 @@ export function createCodeReconstructExportHandler(
             executablePath: buildValidation.executable_path,
             cwd: exportRoot,
             timeoutMs: input.run_timeout_ms,
+            abortSignal,
           })
+          throwIfAnalysisAborted(abortSignal)
         } else if (input.run_harness) {
           harnessValidation = {
             attempted: false,
@@ -6154,6 +6154,7 @@ export function createCodeReconstructExportHandler(
       }
 
       for (const module of outputModules) {
+        throwIfAnalysisAborted(abortSignal)
         const interfaceRelative = module.interface_path
         const pseudocodeRelative = module.pseudocode_path
         const rewriteRelative = module.rewrite_path
@@ -6256,7 +6257,9 @@ export function createCodeReconstructExportHandler(
         modules: outputModules,
       }
 
+      throwIfAnalysisAborted(abortSignal)
       await cacheManager.setCachedResult(cacheKey, outputData, CACHE_TTL_MS, sample.sha256)
+      throwIfAnalysisAborted(abortSignal)
 
       return {
         ok: true,
@@ -6269,6 +6272,7 @@ export function createCodeReconstructExportHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [normalizeError(error)],

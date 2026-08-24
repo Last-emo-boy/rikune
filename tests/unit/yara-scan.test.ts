@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 /**
  * Unit tests for yara.scan tool
  * Requirements: 5.1, 5.2, 5.3, 5.5
@@ -280,7 +281,7 @@ describe('yara.scan tool', () => {
           setCachedResult: jest.fn().mockResolvedValue(undefined),
         } as unknown as jest.Mocked<CacheManager>
 
-        database.insertSample({
+        database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
           id: sampleId,
           sha256: sampleHash,
           md5: '9'.repeat(32),

@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import fs from 'fs'
 import { JobQueue } from '../../src/job-queue.js'
 import { DatabaseManager } from '../../src/database.js'
@@ -103,7 +104,7 @@ describe('task tools', () => {
     const queue = new JobQueue()
     const sweepHandler = createTaskSweepHandler(queue, database)
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: 'sha256:' + 'a'.repeat(64),
       sha256: 'a'.repeat(64),
       md5: 'b'.repeat(32),
@@ -150,7 +151,7 @@ describe('task tools', () => {
     const queue = new JobQueue()
     const sweepHandler = createTaskSweepHandler(queue, database)
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: 'sha256:' + 'c'.repeat(64),
       sha256: 'c'.repeat(64),
       md5: 'd'.repeat(32),

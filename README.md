@@ -50,11 +50,20 @@ Static Docker is the safest default. It does not execute samples.
 Manual equivalent:
 
 ```bash
-npm install
+RIKUNE_REMOVE_PRIVATE_ENV_PATH="$PWD/.docker-runtime.env" node scripts/write-docker-runtime-env.mjs
+unset RIKUNE_API_KEY RIKUNE_ANALYZER_API_KEY RUNTIME_HOST_AGENT_API_KEY \
+  HOST_AGENT_API_KEY HOST_AGENT_RUNTIME_API_KEY RUNTIME_API_KEY
+npm ci --include=dev
 npm run build
 npm run docker:generate:all
+RIKUNE_DOCKER_ENV_PATH="$PWD/.docker-runtime.env" \
+RIKUNE_DOCKER_ENV_DATA_ROOT="${RIKUNE_DATA_ROOT:-$HOME/.rikune}" \
+RIKUNE_DOCKER_ENV_PROFILE=static \
+  node scripts/write-docker-runtime-env.mjs
 docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d --build analyzer
 ```
+
+The env writer rotates to a new 32-byte analyzer API key from the operating system CSPRNG unless a key is explicitly supplied for that invocation, and sets file mode `0600` on POSIX systems. Compose binds the API to `127.0.0.1` by default. The local Dashboard is `http://127.0.0.1:18080/?key=<RIKUNE_API_KEY>`; do not share that URL or commit `.docker-runtime.env`.
 
 ### Hybrid Docker + Windows Runtime
 
@@ -67,15 +76,18 @@ Hybrid mode runs the Analyzer in Docker and delegates live Windows work to a Win
 From Linux/macOS with a remote Windows runtime host:
 
 ```bash
-./rikune.sh install --profile hybrid --windows-host <windows-host> --windows-user <windows-user>
+./rikune.sh install --profile hybrid --windows-host <windows-host> --windows-user <windows-user> \
+  --host-agent-endpoint https://runtime.example.internal
 ```
+
+The HTTPS endpoint should terminate at a trusted reverse proxy/VPN path to the loopback Host Agent. For direct plaintext transport on an isolated trusted network only, add `--allow-insecure-runtime-http`; this is an explicit opt-in and binds the bootstrapped Host Agent beyond loopback. Runtime keys are accepted through a protected environment or hidden prompt, never as CLI arguments.
 
 Connecting an MCP client does not start Windows Sandbox or run a sample. Live runtime work only starts when a tool explicitly requests it, such as `runtime.debug.session.start`, `runtime.debug.command`, `sandbox.execute`, or a promoted dynamic execution stage.
 
 ### Native Development
 
 ```bash
-npm install
+npm ci --include=dev
 npm run build
 npm test
 node dist/index.js
@@ -91,7 +103,7 @@ Start with `workflow.search` whenever the requested workflow, file type, or back
 
 For host files, call `workflow.run action=request_upload`, POST raw bytes to the returned upload URL, then read `sample_id` from the HTTP response. `sample.request_upload` and `sample.ingest` are compatibility helpers rather than the normal AI-facing path.
 
-For remote analyzer or `rikune-agent` deployments, set `API_PUBLIC_BASE_URL`, `RIKUNE_API_PUBLIC_BASE_URL`, or `RIKUNE_ANALYZER_PUBLIC_URL` to the client-reachable HTTP API base, for example `http://159.195.136.226:18080`. Upload sessions then return public `upload_url` / `status_url` values instead of container-local `localhost` URLs. The remote gateway also normalizes localhost upload URLs from older analyzers to its configured analyzer endpoint.
+For remote analyzer or `rikune-agent` deployments, set `API_PUBLIC_BASE_URL`, `RIKUNE_API_PUBLIC_BASE_URL`, or `RIKUNE_ANALYZER_PUBLIC_URL` to a client-reachable HTTPS base such as `https://analyzer.example.com`. Upload sessions then return public `upload_url` / `status_url` values instead of container-local `localhost` URLs. Terminate TLS at a trusted reverse proxy on the same private Docker network; if the proxy also enforces SSO, strip any user-supplied `X-API-Key` and inject the internal analyzer secret only after authentication. Never expose the key-bearing API over plaintext HTTP. The remote gateway also normalizes localhost upload URLs from older analyzers to its configured analyzer endpoint.
 
 If the HTTP API is enabled, `POST /api/v1/samples` is still available for non-MCP integrations. Successful intake returns a `sample_id`; analysis should use `sample_id`, not a local path, after import.
 
@@ -270,7 +282,7 @@ Minimum development baseline:
 
 - Node.js 22+
 - npm
-- Python 3.11+ recommended for workers and analysis scripts
+- CPython 3.12 x86_64 for native workers and the repository's hash-locked Python environments
 - Docker 20.10+ and Docker Compose v2 for Docker profiles
 - Java 21+ for modern Ghidra releases
 - Ghidra for decompiler-backed function analysis
@@ -308,7 +320,7 @@ tests/                        unit, integration, and e2e tests
 ## Development Commands
 
 ```bash
-npm install
+npm ci --include=dev
 npm run build
 npm test
 npm run typecheck
@@ -337,9 +349,7 @@ Local build:
       "command": "node",
       "args": ["D:/Playground/windows-exe-decompiler-mcp-server/dist/index.js"],
       "env": {
-        "API_ENABLED": "true",
-        "API_PORT": "18080",
-        "API_PUBLIC_BASE_URL": "http://127.0.0.1:18080",
+        "API_ENABLED": "false",
         "PLUGINS": "*"
       }
     }

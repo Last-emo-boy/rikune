@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals'
 import fs from 'fs/promises'
 import path from 'path'
@@ -41,7 +42,7 @@ describe('api hash tools', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'api-hash-tools-test-'))
     workspaceManager = new WorkspaceManager(path.join(tempDir, 'workspaces'))
     database = new DatabaseManager(path.join(tempDir, 'test.db'))
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '4'.repeat(64),
       md5: '4'.repeat(32),

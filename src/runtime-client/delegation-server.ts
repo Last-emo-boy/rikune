@@ -32,6 +32,7 @@ import {
   buildDynamicDependencyRequiredUserInputs,
 } from '../plugins/docker-shared.js'
 import type { PolicyGuard } from '../policy-guard.js'
+import { throwIfAnalysisAborted, type AbortableHandler } from '../analysis/analysis-cancellation.js'
 
 export interface RuntimeClientLike {
   execute(
@@ -44,26 +45,37 @@ export interface RuntimeClientLike {
       sampleInboxPath?: string
       runtime?: ToolRuntimeContract
     },
-    opts?: { onProgress?: (progress: number, message?: string) => void }
+    opts?: {
+      onProgress?: (progress: number, message?: string) => void
+      signal?: AbortSignal
+    }
   ): Promise<any>
   uploadSample(
     taskId: string,
     localSamplePath: string,
     inboxHostDir: string,
-    options?: { sidecars?: RuntimeSidecarUpload[]; preserveFilename?: boolean }
+    options?: {
+      sidecars?: RuntimeSidecarUpload[]
+      preserveFilename?: boolean
+      signal?: AbortSignal
+    }
   ): Promise<void>
   downloadArtifacts(
     taskId: string,
     outboxHostDir: string,
-    artifactNames: string[]
+    artifactNames: string[],
+    options?: { signal?: AbortSignal }
   ): Promise<string[]>
-  getCapabilities?(options?: { forceRefresh?: boolean }): Promise<RuntimeBackendCapability[] | null>
+  getCapabilities?(options?: {
+    forceRefresh?: boolean
+    signal?: AbortSignal
+  }): Promise<RuntimeBackendCapability[] | null>
   validateRuntimeContract?(
     contract: ToolRuntimeContract,
-    options?: { forceRefresh?: boolean }
+    options?: { forceRefresh?: boolean; signal?: AbortSignal }
   ): Promise<RuntimeContractValidationResult>
   getEndpoint?(): string
-  recover?(options?: { forceRefreshCapabilities?: boolean }): Promise<boolean>
+  recover?(options?: { forceRefreshCapabilities?: boolean; signal?: AbortSignal }): Promise<boolean>
   close?(): Promise<void>
 }
 
@@ -491,10 +503,10 @@ async function enforceRuntimeDelegationPolicy(params: {
 
 export function createRuntimeDelegatedToolHandler(
   options: RuntimeDelegatedToolHandlerOptions
-): (args: any) => Promise<CoreWorkerResult> {
-  let registeredHandler: ((args: any) => Promise<CoreWorkerResult>) | null = null
+): AbortableHandler<any, CoreWorkerResult> {
+  let registeredHandler: AbortableHandler<any, CoreWorkerResult> | null = null
   const server = {
-    registerTool(_definition: ToolDefinition, handler: (args: any) => Promise<CoreWorkerResult>) {
+    registerTool(_definition: ToolDefinition, handler: AbortableHandler<any, CoreWorkerResult>) {
       registeredHandler = handler
     },
     unregisterTool() {},
@@ -604,7 +616,8 @@ export function createDelegatingServer(
         return
       }
 
-      const wrapped = async (args: any): Promise<WorkerResult> => {
+      const wrapped = async (args: any, abortSignal?: AbortSignal): Promise<WorkerResult> => {
+        throwIfAnalysisAborted(abortSignal)
         const runtimeEndpoint = runtimeClient?.getEndpoint?.() ?? null
         if (!runtimeClient) {
           return buildRuntimeUnavailableResult(definition, runtimeEndpoint)
@@ -622,6 +635,7 @@ export function createDelegatingServer(
         let sidecarWarnings: string[] = []
 
         try {
+          throwIfAnalysisAborted(abortSignal)
           const policyFailure = await enforceRuntimeDelegationPolicy({
             policyGuard,
             pluginId,
@@ -629,12 +643,16 @@ export function createDelegatingServer(
             runtime,
             args,
           })
+          throwIfAnalysisAborted(abortSignal)
           if (policyFailure) {
             return policyFailure
           }
 
           if (runtime && runtimeClient.validateRuntimeContract) {
-            const validation = await runtimeClient.validateRuntimeContract(runtime)
+            const validation = abortSignal
+              ? await runtimeClient.validateRuntimeContract(runtime, { signal: abortSignal })
+              : await runtimeClient.validateRuntimeContract(runtime)
+            throwIfAnalysisAborted(abortSignal)
             if (validation.supported === false) {
               return buildUnsupportedToolRuntimeContractResult(
                 definition,
@@ -645,13 +663,16 @@ export function createDelegatingServer(
           }
 
           if (sampleId && resolvePrimarySamplePath) {
+            throwIfAnalysisAborted(abortSignal)
             const resolved = await resolvePrimarySamplePath(workspaceManager, sampleId)
+            throwIfAnalysisAborted(abortSignal)
             const inboxHostDir = sandboxDir ? path.join(sandboxDir, 'inbox') : ''
             const uploadOptions = await buildRuntimeUploadOptions(
               definition,
               args,
               resolved.samplePath
             )
+            throwIfAnalysisAborted(abortSignal)
             sidecarWarnings = uploadOptions.warnings
             for (const warning of uploadOptions.warnings) {
               logger.warn(
@@ -667,7 +688,9 @@ export function createDelegatingServer(
             await runtimeClient.uploadSample(taskId, resolved.samplePath, inboxHostDir, {
               preserveFilename: true,
               sidecars: uploadOptions.sidecars,
+              ...(abortSignal ? { signal: abortSignal } : {}),
             })
+            throwIfAnalysisAborted(abortSignal)
           }
 
           const result = await runtimeClient.execute(
@@ -683,8 +706,10 @@ export function createDelegatingServer(
               onProgress: (progress, message) => {
                 progressReporter?.report(progress, message).catch(() => {})
               },
+              ...(abortSignal ? { signal: abortSignal } : {}),
             }
           )
+          throwIfAnalysisAborted(abortSignal)
 
           let persistedArtifacts: ArtifactRef[] = []
           if (
@@ -696,11 +721,13 @@ export function createDelegatingServer(
           ) {
             const outboxHostDir = sandboxDir ? path.join(sandboxDir, 'outbox') : ''
             const artifactNames = result.artifactRefs.map((a: any) => path.win32.basename(a.path))
-            const downloadedPaths = await runtimeClient.downloadArtifacts(
-              taskId,
-              outboxHostDir,
-              artifactNames
-            )
+            throwIfAnalysisAborted(abortSignal)
+            const downloadedPaths = abortSignal
+              ? await runtimeClient.downloadArtifacts(taskId, outboxHostDir, artifactNames, {
+                  signal: abortSignal,
+                })
+              : await runtimeClient.downloadArtifacts(taskId, outboxHostDir, artifactNames)
+            throwIfAnalysisAborted(abortSignal)
             persistedArtifacts = await persistRuntimeArtifacts(
               workspaceManager,
               database,
@@ -708,8 +735,10 @@ export function createDelegatingServer(
               taskId,
               definition.name,
               args,
-              downloadedPaths
+              downloadedPaths,
+              abortSignal
             )
+            throwIfAnalysisAborted(abortSignal)
           }
 
           const baseResult = normalizeRuntimeExecuteResponse(definition, result, runtimeEndpoint)
@@ -719,6 +748,9 @@ export function createDelegatingServer(
           }
           return mergeRuntimeSidecarWarnings(baseResult, sidecarWarnings)
         } catch (err) {
+          if (abortSignal?.aborted) {
+            throwIfAnalysisAborted(abortSignal)
+          }
           const errMsg = err instanceof Error ? err.message : String(err)
           const isHostAgentSandboxStartFailure =
             err instanceof Error && err.name === 'HostAgentSandboxStartError'
@@ -734,7 +766,11 @@ export function createDelegatingServer(
               'Runtime appears unreachable; attempting recovery'
             )
             try {
-              const recovered = await runtimeClient.recover({ forceRefreshCapabilities: true })
+              const recovered = await runtimeClient.recover({
+                forceRefreshCapabilities: true,
+                ...(abortSignal ? { signal: abortSignal } : {}),
+              })
+              throwIfAnalysisAborted(abortSignal)
               if (recovered) {
                 const recoveredRuntimeEndpoint = runtimeClient.getEndpoint?.() ?? runtimeEndpoint
                 logger.info(
@@ -742,6 +778,7 @@ export function createDelegatingServer(
                   'Runtime recovered; retrying execution'
                 )
                 if (stagedUpload) {
+                  throwIfAnalysisAborted(abortSignal)
                   await runtimeClient.uploadSample(
                     taskId,
                     stagedUpload.samplePath,
@@ -749,8 +786,10 @@ export function createDelegatingServer(
                     {
                       preserveFilename: true,
                       sidecars: stagedUpload.sidecars,
+                      ...(abortSignal ? { signal: abortSignal } : {}),
                     }
                   )
+                  throwIfAnalysisAborted(abortSignal)
                 }
                 const retryResult = await runtimeClient.execute(
                   {
@@ -765,8 +804,10 @@ export function createDelegatingServer(
                     onProgress: (progress, message) => {
                       progressReporter?.report(progress, message).catch(() => {})
                     },
+                    ...(abortSignal ? { signal: abortSignal } : {}),
                   }
                 )
+                throwIfAnalysisAborted(abortSignal)
                 let persistedArtifacts: ArtifactRef[] = []
                 if (
                   retryResult.artifactRefs &&
@@ -779,11 +820,13 @@ export function createDelegatingServer(
                   const artifactNames = retryResult.artifactRefs.map((a: any) =>
                     path.win32.basename(a.path)
                   )
-                  const downloadedPaths = await runtimeClient.downloadArtifacts(
-                    taskId,
-                    outboxHostDir,
-                    artifactNames
-                  )
+                  throwIfAnalysisAborted(abortSignal)
+                  const downloadedPaths = abortSignal
+                    ? await runtimeClient.downloadArtifacts(taskId, outboxHostDir, artifactNames, {
+                        signal: abortSignal,
+                      })
+                    : await runtimeClient.downloadArtifacts(taskId, outboxHostDir, artifactNames)
+                  throwIfAnalysisAborted(abortSignal)
                   persistedArtifacts = await persistRuntimeArtifacts(
                     workspaceManager,
                     database,
@@ -791,8 +834,10 @@ export function createDelegatingServer(
                     taskId,
                     definition.name,
                     args,
-                    downloadedPaths
+                    downloadedPaths,
+                    abortSignal
                   )
+                  throwIfAnalysisAborted(abortSignal)
                 }
                 const baseResult = normalizeRuntimeExecuteResponse(
                   definition,
@@ -806,6 +851,9 @@ export function createDelegatingServer(
                 return mergeRuntimeSidecarWarnings(baseResult, sidecarWarnings)
               }
             } catch (recoverErr) {
+              if (abortSignal?.aborted) {
+                throwIfAnalysisAborted(abortSignal)
+              }
               logger.error(
                 { pluginId, tool: definition.name, recoverErr },
                 'Runtime recovery failed'
@@ -850,15 +898,19 @@ async function persistRuntimeArtifacts(
   taskId: string,
   toolName: string,
   args: Record<string, unknown>,
-  downloadedPaths: string[]
+  downloadedPaths: string[],
+  abortSignal?: AbortSignal
 ): Promise<ArtifactRef[]> {
+  throwIfAnalysisAborted(abortSignal)
   const persisted: ArtifactRef[] = []
   if (!downloadedPaths || downloadedPaths.length === 0) {
     return persisted
   }
 
   try {
+    throwIfAnalysisAborted(abortSignal)
     const workspace = await workspaceManager.createWorkspace(sampleId)
+    throwIfAnalysisAborted(abortSignal)
     const effectiveToolName = resolveEffectiveRuntimeToolName(toolName, args)
     const reportDir = path.join(
       workspace.reports,
@@ -866,15 +918,26 @@ async function persistRuntimeArtifacts(
       sanitizePathSegment(effectiveToolName)
     )
     await fs.mkdir(reportDir, { recursive: true })
+    throwIfAnalysisAborted(abortSignal)
 
     for (const srcPath of downloadedPaths) {
+      let destPath: string | undefined
       try {
+        throwIfAnalysisAborted(abortSignal)
         const basename = path.basename(srcPath)
         const destName = `${taskId}_${basename}`
-        const destPath = path.join(reportDir, destName)
+        destPath = path.join(reportDir, destName)
         await fs.copyFile(srcPath, destPath)
+        if (abortSignal?.aborted) {
+          await fs.rm(destPath, { force: true }).catch(() => {})
+          throwIfAnalysisAborted(abortSignal)
+        }
 
         const content = await fs.readFile(destPath)
+        if (abortSignal?.aborted) {
+          await fs.rm(destPath, { force: true }).catch(() => {})
+          throwIfAnalysisAborted(abortSignal)
+        }
         const sha256 = createHash('sha256').update(content).digest('hex')
         const relativePath = path.relative(workspace.root, destPath).replace(/\\/g, '/')
         const artifactId = randomUUID()
@@ -884,6 +947,7 @@ async function persistRuntimeArtifacts(
         const artifactType =
           typeof inferredArtifactType === 'string' ? inferredArtifactType : 'runtime_analysis'
 
+        throwIfAnalysisAborted(abortSignal)
         database.insertArtifact({
           id: artifactId,
           sample_id: sampleId,
@@ -912,6 +976,12 @@ async function persistRuntimeArtifacts(
           'Persisted runtime artifact'
         )
       } catch (innerErr) {
+        if (abortSignal?.aborted) {
+          if (destPath) {
+            await fs.rm(destPath, { force: true }).catch(() => {})
+          }
+          throwIfAnalysisAborted(abortSignal)
+        }
         logger.warn(
           { sampleId, taskId, srcPath, err: innerErr },
           'Failed to persist runtime artifact'
@@ -919,6 +989,9 @@ async function persistRuntimeArtifacts(
       }
     }
   } catch (err) {
+    if (abortSignal?.aborted) {
+      throwIfAnalysisAborted(abortSignal)
+    }
     logger.warn({ sampleId, taskId, err }, 'Failed to prepare runtime artifact directory')
   }
 

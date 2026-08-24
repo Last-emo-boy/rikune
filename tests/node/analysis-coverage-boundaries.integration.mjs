@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 const { WorkspaceManager } = await import('../../dist/workspace-manager.js')
-const { DatabaseManager } = await import('../../dist/database.js')
+const { DATABASE_FIXTURE_CAPABILITY, DatabaseManager } = await import('../../dist/database.js')
 const { CacheManager } = await import('../../dist/cache-manager.js')
 const { PolicyGuard } = await import('../../dist/policy-guard.js')
 const { createAnalyzeAutoWorkflowHandler } = await import('../../dist/workflows/analyze-auto.js')
@@ -22,7 +22,7 @@ const policyGuard = new PolicyGuard(auditPath)
 
 try {
   const sampleId = `sha256:${'d'.repeat(64)}`
-  database.insertSample({
+  database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
     id: sampleId,
     sha256: 'd'.repeat(64),
     md5: 'd'.repeat(32),

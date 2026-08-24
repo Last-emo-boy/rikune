@@ -14,6 +14,10 @@ Docker gives the most repeatable environment.
 npm install
 npm run build
 npm run docker:generate:all
+RIKUNE_DOCKER_ENV_PATH="$PWD/.docker-runtime.env" \
+RIKUNE_DOCKER_ENV_DATA_ROOT="$PWD/.rikune-dev" \
+RIKUNE_DOCKER_ENV_PROFILE=static \
+  node scripts/write-docker-runtime-env.mjs
 docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d --build analyzer
 ```
 
@@ -158,6 +162,10 @@ Commands:
 ```bash
 npm run build
 npm run docker:generate:all
+RIKUNE_DOCKER_ENV_PATH="$PWD/.docker-runtime.env" \
+RIKUNE_DOCKER_ENV_DATA_ROOT="$PWD/.rikune-dev" \
+RIKUNE_DOCKER_ENV_PROFILE=static \
+  node scripts/write-docker-runtime-env.mjs
 docker compose --env-file .docker-runtime.env -f docker-compose.analyzer.yml up -d --build analyzer
 ```
 
@@ -179,7 +187,7 @@ Historical changelog entries should stay historical. Add new notes under `Unrele
 
 ## Stable Release Flow
 
-Stable releases are tag-driven. Do not run `npm publish` from a development workstation and do not create a release tag until the release commit is on `main` and its CI run is green.
+Stable releases are tag-driven and use a two-phase human 2FA ceremony. Never publish an ad hoc local pack: the only publishable tarball is the `npm-release-candidate` artifact from a fully successful exact-tag `stage` run. Do not create a release tag until the release commit is on `main` and its exact-SHA CI run is green.
 
 ### Prepare The Release Commit
 
@@ -194,6 +202,7 @@ npm run validate
 npm run test:integration
 npm run test:node
 npm run docker:generate:all
+bash scripts/verify-compose-config.sh
 npm run release:check
 npm pack --dry-run
 ```
@@ -214,15 +223,53 @@ git tag -a "$release_tag" -m "release: $release_tag"
 git push origin "$release_tag"
 ```
 
-The publish workflow independently compares the pushed tag with the root package version and fails closed on a mismatch. A matching stable tag triggers the npm publication with provenance and the GitHub Release; the Docker workflow builds its release images from the same tagged commit. `workflow_dispatch` is a recovery mechanism, not the normal release path.
+The tag starts the `stage` phase. The workflow rechecks the exact-SHA successful `main` CI run, builds and verifies the npm package, then creates, signs, attests, and runs the immutable static OCI candidate. It exposes `npm-release-candidate` only after all those jobs succeed. The workflow never stores an npm token and never publishes to npm.
+
+### Human npm 2FA Ceremony
+
+Wait for the complete tag-triggered stage run to succeed before downloading anything. Record its run ID, verify that it targets the exact annotated tag commit, and inspect the candidate manifest:
+
+```bash
+stage_run_id=<successful-stage-run-id>
+release_commit=$(git rev-parse "$release_tag^{commit}")
+
+gh run watch "$stage_run_id" --exit-status
+gh run view "$stage_run_id" --json headSha,headBranch,event,status,conclusion
+gh run download "$stage_run_id" --name npm-release-candidate --dir release-candidate
+candidate_manifest="release-candidate/release-candidate-manifest.json"
+candidate_tarball="release-candidate/rikune-${release_version}.tgz"
+node scripts/verify-staged-release-candidate.mjs \
+  "$candidate_manifest" \
+  "$candidate_tarball" \
+  "$release_tag" \
+  "$release_commit" \
+  "$stage_run_id"
+```
+
+Review `DISCLOSURE`, publish the exact staged tarball, and complete npm's interactive 2FA prompt locally. Never paste the one-time code into CI, an issue, or an AI assistant:
+
+```bash
+npm publish "$candidate_tarball" --tag latest --access public
+```
+
+After npm confirms publication, dispatch the verification phase on the exact immutable tag and wait for it to succeed:
+
+```bash
+gh workflow run publish-npm.yml \
+  --ref "$release_tag" \
+  -f version="$release_version" \
+  -f dry_run=false \
+  -f release_phase=verify-human-published
+```
+
+The verification phase must reuse the previously staged OCI digest; it cannot build or overwrite the candidate. It compares npm integrity and `gitHead`, publishes OCI aliases, and creates the GitHub Release only after all checks pass.
 
 ### Verify The Published Release
 
-Watch both Actions workflows and then verify the registry, GitHub Release, and a clean install:
+Watch the final `verify-human-published` run, then verify the registry, GitHub Release, OCI aliases, and a clean install:
 
 ```bash
 gh run list --workflow publish-npm.yml --limit 1
-gh run list --workflow docker-build.yml --limit 1
 gh release view "$release_tag"
 test "$(npm view rikune version)" = "$release_version"
 

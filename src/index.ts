@@ -14,8 +14,12 @@ import { DatabaseManager } from './database.js'
 import { PolicyGuard } from './policy-guard.js'
 import { CacheManager } from './cache-manager.js'
 import { JobQueue } from './job-queue.js'
-import { AnalysisTaskRunner } from './analysis/analysis-task-runner.js'
+import { AnalysisTaskRunner, DEFAULT_STALE_RUNNING_MS } from './analysis/analysis-task-runner.js'
 import { StorageManager } from './storage/storage-manager.js'
+import { SampleOperationGate } from './sample/sample-operation-gate.js'
+import { SampleDeletionService } from './sample/sample-deletion.js'
+import { createSampleFinalizationService } from './sample/sample-finalization.js'
+import { JournalRecoveryCoordinator } from './sample/journal-recovery-coordinator.js'
 import { registerAllTools } from './tool-registry.js'
 import { logger } from './logger.js'
 import {
@@ -29,6 +33,12 @@ import {
 import { getPluginManager } from './plugins.js'
 import { shutdownRuntimeWorkerPool } from './worker/runtime-worker-pool.js'
 import { assertTrustedHttpEndpoint, createTrustedFetch, endpointUrl } from '@rikune/shared'
+import { assertStaticImageStartupContract } from './core/static-profile-lock.js'
+import { prepareGhidraRuntimeDirectories } from './ghidra/ghidra-config.js'
+
+// This executes before any bootstrap function may create runtime state. All
+// imported modules are required to remain mutation-free at module evaluation.
+assertStaticImageStartupContract()
 
 // Export public API
 export { MCPServer } from './core/server.js'
@@ -40,6 +50,7 @@ export { RikuneError, ErrorCode, toRikuneError, isRikuneError } from './errors.j
 async function runHealthCheck(): Promise<void> {
   const configPath = process.env.CONFIG_PATH
   const config = loadConfig(configPath)
+  prepareGhidraRuntimeDirectories()
 
   const workspaceManager = new WorkspaceManager(config.workspace.root)
   const database = new DatabaseManager(config.database.path)
@@ -53,13 +64,37 @@ async function runHealthCheck(): Promise<void> {
   })
   await storageManager.initialize()
 
-  const jobQueue = new JobQueue(database)
+  const sampleOperationGate = new SampleOperationGate(database)
+  const ingestRecovery = await createSampleFinalizationService(
+    workspaceManager,
+    database,
+    policyGuard,
+    sampleOperationGate
+  ).recoverPendingIngests()
+  if (ingestRecovery.failed > 0) {
+    throw new Error(`Failed to recover ${ingestRecovery.failed} sample ingest journal(s).`)
+  }
+  const sampleDeletionService = new SampleDeletionService(
+    database,
+    workspaceManager,
+    storageManager,
+    cacheManager,
+    policyGuard,
+    sampleOperationGate
+  )
+  const deletionRecovery = await sampleDeletionService.recoverPendingDeletions()
+  if (deletionRecovery.failed > 0) {
+    throw new Error(`Failed to recover ${deletionRecovery.failed} sample deletion journal(s).`)
+  }
+
+  const jobQueue = new JobQueue(database, sampleOperationGate)
   jobQueue.restoreFromDatabase()
   const server = new MCPServer(config, {
     workspaceManager,
     database,
     policyGuard,
     storageManager,
+    sampleOperationGate,
   })
 
   await registerAllTools(server, {
@@ -73,6 +108,8 @@ async function runHealthCheck(): Promise<void> {
     server,
     runtimeClient: null,
     sandboxDir: null,
+    sampleOperationGate,
+    sampleDeletionService,
   })
 
   try {
@@ -90,6 +127,8 @@ async function runHealthCheck(): Promise<void> {
     )
   } finally {
     await shutdownRuntimeWorkerPool()
+    jobQueue.close()
+    sampleOperationGate.close()
     database.close()
   }
 }
@@ -104,6 +143,7 @@ export async function startRikuneServer(): Promise<void> {
     // Load configuration
     const configPath = process.env.CONFIG_PATH
     const config = loadConfig(configPath)
+    prepareGhidraRuntimeDirectories()
 
     // Initialize components
     const workspaceManager = new WorkspaceManager(config.workspace.root)
@@ -117,7 +157,35 @@ export async function startRikuneServer(): Promise<void> {
       maxTotalBytes: config.api.maxTotalBytes,
     })
     await storageManager.initialize()
-    const jobQueue = new JobQueue(database)
+    const sampleOperationGate = new SampleOperationGate(database)
+    const sampleFinalizationService = createSampleFinalizationService(
+      workspaceManager,
+      database,
+      policyGuard,
+      sampleOperationGate
+    )
+    const ingestRecovery = await sampleFinalizationService.recoverPendingIngests()
+    if (ingestRecovery.failed > 0) {
+      throw new Error(`Failed to recover ${ingestRecovery.failed} sample ingest journal(s).`)
+    }
+    const sampleDeletionService = new SampleDeletionService(
+      database,
+      workspaceManager,
+      storageManager,
+      cacheManager,
+      policyGuard,
+      sampleOperationGate
+    )
+    const deletionRecovery = await sampleDeletionService.recoverPendingDeletions()
+    if (deletionRecovery.failed > 0) {
+      throw new Error(`Failed to recover ${deletionRecovery.failed} sample deletion journal(s).`)
+    }
+    const journalRecoveryCoordinator = new JournalRecoveryCoordinator(
+      sampleFinalizationService,
+      sampleDeletionService
+    )
+    journalRecoveryCoordinator.start()
+    const jobQueue = new JobQueue(database, sampleOperationGate)
     jobQueue.restoreFromDatabase()
 
     // ── Runtime initialization (Analyzer mode) ──
@@ -133,6 +201,8 @@ export async function startRikuneServer(): Promise<void> {
       {
         runtimeClientProvider: () => runtimeClient,
         sandboxDirProvider: () => runtimeConnection?.sandboxDir ?? null,
+        sampleOperationGate,
+        staleRunningMs: DEFAULT_STALE_RUNNING_MS,
       }
     )
 
@@ -312,6 +382,7 @@ export async function startRikuneServer(): Promise<void> {
       policyGuard,
       storageManager,
       apiBootstrapper,
+      sampleOperationGate,
     })
 
     // Register all tools & prompts via the centralised registry
@@ -326,6 +397,8 @@ export async function startRikuneServer(): Promise<void> {
       server,
       runtimeClient,
       sandboxDir: runtimeConnection?.sandboxDir ?? null,
+      sampleOperationGate,
+      sampleDeletionService,
     })
 
     // Start server
@@ -339,17 +412,27 @@ export async function startRikuneServer(): Promise<void> {
       }
       shuttingDown = true
       server.getLogger().info(`Received ${signal}, shutting down gracefully`)
-      if (sandboxLauncher) {
-        sandboxLauncher.stopHealthCheck()
-        await sandboxLauncher.teardown().catch(() => {})
+      try {
+        // Stop accepting work first, then keep queue/gate/database state alive
+        // until every active executor has observed abort and actually exited.
+        await server.stop()
+        await analysisTaskRunner.stop()
+        await journalRecoveryCoordinator.stop()
+        jobQueue.close()
+        sampleOperationGate.close()
+        await shutdownRuntimeWorkerPool()
+        if (sandboxLauncher) {
+          sandboxLauncher.stopHealthCheck()
+          await sandboxLauncher.teardown().catch(() => {})
+        }
+        if (runtimeClient?.close) {
+          await runtimeClient.close().catch(() => {})
+        }
+        process.exit(0)
+      } catch (error) {
+        server.getLogger().error({ error }, 'Graceful shutdown failed closed with leases retained')
+        process.exitCode = 1
       }
-      analysisTaskRunner.stop()
-      await shutdownRuntimeWorkerPool()
-      if (runtimeClient?.close) {
-        await runtimeClient.close().catch(() => {})
-      }
-      await server.stop()
-      process.exit(0)
     }
 
     process.on('SIGINT', () => shutdown('SIGINT'))

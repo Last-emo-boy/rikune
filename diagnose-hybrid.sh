@@ -60,6 +60,7 @@ HOST_AGENT_API_KEY="$(env_value RUNTIME_HOST_AGENT_API_KEY "$ENV_FILE")"
 if [ -z "$HOST_AGENT_API_KEY" ]; then
   HOST_AGENT_API_KEY="$(env_value HOST_AGENT_API_KEY "$ENV_FILE")"
 fi
+export -n HOST_AGENT_API_KEY 2>/dev/null || true
 
 if [ -z "$WINDOWS_HOST" ] && [ -n "$HOST_AGENT_ENDPOINT" ]; then
   WINDOWS_HOST="$(printf "%s" "$HOST_AGENT_ENDPOINT" | sed -E 's#^[a-zA-Z]+://([^:/]+).*#\1#')"
@@ -138,7 +139,7 @@ done
 step "Host Agent API"
 
 if [ -n "$HOST_AGENT_API_KEY" ]; then
-  HEALTH="$(curl -sf -H "Authorization: Bearer $HOST_AGENT_API_KEY" "$HOST_AGENT_ENDPOINT/sandbox/health" 2>/dev/null || true)"
+  HEALTH="$(printf 'Authorization: Bearer %s\n' "$HOST_AGENT_API_KEY" | curl -sf --header @- "$HOST_AGENT_ENDPOINT/sandbox/health" 2>/dev/null || true)"
 else
   warn "RUNTIME_HOST_AGENT_API_KEY is missing; trying unauthenticated health request"
   HEALTH="$(curl -sf "$HOST_AGENT_ENDPOINT/sandbox/health" 2>/dev/null || true)"
@@ -164,15 +165,15 @@ else
   exit 0
 fi
 
-HOST_AGENT_PID="$("${SSH_BASE[@]}" "powershell -NoProfile -Command \"(Get-CimInstance Win32_Process -Filter \\\"name='node.exe'\\\" | Where-Object { \\\$_.CommandLine -like '*windows-host-agent*' } | Select-Object -ExpandProperty ProcessId) -join ','\"" 2>/dev/null || true)"
+HOST_AGENT_PID="$("${SSH_BASE[@]}" "pwsh -NoProfile -NonInteractive -Command \"(Get-CimInstance Win32_Process -Filter \\\"name='node.exe'\\\" | Where-Object { \\\$_.CommandLine -like '*windows-host-agent*' } | Select-Object -ExpandProperty ProcessId) -join ','\"" 2>/dev/null || true)"
 if [ -n "$HOST_AGENT_PID" ]; then
   ok "Host Agent node process is running (PID: $HOST_AGENT_PID)"
 else
   err "Host Agent node process was not found"
-  info "Try on Windows: powershell -File C:/rikune/install-runtime-windows.ps1 -Headless -Service"
+  info "Try on Windows: pwsh -File C:/rikune/install-runtime-windows.ps1 -Headless -Service"
 fi
 
-SANDBOX_FEATURE="$("${SSH_BASE[@]}" "powershell -NoProfile -Command \"(Get-WindowsOptionalFeature -Online -FeatureName Containers-DisposableClient).State\"" 2>/dev/null || true)"
+SANDBOX_FEATURE="$("${SSH_BASE[@]}" "pwsh -NoProfile -NonInteractive -Command \"(Get-WindowsOptionalFeature -Online -FeatureName Containers-DisposableClient).State\"" 2>/dev/null || true)"
 if [ "$SANDBOX_FEATURE" = "Enabled" ]; then
   ok "Windows Sandbox feature is enabled"
 else

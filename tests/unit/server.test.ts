@@ -602,6 +602,27 @@ describe('MCPServer', () => {
       ).rejects.toThrow(/does not support sampling/)
       expect(sdkServer.createMessage).not.toHaveBeenCalled()
     })
+
+    it('should forward MCP request options including cancellation and timeout', async () => {
+      const sdkServer = server.getServer() as any
+      sdkServer.getClientCapabilities = jest.fn().mockReturnValue({ sampling: {} })
+      sdkServer.createMessage = jest.fn(async () => ({
+        role: 'assistant',
+        model: 'test-model',
+        stopReason: 'endTurn',
+        content: { type: 'text', text: 'ok' },
+      })) as any
+      const controller = new AbortController()
+      const params = {
+        messages: [{ role: 'user' as const, content: { type: 'text' as const, text: 'hello' } }],
+        maxTokens: 256,
+      }
+      const options = { signal: controller.signal, timeout: 5_000 }
+
+      await server.createMessage(params, options)
+
+      expect(sdkServer.createMessage).toHaveBeenCalledWith(params, options)
+    })
   })
 
   describe('callTool', () => {

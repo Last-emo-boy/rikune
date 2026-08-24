@@ -46,15 +46,25 @@ import {
   moduleReconstructionReviewWorkflowToolDefinition,
   createModuleReconstructionReviewWorkflowHandler,
 } from '../../workflows/module-reconstruction-review.js'
-import { sandboxExecuteToolDefinition } from '../../plugins/dynamic/tools/sandbox-execute.js'
-import { createRuntimeDelegatedToolHandler } from '../../runtime-client/delegation-server.js'
-import { resolvePrimarySamplePath } from '../../sample/sample-workspace.js'
+import { isStaticDockerProfile } from '../static-profile-lock.js'
 
-function createWorkflowRuntimeDependencies(deps: ToolDeps): AnalyzePipelineDependencies {
-  if (!deps.runtimeClient) {
-    return {}
+async function createWorkflowRuntimeDependencies(
+  deps: ToolDeps
+): Promise<AnalyzePipelineDependencies> {
+  if (isStaticDockerProfile()) {
+    return { staticOnly: true, sampleOperationGate: deps.sampleOperationGate }
   }
+  if (!deps.runtimeClient) {
+    return { sampleOperationGate: deps.sampleOperationGate }
+  }
+  const [{ sandboxExecuteToolDefinition }, { createRuntimeDelegatedToolHandler }, workspace] =
+    await Promise.all([
+      import('../../plugins/dynamic/tools/sandbox-execute.js'),
+      import('../../runtime-client/delegation-server.js'),
+      import('../../sample/sample-workspace.js'),
+    ])
   return {
+    sampleOperationGate: deps.sampleOperationGate,
     sandboxExecute: createRuntimeDelegatedToolHandler({
       definition: sandboxExecuteToolDefinition,
       pluginId: 'dynamic',
@@ -62,7 +72,7 @@ function createWorkflowRuntimeDependencies(deps: ToolDeps): AnalyzePipelineDepen
       workspaceManager: deps.workspaceManager,
       database: deps.database,
       policyGuard: deps.policyGuard,
-      resolvePrimarySamplePath,
+      resolvePrimarySamplePath: workspace.resolvePrimarySamplePath,
       sandboxDir: deps.sandboxDir ?? null,
     }),
   }
@@ -71,9 +81,16 @@ function createWorkflowRuntimeDependencies(deps: ToolDeps): AnalyzePipelineDepen
 export function registerWorkflowTools(
   server: ToolRegistrar & SamplingClient,
   deps: ToolDeps
-): void {
+): Promise<void> {
+  return registerWorkflowToolsAsync(server, deps)
+}
+
+async function registerWorkflowToolsAsync(
+  server: ToolRegistrar & SamplingClient,
+  deps: ToolDeps
+): Promise<void> {
   const { workspaceManager, database, cacheManager, policyGuard, jobQueue } = deps
-  const runtimeDependencies = createWorkflowRuntimeDependencies(deps)
+  const runtimeDependencies = await createWorkflowRuntimeDependencies(deps)
   const analyzeStartHandler = createAnalyzeWorkflowStartHandler(
     workspaceManager,
     database,
@@ -106,6 +123,10 @@ export function registerWorkflowTools(
       promote: analyzePromoteHandler,
     })
   )
+  // The static OCI exposes one public workflow gateway. Compatibility and
+  // deep workflow definitions are deliberately absent from the registry, so
+  // progressive activation cannot instantiate a forbidden handler directly.
+  if (isStaticDockerProfile()) return
   server.registerTool(
     triageWorkflowToolDefinition,
     createTriageWorkflowHandler(workspaceManager, database, cacheManager, {

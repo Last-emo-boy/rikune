@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 /**
  * Unit tests for debug.telemetry.plan.
  */
@@ -45,7 +46,7 @@ describe('debug.telemetry.plan tool', () => {
     const sampleId = `sha256:${sampleHash}`
 
     try {
-      database.insertSample({
+      database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
         id: sampleId,
         sha256: sampleHash,
         md5: '5'.repeat(32),

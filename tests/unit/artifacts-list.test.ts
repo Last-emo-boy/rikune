@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
 import fs from 'fs/promises'
 import path from 'path'
@@ -435,7 +436,7 @@ async function setupSampleWithArtifacts(
   const md5 = crypto.createHash('md5').update(binary).digest('hex')
   const sampleId = `sha256:${sha256}`
 
-  database.insertSample({
+  database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
     id: sampleId,
     sha256,
     md5,

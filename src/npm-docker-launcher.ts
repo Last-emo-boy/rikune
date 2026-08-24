@@ -1,4 +1,5 @@
 import { spawn } from 'child_process'
+import { RIKUNE_VERSION } from './version.js'
 
 type LauncherMode = 'docker-stdio' | 'docker-run'
 
@@ -8,7 +9,7 @@ interface LauncherOptions {
 }
 
 const DEFAULT_CONTAINER = 'rikune-analyzer'
-const DEFAULT_IMAGE = 'rikune-analyzer:latest'
+const DEFAULT_IMAGE = `ghcr.io/last-emo-boy/rikune-analyzer-static:${RIKUNE_VERSION}`
 const SECRET_ENV_NAME_PATTERN = /(?:KEY|TOKEN|SECRET|PASSWORD)$/i
 
 function parseOptions(args: string[]): LauncherOptions {
@@ -27,25 +28,26 @@ function parseOptions(args: string[]): LauncherOptions {
 }
 
 function appendEnvArgs(args: string[], env: NodeJS.ProcessEnv): void {
-  const forwarded = new Map<string, string>([
+  const fixed = new Map<string, string>([
     ['API_ENABLED', 'false'],
     ['NODE_ENV', env.NODE_ENV || 'production'],
     ['PYTHONUNBUFFERED', env.PYTHONUNBUFFERED || '1'],
   ])
+
+  for (const [name, value] of fixed) {
+    args.push('-e', `${name}=${value}`)
+  }
 
   for (const name of [
     'RUNTIME_HOST_AGENT_ENDPOINT',
     'RUNTIME_HOST_AGENT_API_KEY',
     'RUNTIME_API_KEY',
   ]) {
-    const value = env[name]
-    if (value) {
-      forwarded.set(name, value)
+    if (env[name]) {
+      // Docker resolves a bare -e NAME from the CLI process environment. This
+      // keeps credentials out of /proc/<pid>/cmdline and Windows process lists.
+      args.push('-e', name)
     }
-  }
-
-  for (const [name, value] of forwarded) {
-    args.push('-e', `${name}=${value}`)
   }
 }
 
@@ -110,7 +112,7 @@ export async function runDockerLauncherCli(
   return await new Promise<number>((resolve) => {
     const child = spawn(cmd.command, cmd.args, {
       stdio: 'inherit',
-      env: process.env,
+      env,
       windowsHide: true,
     })
     child.on('error', (error) => {

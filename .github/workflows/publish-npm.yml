@@ -1,276 +1,792 @@
-name: Publish npm Package
+name: Release v1.4.0
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v1.4.0']
   workflow_dispatch:
     inputs:
       version:
-        description: 'Exact package version to validate or publish'
+        description: 'Exact release version'
         required: true
+        default: '1.4.0'
         type: string
       dry_run:
-        description: 'Run every gate without publishing to npm or creating a GitHub Release'
+        description: 'Run reversible preflight gates only'
         required: true
         default: true
         type: boolean
+      release_phase:
+        description: 'Stage candidates, or verify a package published manually with npm 2FA'
+        required: true
+        default: stage
+        type: choice
+        options:
+          - stage
+          - verify-human-published
 
 concurrency:
-  group: publish-npm-${{ github.ref }}
+  group: release-v1.4.0-${{ github.ref }}
   cancel-in-progress: false
 
 env:
+  RELEASE_VERSION: '1.4.0'
+  RELEASE_TAG: 'v1.4.0'
+  NPM_PACKAGE: rikune
   NPM_REGISTRY_URL: https://registry.npmjs.org
-  PACKAGE_NAME: rikune
+  STATIC_IMAGE: ghcr.io/last-emo-boy/rikune-analyzer-static
 
 jobs:
-  publish:
-    runs-on: windows-latest
-    timeout-minutes: 30
+  preflight:
+    name: Test and stage immutable npm candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
-      contents: write
-      id-token: write
-
+      contents: read
+      actions: read
+    outputs:
+      dry_run: ${{ steps.release.outputs.dry_run }}
+      phase: ${{ steps.release.outputs.phase }}
+      tarball: ${{ steps.pack.outputs.tarball }}
+      integrity: ${{ steps.pack.outputs.integrity }}
     steps:
-      - name: Checkout
+      - name: Checkout exact release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Validate release ref and package version
-        shell: pwsh
+      - name: Validate exact v1.4.0 release ref
+        id: release
+        shell: bash
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          REF_NAME: ${{ github.ref_name }}
-          REF_TYPE: ${{ github.ref_type }}
-          DISPATCH_VERSION: ${{ inputs.version || '' }}
+          DISPATCH_VERSION: ${{ inputs.version || '1.4.0' }}
           DISPATCH_DRY_RUN: ${{ inputs.dry_run || false }}
+          DISPATCH_PHASE: ${{ inputs.release_phase || 'stage' }}
         run: |
-          $ErrorActionPreference = 'Stop'
-          $package = Get-Content -Raw package.json | ConvertFrom-Json
-          $packageVersion = [string]$package.version
-          $semverPattern = '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$'
+          set -euo pipefail
+          package_version=$(node -p "require('./package.json').version")
+          test "$package_version" = "$RELEASE_VERSION"
+          test "$(node -p "require('./package.json').contentPolicy?.class")" = dual-use
+          test -s DISCLOSURE
+          test "$DISPATCH_VERSION" = "$RELEASE_VERSION"
+          dry_run=false
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then dry_run="$DISPATCH_DRY_RUN"; fi
+          phase=stage
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then phase="$DISPATCH_PHASE"; fi
+          test "$phase" = stage || test "$phase" = verify-human-published
+          if [[ "$phase" == verify-human-published ]]; then
+            test "$GITHUB_EVENT_NAME" = workflow_dispatch
+            test "$dry_run" = false
+          fi
+          if [[ "$dry_run" != true ]]; then
+            test "$GITHUB_REF_TYPE" = tag
+            test "$GITHUB_REF_NAME" = "$RELEASE_TAG"
+            git fetch --no-tags origin main
+            git merge-base --is-ancestor HEAD origin/main
+          elif [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            test "$GITHUB_REF_NAME" = "$RELEASE_TAG"
+          fi
+          echo "dry_run=$dry_run" >> "$GITHUB_OUTPUT"
+          echo "phase=$phase" >> "$GITHUB_OUTPUT"
 
-          if ($packageVersion -notmatch $semverPattern) {
-            throw "package.json version is not valid SemVer: $packageVersion"
-          }
-          $dryRun = $false
-          if ($env:EVENT_NAME -eq 'workflow_dispatch') {
-            if ([string]::IsNullOrWhiteSpace($env:DISPATCH_VERSION)) {
-              throw 'workflow_dispatch requires an explicit version input.'
-            }
-            if ($env:DISPATCH_VERSION -ne $packageVersion) {
-              throw "Dispatch version '$env:DISPATCH_VERSION' does not match package.json version '$packageVersion'."
-            }
-            $dryRun = $env:DISPATCH_DRY_RUN -eq 'true'
-            if (-not $dryRun -and $env:REF_TYPE -ne 'tag') {
-              throw "A non-dry-run dispatch must run from tag v$packageVersion; received ref type '$env:REF_TYPE'."
-            }
-          }
-          if ($env:EVENT_NAME -ne 'workflow_dispatch' -or -not $dryRun) {
-            if ($env:REF_TYPE -ne 'tag') {
-              throw "A real release must run from a tag; received ref type '$env:REF_TYPE'."
-            }
-            if ($env:REF_NAME -ne "v$packageVersion") {
-              throw "Release tag '$env:REF_NAME' does not match package.json version '$packageVersion'."
-            }
-          } elseif ($env:REF_TYPE -eq 'tag' -and $env:REF_NAME -ne "v$packageVersion") {
-            throw "Dry-run tag '$env:REF_NAME' does not match package.json version '$packageVersion'."
-          }
-          if (-not $dryRun) {
-            git merge-base --is-ancestor HEAD refs/remotes/origin/main
-            if ($LASTEXITCODE -ne 0) {
-              throw "Release commit must be reachable from origin/main."
-            }
-          }
-
-          $distTag = if ($packageVersion.Contains('-')) { 'next' } else { 'latest' }
-          Add-Content -Path $env:GITHUB_ENV -Value "RELEASE_VERSION=$packageVersion"
-          Add-Content -Path $env:GITHUB_ENV -Value "NPM_DIST_TAG=$distTag"
-          Add-Content -Path $env:GITHUB_ENV -Value "RELEASE_DRY_RUN=$($dryRun.ToString().ToLowerInvariant())"
-          Write-Host "Validated release v$packageVersion (npm dist-tag: $distTag, dry-run: $dryRun)."
+      - name: Require successful exact-SHA main CI before release mutation
+        if: steps.release.outputs.dry_run != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?event=push&status=success&head_sha=$GITHUB_SHA&per_page=100" \
+            | jq -e --arg sha "$GITHUB_SHA" '
+                [.workflow_runs[] |
+                  select(.head_sha == $sha and .head_branch == "main" and
+                    .event == "push" and .conclusion == "success")] |
+                length > 0
+              '
 
       - name: Setup Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: npm
-          registry-url: https://registry.npmjs.org
-
-      - name: Pin npm CLI
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          npm install --global npm@10.9.0 --ignore-scripts
-          if ($LASTEXITCODE -ne 0) {
-            throw 'Unable to install the pinned npm CLI.'
-          }
-          $npmVersion = [string](npm --version)
-          if ($npmVersion.Trim() -ne '10.9.0') {
-            throw "Expected npm 10.9.0, received '$npmVersion'."
-          }
-
-      - name: Preflight npm publishing identity
-        shell: pwsh
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $identityOutput = npm whoami --color=false --registry=$env:NPM_REGISTRY_URL 2>&1
-          if ($LASTEXITCODE -ne 0) {
-            throw "npm authentication failed before build: $identityOutput"
-          }
-          $identityCandidates = @($identityOutput | ForEach-Object {
-            $line = ([string]$_).Trim()
-            if ($line -match '^[a-z0-9][a-z0-9._-]*$') { $line }
-          })
-          if ($identityCandidates.Count -ne 1) {
-            throw 'npm authentication did not return one unambiguous identity.'
-          }
-          $identity = $identityCandidates[0]
-
-          $ownerOutput = npm owner ls $env:PACKAGE_NAME --color=false --registry=$env:NPM_REGISTRY_URL 2>&1
-          if ($LASTEXITCODE -ne 0) {
-            throw "Unable to read npm owners for $env:PACKAGE_NAME: $ownerOutput"
-          }
-          $ownerNames = @($ownerOutput | ForEach-Object {
-            if ([string]$_ -match '^([^\s<]+)') { $Matches[1] }
-          })
-          if ($identity -notin $ownerNames) {
-            throw "Authenticated npm identity '$identity' is not an owner of $env:PACKAGE_NAME."
-          }
-          Write-Host "Authenticated npm publishing identity: $identity"
 
       - name: Setup Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
-      - name: Install JavaScript dependencies
-        run: npm ci
-
-      - name: Install baseline Python dependencies
-        run: python -m pip install -r requirements.txt
-
-      - name: Build TypeScript
-        run: npm run build
-
-      - name: Validate Python worker syntax
-        run: python -m py_compile workers/static_worker.py workers/speakeasy_compat.py src/plugins/pdf-analysis/workers/pdf_analyze_worker.py src/plugins/python-decompile/workers/pyc_decompile_worker.py
-
-      - name: Run key unit tests
-        shell: pwsh
+      - name: Pin npm CLI
         run: |
-          npm test -- --runInBand tests/unit/tool-help.test.ts tests/unit/sample-ingest.test.ts tests/unit/dynamic-dependencies.test.ts tests/unit/dotnet-metadata-extract.test.ts tests/unit/system-health.test.ts tests/unit/release-package.test.ts
+          npm install --global npm@10.9.0 --ignore-scripts
+          test "$(npm --version)" = 10.9.0
 
-      - name: Create npm package tarball
+      - name: Install dependencies and build
+        run: |
+          npm ci
+          npm audit --audit-level=high
+          npm run build
+
+      - name: Audit exact static Python dependency closures
+        run: |
+          python -m pip install --require-hashes -r requirements.audit.lock.txt
+          pip-audit --require-hashes --no-deps -r requirements.lock.txt
+          pip-audit --require-hashes --no-deps -r requirements.windows.lock.txt
+          pip-audit --require-hashes --no-deps -r src/plugins/angr/requirements.lock.txt
+          pip-audit --require-hashes --no-deps -r workers/requirements-dynamic.lock.txt
+          pip-audit --require-hashes --no-deps -r workers/requirements-dynamic.windows.lock.txt
+
+      - name: Verify generated Docker release inputs and Compose contracts
+        run: |
+          npm run docker:generate:all
+          git diff --exit-code -- static-profile.lock.json docker/Dockerfile.analyzer docker/Dockerfile.hybrid docker-compose.analyzer.yml docker-compose.hybrid.yml
+          test -z "$(git status --porcelain -- static-profile.lock.json docker/Dockerfile.analyzer docker/Dockerfile.hybrid docker-compose.analyzer.yml docker-compose.hybrid.yml)"
+          bash scripts/verify-compose-config.sh
+
+      - name: Run release test suite
+        run: |
+          npm run lint
+          npm test -- --runInBand
+          npm run test:node
+          pwsh -NoProfile -File scripts/verify-powershell-installers.ps1
+
+      - name: Pack immutable npm artifact
         id: pack
-        shell: pwsh
+        shell: bash
         run: |
-          $ErrorActionPreference = 'Stop'
-          $packOutput = npm pack --ignore-scripts --json
-          if ($LASTEXITCODE -ne 0) {
-            throw 'npm pack failed.'
-          }
-          $packItems = @($packOutput | ConvertFrom-Json)
-          if ($packItems.Count -ne 1) {
-            throw "Expected exactly one npm tarball, received $($packItems.Count)."
-          }
-          $pack = $packItems[0]
-          if ([string]$pack.name -ne $env:PACKAGE_NAME) {
-            throw "Packed package name '$($pack.name)' does not match '$env:PACKAGE_NAME'."
-          }
-          if ([string]$pack.version -ne $env:RELEASE_VERSION) {
-            throw "Packed version '$($pack.version)' does not match '$env:RELEASE_VERSION'."
-          }
-          if (-not (Test-Path -LiteralPath ([string]$pack.filename) -PathType Leaf)) {
-            throw "npm pack did not create '$($pack.filename)'."
-          }
-          Add-Content -Path $env:GITHUB_ENV -Value "TARBALL_PATH=$($pack.filename)"
-          Add-Content -Path $env:GITHUB_ENV -Value "TARBALL_INTEGRITY=$($pack.integrity)"
-          Write-Host "Created immutable release tarball $($pack.filename)."
+          set -euo pipefail
+          npm pkg set "gitHead=$GITHUB_SHA"
+          npm pack --ignore-scripts --json > npm-pack-metadata.json
+          tarball=$(node -e "const x=require('./npm-pack-metadata.json'); if(x.length!==1)process.exit(1); process.stdout.write(x[0].filename)")
+          integrity=$(node -e "const x=require('./npm-pack-metadata.json'); process.stdout.write(x[0].integrity)")
+          test -f "$tarball"
+          test "$(node -e "const x=require('./npm-pack-metadata.json'); process.stdout.write(x[0].version)")" = "$RELEASE_VERSION"
+          test "$(tar -xOf "$tarball" package/package.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).gitHead||""))')" = "$GITHUB_SHA"
+          test "$(tar -xOf "$tarball" package/package.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).contentPolicy?.class||""))')" = dual-use
+          tar -tf "$tarball" | grep -Fx package/DISCLOSURE
+          # JavaScript template interpolation must remain literal for Node.
+          # shellcheck disable=SC2016
+          node -e 'const x=require("./npm-pack-metadata.json"); for (const path of ["bin/rikune.js","bin/rikune-docker.js","bin/rikune-agent.js"]) { const file=x[0].files.find(item=>item.path===path); if(!file || (file.mode & 0o111)===0) throw new Error(`packed CLI is missing or non-executable: ${path}`) }'
+          for cli in rikune.js rikune-docker.js rikune-agent.js; do
+            tar -tf "$tarball" | grep -Fx "package/bin/$cli"
+          done
+          # JavaScript template interpolation must remain literal for Node.
+          # shellcheck disable=SC2016
+          RELEASE_TARBALL="$tarball" RELEASE_INTEGRITY="$integrity" node -e '
+            const fs=require("fs");
+            const manifest={
+              schema_version:1,
+              package:process.env.NPM_PACKAGE,
+              version:process.env.RELEASE_VERSION,
+              tag:process.env.RELEASE_TAG,
+              commit:process.env.GITHUB_SHA,
+              ref:process.env.GITHUB_REF,
+              repository:process.env.GITHUB_REPOSITORY,
+              workflow:process.env.GITHUB_WORKFLOW,
+              run_id:process.env.GITHUB_RUN_ID,
+              run_attempt:process.env.GITHUB_RUN_ATTEMPT,
+              run_url:`https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+              tarball:process.env.RELEASE_TARBALL,
+              integrity:process.env.RELEASE_INTEGRITY,
+            };
+            fs.writeFileSync("release-candidate-manifest.json",`${JSON.stringify(manifest,null,2)}\n`);
+          '
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+          echo "integrity=$integrity" >> "$GITHUB_OUTPUT"
 
-      - name: Verify installable release tarball
-        shell: pwsh
-        run: node scripts/verify-release-package.mjs "$env:TARBALL_PATH" "$env:RELEASE_VERSION"
+      - name: Verify fresh install from tarball
+        run: node scripts/verify-release-package.mjs "${{ steps.pack.outputs.tarball }}" "$RELEASE_VERSION"
 
-      - name: Detect an already published identical artifact
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $registryBase = $env:NPM_REGISTRY_URL.TrimEnd('/')
-          $encodedPackage = [uri]::EscapeDataString($env:PACKAGE_NAME)
-          $encodedVersion = [uri]::EscapeDataString($env:RELEASE_VERSION)
-          $versionUrl = "$registryBase/$encodedPackage/$encodedVersion"
-          $metadata = $null
-          try {
-            $metadata = Invoke-RestMethod -Uri $versionUrl -Method Get -TimeoutSec 30
-          } catch {
-            $statusCode = $_.Exception.Response.StatusCode
-            if ($null -eq $statusCode -or [int]$statusCode -ne 404) {
-              throw
-            }
-          }
-
-          $alreadyPublished = $false
-          if ($null -ne $metadata) {
-            $publishedIntegrity = [string]$metadata.dist.integrity
-            if ($publishedIntegrity -ne $env:TARBALL_INTEGRITY) {
-              throw "Registry already contains $env:PACKAGE_NAME@$env:RELEASE_VERSION with integrity '$publishedIntegrity', not '$env:TARBALL_INTEGRITY'."
-            }
-            $alreadyPublished = $true
-            Write-Host 'The identical npm artifact is already published; continuing recovery without republishing.'
-          } else {
-            Write-Host 'The target npm version is available for publication.'
-          }
-          Add-Content -Path $env:GITHUB_ENV -Value "RELEASE_ALREADY_PUBLISHED=$($alreadyPublished.ToString().ToLowerInvariant())"
-
-      - name: Publish to npm
-        if: env.RELEASE_DRY_RUN != 'true' && env.RELEASE_ALREADY_PUBLISHED != 'true'
-        shell: pwsh
-        run: npm publish "$env:TARBALL_PATH" --provenance --access public --tag "$env:NPM_DIST_TAG" --ignore-scripts
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Verify published npm registry artifact
-        if: env.RELEASE_DRY_RUN != 'true'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $verified = $false
-          for ($attempt = 1; $attempt -le 12; $attempt++) {
-            $publishedVersionOutput = npm view "$env:PACKAGE_NAME@$env:RELEASE_VERSION" version --json --registry=$env:NPM_REGISTRY_URL 2>$null
-            if ($LASTEXITCODE -eq 0) {
-              $publishedVersion = [string]($publishedVersionOutput | ConvertFrom-Json)
-              if ($publishedVersion -eq $env:RELEASE_VERSION) {
-                $publishedIntegrityOutput = npm view "$env:PACKAGE_NAME@$env:RELEASE_VERSION" dist.integrity --json --registry=$env:NPM_REGISTRY_URL 2>$null
-                if ($LASTEXITCODE -eq 0) {
-                  $publishedIntegrity = [string]($publishedIntegrityOutput | ConvertFrom-Json)
-                  if ($publishedIntegrity -ne $env:TARBALL_INTEGRITY) {
-                    throw "Registry integrity '$publishedIntegrity' does not match packed integrity '$env:TARBALL_INTEGRITY'."
-                  }
-                  $verified = $true
-                  break
-                }
-              }
-            }
-            if ($attempt -lt 12) {
-              Write-Host "Registry has not converged yet (attempt $attempt/12); retrying in 10 seconds."
-              Start-Sleep -Seconds 10
-            }
-          }
-          if (-not $verified) {
-            throw "Unable to verify $env:PACKAGE_NAME@$env:RELEASE_VERSION on the npm registry."
-          }
-          Write-Host "Verified $env:PACKAGE_NAME@$env:RELEASE_VERSION and matching registry integrity."
-
-      - name: Create GitHub release
-        if: env.RELEASE_DRY_RUN != 'true'
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+      - name: Upload exact npm evidence for final verification
+        if: >-
+          steps.release.outputs.dry_run != 'true' &&
+          steps.release.outputs.phase == 'verify-human-published'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          tag_name: v${{ env.RELEASE_VERSION }}
+          name: npm-release-evidence
+          path: |
+            ${{ steps.pack.outputs.tarball }}
+            npm-pack-metadata.json
+            release-candidate-manifest.json
+            DISCLOSURE
+          if-no-files-found: error
+          retention-days: 7
+
+  hybrid-build-verify:
+    name: Build and verify exact Hybrid release image
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    outputs:
+      revision: ${{ steps.contract.outputs.revision }}
+    steps:
+      - name: Checkout exact release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Generate exact committed Hybrid target
+        run: |
+          npm ci
+          npm run build
+          npm run docker:generate:hybrid
+          git diff --exit-code -- docker/Dockerfile.hybrid docker-compose.hybrid.yml
+          test -z "$(git status --porcelain -- docker/Dockerfile.hybrid docker-compose.hybrid.yml)"
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build exact linux/amd64 Hybrid release image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ./docker/Dockerfile.hybrid
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: rikune-analyzer-hybrid:release
+          labels: |
+            org.opencontainers.image.source=https://github.com/Last-emo-boy/rikune
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=1.4.0
+            org.opencontainers.image.rikune.profile=hybrid
+          cache-from: type=gha,scope=rikune-hybrid-v1.4.0
+          cache-to: type=gha,mode=max,scope=rikune-hybrid-v1.4.0
+
+      - name: Verify hardened Hybrid startup and bind revision
+        id: contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/verify-hybrid-container.sh rikune-analyzer-hybrid:release "$GITHUB_SHA" "$RELEASE_VERSION"
+          echo "revision=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+  static-build-push:
+    name: Stage or resolve immutable static OCI candidate
+    needs: [preflight, hybrid-build-verify]
+    if: needs.preflight.outputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.digest.outputs.digest }}
+      candidate: ${{ steps.image.outputs.candidate }}
+    steps:
+      - name: Checkout exact release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Revalidate remote annotated tag before registry mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          test "$(git cat-file -t "$RELEASE_TAG")" = tag
+          test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$GITHUB_SHA"
+          remote_commit=$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG^{}" | awk '{print $1}')
+          test "$remote_commit" = "$GITHUB_SHA"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Generate exact static target
+        run: |
+          npm ci
+          npm run build
+          npm run docker:generate:static
+          git diff --exit-code -- static-profile.lock.json docker/Dockerfile.analyzer docker-compose.analyzer.yml
+
+      - name: Set immutable candidate reference
+        id: image
+        run: echo "candidate=$STATIC_IMAGE:candidate-$RELEASE_VERSION-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Enforce immutable candidate state for this phase
+        id: candidate_state
+        shell: bash
+        env:
+          RELEASE_PHASE: ${{ needs.preflight.outputs.phase }}
+          CANDIDATE: ${{ steps.image.outputs.candidate }}
+        run: |
+          set -euo pipefail
+          set +e
+          docker buildx imagetools inspect "$CANDIDATE" > candidate-inspect.txt 2> candidate-inspect.err
+          inspect_status=$?
+          set -e
+          if [[ "$RELEASE_PHASE" == stage ]]; then
+            if [[ "$inspect_status" -eq 0 ]]; then
+              echo "Immutable candidate already exists; refusing to overwrite $CANDIDATE" >&2
+              exit 1
+            fi
+            if ! grep -Eqi 'manifest unknown|MANIFEST_UNKNOWN|status code: 404|unexpected status[^[:cntrl:]]*404|404 Not Found' candidate-inspect.err; then
+              cat candidate-inspect.err >&2
+              echo "Unable to prove that immutable candidate is absent; refusing to build." >&2
+              exit 1
+            fi
+          elif [[ "$RELEASE_PHASE" == verify-human-published ]]; then
+            if [[ "$inspect_status" -ne 0 ]]; then
+              cat candidate-inspect.err >&2
+              echo "The staged immutable candidate is missing; verification cannot create it." >&2
+              exit 1
+            fi
+            existing_digest=$(awk '/^Digest:/ {print $2; exit}' candidate-inspect.txt)
+            [[ "$existing_digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+            echo "existing_digest=$existing_digest" >> "$GITHUB_OUTPUT"
+          else
+            echo "Unsupported release phase: $RELEASE_PHASE" >&2
+            exit 1
+          fi
+
+      - name: Build and push linux/amd64 candidate
+        id: build
+        if: needs.preflight.outputs.phase == 'stage'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ./docker/Dockerfile.analyzer
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.image.outputs.candidate }}
+          provenance: mode=max
+          sbom: true
+          labels: |
+            org.opencontainers.image.source=https://github.com/Last-emo-boy/rikune
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=1.4.0
+            org.opencontainers.image.rikune.profile=static
+          cache-from: type=gha,scope=rikune-static-v1.4.0
+          cache-to: type=gha,mode=max,scope=rikune-static-v1.4.0
+
+      - name: Bind immutable candidate digest
+        id: digest
+        shell: bash
+        env:
+          RELEASE_PHASE: ${{ needs.preflight.outputs.phase }}
+          BUILT_DIGEST: ${{ steps.build.outputs.digest }}
+          EXISTING_DIGEST: ${{ steps.candidate_state.outputs.existing_digest }}
+        run: |
+          set -euo pipefail
+          if [[ "$RELEASE_PHASE" == stage ]]; then
+            digest="$BUILT_DIGEST"
+          else
+            digest="$EXISTING_DIGEST"
+          fi
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Generate registry-derived SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ env.STATIC_IMAGE }}@${{ steps.digest.outputs.digest }}
+          format: spdx-json
+          output-file: static-image.spdx.json
+          upload-artifact: false
+
+      - name: Sign GitHub build provenance attestation
+        if: needs.preflight.outputs.phase == 'stage'
+        uses: actions/attest-build-provenance@8beda2b7ed98355c0e97c0a63bec38ae472e66c4 # v4
+        with:
+          subject-name: ${{ env.STATIC_IMAGE }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          push-to-registry: true
+
+      - name: Sign GitHub SBOM attestation
+        if: needs.preflight.outputs.phase == 'stage'
+        uses: actions/attest-sbom@51e74621a501c89df81fc1391c5a8f4cfc9fab2f # v3
+        with:
+          subject-name: ${{ env.STATIC_IMAGE }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          sbom-path: static-image.spdx.json
+          push-to-registry: true
+
+      - name: Install Cosign
+        if: needs.preflight.outputs.phase == 'stage'
+        uses: sigstore/cosign-installer@f713795cb21599bc4e5c4b58cbad1da852d7eeb9 # v3
+
+      - name: Keyless-sign immutable candidate digest
+        if: needs.preflight.outputs.phase == 'stage'
+        run: cosign sign --yes "$STATIC_IMAGE@${{ steps.digest.outputs.digest }}"
+
+      - name: Freeze static release evidence
+        run: |
+          printf '%s\n' '${{ steps.digest.outputs.digest }}' > static-image-digest.txt
+          printf '%s\n' '${{ steps.image.outputs.candidate }}' > static-image-candidate.txt
+
+      - name: Upload static release evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: static-oci-evidence
+          path: |
+            static-image.spdx.json
+            static-image-digest.txt
+            static-image-candidate.txt
+            static-profile.lock.json
+          if-no-files-found: error
+          retention-days: 7
+
+  static-verify:
+    name: Verify static OCI in GHCR
+    needs: [preflight, static-build-push]
+    if: needs.preflight.outputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    outputs:
+      digest: ${{ steps.contract.outputs.digest }}
+    steps:
+      - name: Bind verified digest
+        id: contract
+        run: echo "digest=${{ needs.static-build-push.outputs.digest }}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout release contract
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Login to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@f713795cb21599bc4e5c4b58cbad1da852d7eeb9 # v3
+
+      - name: Verify registry digest and exact runnable platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="$STATIC_IMAGE@${{ needs.static-build-push.outputs.digest }}"
+          docker buildx imagetools inspect --raw "$ref" > manifest.json
+          jq -e '
+            if has("manifests") then
+              ([.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64")] | length) == 1 and
+              ([.manifests[] | select(.platform.os != "linux" or .platform.architecture != "amd64") |
+                select(.annotations["vnd.docker.reference.type"] != "attestation-manifest")] | length) == 0
+            else .os == "linux" and .architecture == "amd64" end
+          ' manifest.json
+          docker pull "$ref"
+          test "$(docker image inspect "$ref" --format '{{.Architecture}}/{{.Os}}')" = amd64/linux
+          test "$(docker image inspect "$ref" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = 1.4.0
+          test "$(docker image inspect "$ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
+          test "$(docker image inspect "$ref" --format '{{index .Config.Labels "org.opencontainers.image.rikune.profile"}}')" = static
+
+      - name: Verify embedded lock and every required backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="$STATIC_IMAGE@${{ needs.static-build-push.outputs.digest }}"
+          docker image inspect "$ref" --format '{{json .Config.Env}}' | jq -e 'index("RIKUNE_DOCKER_PROFILE=static") != null'
+          bash scripts/verify-static-container.sh "$ref"
+          if docker run --rm -e RIKUNE_DOCKER_PROFILE=full "$ref" node --version; then
+            echo "static image accepted a downgraded profile" >&2
+            exit 1
+          fi
+          mapfile -t locked_env < <(jq -r '.required_backends[].environment[].name' static-profile.lock.json | sort -u)
+          for name in "${locked_env[@]}"; do
+            override="$name=/__rikune_forbidden_override__"
+            if docker run --rm -e "$override" "$ref" node --version; then
+              echo "static image accepted backend override: $override" >&2
+              exit 1
+            fi
+          done
+          invalid_lock="$RUNNER_TEMP/invalid-static-profile.lock.json"
+          printf '{}\n' > "$invalid_lock"
+          if docker run --rm --mount "type=bind,src=$invalid_lock,dst=/app/static-profile.lock.json,readonly" "$ref" node --version; then
+            echo "static image accepted an invalid embedded lock" >&2
+            exit 1
+          fi
+          container=$(docker create "$ref")
+          trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
+          docker cp "$container:/app/static-profile.lock.json" image-static-profile.lock.json
+          cmp static-profile.lock.json image-static-profile.lock.json
+          docker run --rm --entrypoint node "$ref" -e '
+            const fs=require("fs"),cp=require("child_process");
+            const lock=JSON.parse(fs.readFileSync("/app/static-profile.lock.json","utf8"));
+            for(const backend of lock.required_backends){
+              const stat=fs.lstatSync(backend.path);
+              if(!stat.isFile() || stat.isSymbolicLink() || stat.nlink!==1 || stat.size>64*1024*1024 || (stat.mode&0o111)===0) throw new Error(`invalid backend path: ${backend.name}`);
+              const result=cp.spawnSync(backend.path,backend.version_args,{encoding:"utf8",timeout:30000,maxBuffer:1024*1024});
+              if(result.error || result.signal || result.status===null || !backend.allowed_exit_codes.includes(result.status)) throw new Error(`invalid backend exit: ${backend.name}`);
+              let versionFile="";
+              if(backend.version_file){
+                const versionStat=fs.lstatSync(backend.version_file);
+                if(!versionStat.isFile() || versionStat.isSymbolicLink() || versionStat.nlink!==1 || versionStat.size>64*1024) throw new Error(`invalid backend version file: ${backend.name}`);
+                versionFile=`\n${fs.readFileSync(backend.version_file,"utf8")}`;
+              }
+              const output=`${result.stdout||""}\n${result.stderr||""}${versionFile}`;
+              if(!(new RegExp(backend.version_pattern)).test(output)) throw new Error(`version mismatch: ${backend.name}`);
+            }
+          '
+
+      - name: Verify cryptographic signature and attestations
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ref="$STATIC_IMAGE@${{ needs.static-build-push.outputs.digest }}"
+          identity='^https://github.com/Last-emo-boy/rikune/.github/workflows/publish-npm.yml@refs/tags/v1.4.0$'
+          cosign verify "$ref" --certificate-identity-regexp "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          gh attestation verify "oci://$ref" --repo "$GITHUB_REPOSITORY" --predicate-type https://slsa.dev/provenance/v1
+          gh attestation verify "oci://$ref" --repo "$GITHUB_REPOSITORY" --predicate-type https://spdx.dev/Document/v2.3
+
+  npm-candidate-ceremony:
+    name: Expose npm candidate only after static OCI verification
+    needs: [preflight, hybrid-build-verify, static-verify]
+    if: >-
+      needs.preflight.outputs.dry_run != 'true' &&
+      needs.preflight.outputs.phase == 'stage'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+
+      - name: Rebuild and bind exact npm candidate
+        id: pack
+        shell: bash
+        env:
+          EXPECTED_INTEGRITY: ${{ needs.preflight.outputs.integrity }}
+          STATIC_OCI_DIGEST: ${{ needs.static-verify.outputs.digest }}
+          HYBRID_IMAGE_REVISION: ${{ needs.hybrid-build-verify.outputs.revision }}
+        run: |
+          set -euo pipefail
+          npm install --global npm@10.9.0 --ignore-scripts
+          test "$(npm --version)" = 10.9.0
+          npm ci
+          npm run build
+          test "$HYBRID_IMAGE_REVISION" = "$GITHUB_SHA"
+          npm pkg set "gitHead=$GITHUB_SHA"
+          npm pack --ignore-scripts --json > npm-pack-metadata.json
+          tarball=$(node -e "const x=require('./npm-pack-metadata.json'); if(x.length!==1)process.exit(1); process.stdout.write(x[0].filename)")
+          integrity=$(node -e "const x=require('./npm-pack-metadata.json'); process.stdout.write(x[0].integrity)")
+          test "$integrity" = "$EXPECTED_INTEGRITY"
+          test "$(tar -xOf "$tarball" package/package.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).gitHead||""))')" = "$GITHUB_SHA"
+          node scripts/verify-release-package.mjs "$tarball" "$RELEASE_VERSION"
+          # JavaScript template interpolation must remain literal for Node.
+          # shellcheck disable=SC2016
+          RELEASE_TARBALL="$tarball" RELEASE_INTEGRITY="$integrity" node -e '
+            const fs=require("fs");
+            const manifest={
+              schema_version:1,
+              artifact_name:"npm-release-candidate",
+              package:process.env.NPM_PACKAGE,
+              version:process.env.RELEASE_VERSION,
+              tag:process.env.RELEASE_TAG,
+              commit:process.env.GITHUB_SHA,
+              ref:process.env.GITHUB_REF,
+              repository:process.env.GITHUB_REPOSITORY,
+              workflow:process.env.GITHUB_WORKFLOW,
+              run_id:process.env.GITHUB_RUN_ID,
+              run_attempt:process.env.GITHUB_RUN_ATTEMPT,
+              run_url:`https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+              tarball:process.env.RELEASE_TARBALL,
+              integrity:process.env.RELEASE_INTEGRITY,
+              static_oci_digest:process.env.STATIC_OCI_DIGEST,
+              static_oci_verified:true,
+              hybrid_image_revision:process.env.HYBRID_IMAGE_REVISION,
+              hybrid_image_verified:true,
+            };
+            fs.writeFileSync("release-candidate-manifest.json",`${JSON.stringify(manifest,null,2)}\n`);
+          '
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+
+      - name: Upload immutable npm candidate for human 2FA ceremony
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: npm-release-candidate
+          path: |
+            ${{ steps.pack.outputs.tarball }}
+            npm-pack-metadata.json
+            release-candidate-manifest.json
+            DISCLOSURE
+          if-no-files-found: error
+          retention-days: 7
+
+  npm-human-publication-verify:
+    name: Verify package published by human npm 2FA ceremony
+    needs: [preflight, hybrid-build-verify, static-verify]
+    if: >-
+      needs.preflight.outputs.dry_run != 'true' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.release_phase == 'verify-human-published'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+
+      - name: Poll and verify exact registry artifact
+        shell: bash
+        env:
+          EXPECTED_INTEGRITY: ${{ needs.preflight.outputs.integrity }}
+        run: |
+          set -euo pipefail
+          expected="$EXPECTED_INTEGRITY"
+          test -n "$expected"
+          for _attempt in $(seq 1 12); do
+            if value=$(npm view "$NPM_PACKAGE@$RELEASE_VERSION" dist.integrity --json --registry "$NPM_REGISTRY_URL" 2>/dev/null); then
+              actual=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]))' "$value")
+              version=$(npm view "$NPM_PACKAGE@$RELEASE_VERSION" version --json --registry "$NPM_REGISTRY_URL")
+              actual_version=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]))' "$version")
+              commit=$(npm view "$NPM_PACKAGE@$RELEASE_VERSION" gitHead --json --registry "$NPM_REGISTRY_URL")
+              actual_commit=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]))' "$commit")
+              latest=$(npm view "$NPM_PACKAGE" dist-tags.latest --json --registry "$NPM_REGISTRY_URL")
+              actual_latest=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]))' "$latest")
+              test "$actual" = "$expected"
+              test "$actual_version" = "$RELEASE_VERSION"
+              test "$actual_commit" = "$GITHUB_SHA"
+              test "$actual_latest" = "$RELEASE_VERSION"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "npm registry did not converge" >&2
+          exit 1
+
+  release-and-alias:
+    name: Publish OCI aliases and GitHub Release
+    needs: [hybrid-build-verify, static-verify, npm-human-publication-verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout and revalidate immutable release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Close remote tag move window
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          test '${{ needs.hybrid-build-verify.outputs.revision }}' = "$GITHUB_SHA"
+          git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          test "$(git cat-file -t "$RELEASE_TAG")" = tag
+          test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$GITHUB_SHA"
+          mapfile -t remote_tag < <(git ls-remote --tags origin "refs/tags/$RELEASE_TAG" "refs/tags/$RELEASE_TAG^{}")
+          test "${#remote_tag[@]}" = 2
+          remote_commit=$(printf '%s\n' "${remote_tag[@]}" | awk '/\^\{\}$/ {print $1}')
+          test "$remote_commit" = "$GITHUB_SHA"
+          tag_object=$(git rev-parse "$RELEASE_TAG^{tag}")
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.type)" = tag
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_object" --jq .object.sha)" = "$GITHUB_SHA"
+
+      - name: Download verified npm evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: npm-release-evidence
+          path: release-package
+
+      - name: Download static OCI evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: static-oci-evidence
+          path: static-evidence
+
+      - name: Login to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Publish and verify registry aliases
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest='${{ needs.static-verify.outputs.digest }}'
+          source="$STATIC_IMAGE@$digest"
+          inspect_error=$(mktemp)
+          if existing=$(docker buildx imagetools inspect "$STATIC_IMAGE:1.4.0" 2>"$inspect_error"); then
+            existing_digest=$(awk '/^Digest:/ {print $2; exit}' <<<"$existing")
+            test "$existing_digest" = "$digest"
+          elif grep -Eqi 'manifest unknown|MANIFEST_UNKNOWN|status code: 404|unexpected status[^[:cntrl:]]*404|404 Not Found' "$inspect_error"; then
+            docker buildx imagetools create --tag "$STATIC_IMAGE:1.4.0" "$source"
+          else
+            cat "$inspect_error" >&2
+            echo 'Unable to prove that immutable tag 1.4.0 is absent; refusing to publish.' >&2
+            exit 1
+          fi
+          immutable_digest=$(docker buildx imagetools inspect "$STATIC_IMAGE:1.4.0" | awk '/^Digest:/ {print $2; exit}')
+          test "$immutable_digest" = "$digest"
+          for alias in 1.4 latest; do
+            docker buildx imagetools create --tag "$STATIC_IMAGE:$alias" "$source"
+            actual=$(docker buildx imagetools inspect "$STATIC_IMAGE:$alias" | awk '/^Digest:/ {print $2; exit}')
+            test "$actual" = "$digest"
+          done
+
+      - name: Create verified GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: v1.4.0
           generate_release_notes: true
           fail_on_unmatched_files: true
-          files: ${{ env.TARBALL_PATH }}
+          body: |
+            npm: rikune@1.4.0 (human 2FA publication verified)
+            Static OCI: ghcr.io/last-emo-boy/rikune-analyzer-static@${{ needs.static-verify.outputs.digest }}
+            Hybrid Dockerfile: linux/amd64 build and hardened startup verified at ${{ needs.hybrid-build-verify.outputs.revision }}
+          files: |
+            release-package/*.tgz
+            static-evidence/static-image-digest.txt
+            static-evidence/static-image.spdx.json
+            static-evidence/static-profile.lock.json

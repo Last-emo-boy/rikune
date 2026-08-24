@@ -8,6 +8,11 @@ import {
   BinaryRoleProfileDataSchema,
   createBinaryRoleProfileHandler,
 } from './binary-role-profile.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'com.role.profile'
 
@@ -146,23 +151,28 @@ export function createComRoleProfileHandler(
   database: DatabaseManager,
   cacheManager: CacheManager,
   dependencies?: {
-    binaryRoleProfileHandler?: (args: ToolArgs) => Promise<WorkerResult>
+    binaryRoleProfileHandler?: AbortableHandler<ToolArgs, WorkerResult>
   }
 ) {
   const binaryRoleProfileHandler =
     dependencies?.binaryRoleProfileHandler ||
     createBinaryRoleProfileHandler(workspaceManager, database, cacheManager)
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const startTime = Date.now()
     try {
+      throwIfAnalysisAborted(abortSignal)
       const input = ComRoleProfileInputSchema.parse(args)
-      const profileResult = await binaryRoleProfileHandler({
-        sample_id: input.sample_id,
-        max_exports: input.max_exports,
-        max_strings: input.max_strings,
-        force_refresh: input.force_refresh,
-      })
+      const profileResult = await invokeAbortable(
+        binaryRoleProfileHandler,
+        {
+          sample_id: input.sample_id,
+          max_exports: input.max_exports,
+          max_strings: input.max_strings,
+          force_refresh: input.force_refresh,
+        },
+        abortSignal
+      )
 
       if (!profileResult.ok || !profileResult.data) {
         return {
@@ -209,6 +219,7 @@ export function createComRoleProfileHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [(error as Error).message],

@@ -13,12 +13,16 @@ import {
   analysisContextGetToolDefinition,
   createAnalysisContextGetHandler,
 } from '../../tools/analysis-context-get.js'
+import { sampleDeleteToolDefinition, createSampleDeleteHandler } from '../../tools/sample-delete.js'
 
 export function registerSampleTools(server: ToolRegistrar, deps: ToolDeps): void {
   const { workspaceManager, database, policyGuard, config, jobQueue, cacheManager } = deps
+  if (!deps.sampleOperationGate) {
+    throw new Error('sample.ingest registration requires SampleOperationGate')
+  }
   server.registerTool(
     sampleIngestToolDefinition,
-    createSampleIngestHandler(workspaceManager, database, policyGuard)
+    createSampleIngestHandler(workspaceManager, database, policyGuard, deps.sampleOperationGate)
   )
   server.registerTool(
     sampleRequestUploadToolDefinition,
@@ -35,4 +39,10 @@ export function registerSampleTools(server: ToolRegistrar, deps: ToolDeps): void
     analysisContextGetToolDefinition,
     createAnalysisContextGetHandler(database, jobQueue)
   )
+  if (deps.sampleDeletionService) {
+    server.registerTool(
+      sampleDeleteToolDefinition,
+      createSampleDeleteHandler(deps.sampleDeletionService)
+    )
+  }
 }

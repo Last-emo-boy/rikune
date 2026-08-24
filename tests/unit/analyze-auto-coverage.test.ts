@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { afterEach, beforeEach, describe, expect, test, jest } from '@jest/globals'
 import fs from 'fs'
 import os from 'os'
@@ -32,7 +33,7 @@ describe('workflow.analyze.auto coverage boundaries', () => {
 
   test('should expose quick coverage boundaries for triage routing', async () => {
     const sampleId = `sha256:${'1'.repeat(64)}`
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '1'.repeat(64),
       md5: '1'.repeat(32),
@@ -109,7 +110,7 @@ describe('workflow.analyze.auto coverage boundaries', () => {
 
   test('should expose queued bounded coverage for large static routing', async () => {
     const sampleId = `sha256:${'2'.repeat(64)}`
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '2'.repeat(64),
       md5: '2'.repeat(32),
@@ -197,7 +198,7 @@ describe('workflow.analyze.auto coverage boundaries', () => {
 
   test('should expose completed reconstruction coverage for deep reverse routing', async () => {
     const sampleId = `sha256:${'3'.repeat(64)}`
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '3'.repeat(64),
       md5: '3'.repeat(32),

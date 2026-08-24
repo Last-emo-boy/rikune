@@ -211,6 +211,7 @@ export function normalizeJobQueueStatus(status: JobStatusType | string): Control
     case 'queued':
       return 'pending'
     case 'running':
+    case 'cancelling':
       return 'active'
     case 'completed':
       return 'completed'
@@ -426,19 +427,33 @@ export function createOrReuseAnalysisRun(
       compatibilityMarker
     )
     if (existing) {
-      database.updateAnalysisRun(existing.id, {
-        last_accessed_at: nowIso(),
-      })
-      return {
-        run: {
-          ...existing,
+      const existingPlan = parseJsonRecord<unknown>(existing.stage_plan_json, null)
+      const exactRequestedPlan =
+        !options.stagePlan ||
+        (Array.isArray(existingPlan) &&
+          existingPlan.length === stagePlan.length &&
+          existingPlan.every((value, index) => value === stagePlan[index]))
+      // A static image supplies an explicit exact plan. Legacy compatible
+      // markers did not bind that plan, so they must not be touched or reused.
+      if (!exactRequestedPlan) {
+        // Continue to create a new exact run without mutating the legacy row.
+      } else {
+        database.updateAnalysisRun(existing.id, {
           last_accessed_at: nowIso(),
-        },
-        reused: true,
-        sampleSizeTier,
-        analysisBudgetProfile,
-        compatibilityMarker,
-        stagePlan: parseJsonRecord<AnalysisPipelineStage[]>(existing.stage_plan_json, stagePlan),
+        })
+        return {
+          run: {
+            ...existing,
+            last_accessed_at: nowIso(),
+          },
+          reused: true,
+          sampleSizeTier,
+          analysisBudgetProfile,
+          compatibilityMarker,
+          stagePlan: Array.isArray(existingPlan)
+            ? (existingPlan as AnalysisPipelineStage[])
+            : stagePlan,
+        }
       }
     }
   }
@@ -731,12 +746,17 @@ export function reconcileAnalysisRunRuntime(
     const metadata = parseJsonRecord<Record<string, unknown>>(row.metadata_json, {})
     const now = nowIso()
 
-    if (row.job_id) {
-      database.markJobInterrupted(row.job_id, recoveryReason, {
+    if (row.job_id && persistedJob) {
+      const interruptedJob = database.markJobInterrupted(row.job_id, recoveryReason, {
         run_id: runId,
         stage: row.stage,
         recovery_state: recoveryState,
       })
+      if (!interruptedJob) {
+        // A live durable owner still fences this stage; a rolling observer
+        // must not rewrite its analysis state.
+        continue
+      }
     }
 
     database.upsertAnalysisRunStage({

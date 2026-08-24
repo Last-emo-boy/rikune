@@ -18,7 +18,7 @@ function buildGhidraStatus(ok) {
     scripts_dir: path.join(process.cwd(), 'src', 'plugins', 'ghidra', 'scripts'),
     project_root: path.join(process.cwd(), 'ghidra-projects'),
     log_root: path.join(process.cwd(), 'ghidra-logs'),
-    version: ok ? '12.0.4' : undefined,
+    version: ok ? '12.1.3' : undefined,
     checks: {
       install_dir_exists: ok,
       analyze_headless_exists: ok,
@@ -91,7 +91,7 @@ try {
         status: 'partial',
         available_components: ['speakeasy'],
         components: {
-          speakeasy: { available: true, version: '1.5.11' },
+          speakeasy: { available: true, version: '2.0.0b4' },
           frida: { available: true, version: '17.8.0' },
           psutil: { available: true, version: '7.2.2' },
         },

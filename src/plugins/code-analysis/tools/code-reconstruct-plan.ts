@@ -15,6 +15,11 @@ import { createRuntimeDetectHandler } from '../../static-triage/tools/runtime-de
 import { createPackerDetectHandler } from '../../static-triage/tools/packer-detect.js'
 import { CACHE_TTL_7_DAYS } from '../../../constants/cache-ttl.js'
 import { CODE_RECONSTRUCT_PLAN_METADATA } from './code-analysis-metadata.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'code.reconstruct.plan'
 const TOOL_VERSION = '0.1.0'
@@ -112,8 +117,8 @@ interface PackerDetectData {
 }
 
 interface ReconstructPlanDependencies {
-  runtimeDetectHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  packerDetectHandler?: (args: ToolArgs) => Promise<WorkerResult>
+  runtimeDetectHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  packerDetectHandler?: AbortableHandler<ToolArgs, WorkerResult>
 }
 
 function pickPrimaryRuntime(runtimeData?: RuntimeDetectData): string {
@@ -297,11 +302,12 @@ export function createCodeReconstructPlanHandler(
     dependencies?.packerDetectHandler ||
     createPackerDetectHandler(workspaceManager, database, cacheManager)
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const input = args as CodeReconstructPlanInput
     const startTime = Date.now()
 
     try {
+      throwIfAnalysisAborted(abortSignal)
       const sample = database.findSample(input.sample_id)
       if (!sample) {
         return {
@@ -323,6 +329,7 @@ export function createCodeReconstructPlanHandler(
       })
 
       const cachedLookup = await lookupCachedResult(cacheManager, cacheKey)
+      throwIfAnalysisAborted(abortSignal)
       if (cachedLookup) {
         return {
           ok: true,
@@ -343,7 +350,11 @@ export function createCodeReconstructPlanHandler(
 
       const warnings: string[] = []
 
-      const runtimeResult = await runtimeDetectHandler({ sample_id: input.sample_id })
+      const runtimeResult = await invokeAbortable(
+        runtimeDetectHandler,
+        { sample_id: input.sample_id },
+        abortSignal
+      )
       let runtimeData: RuntimeDetectData | undefined
       if (runtimeResult.ok && runtimeResult.data) {
         runtimeData = runtimeResult.data as RuntimeDetectData
@@ -353,10 +364,14 @@ export function createCodeReconstructPlanHandler(
         )
       }
 
-      const packerResult = await packerDetectHandler({
-        sample_id: input.sample_id,
-        engines: ['yara', 'entropy', 'entrypoint'],
-      })
+      const packerResult = await invokeAbortable(
+        packerDetectHandler,
+        {
+          sample_id: input.sample_id,
+          engines: ['yara', 'entropy', 'entrypoint'],
+        },
+        abortSignal
+      )
       let packerData: PackerDetectData | undefined
       if (packerResult.ok && packerResult.data) {
         packerData = packerResult.data as PackerDetectData
@@ -410,6 +425,7 @@ export function createCodeReconstructPlanHandler(
       }
 
       await cacheManager.setCachedResult(cacheKey, outputData, CACHE_TTL_MS, sample.sha256)
+      throwIfAnalysisAborted(abortSignal)
 
       return {
         ok: true,
@@ -421,6 +437,7 @@ export function createCodeReconstructPlanHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [(error as Error).message],

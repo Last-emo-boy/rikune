@@ -13,6 +13,11 @@ import type { CacheManager } from '../cache-manager.js'
 import type { SamplingClient } from '../core/registrar.js'
 import { createCodeModuleReviewPrepareHandler } from '../plugins/code-analysis/tools/code-module-review-prepare.js'
 import { createCodeModuleReviewApplyHandler } from '../plugins/code-analysis/tools/code-module-review-apply.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'code.module.review'
 
@@ -243,7 +248,10 @@ export const codeModuleReviewToolDefinition: ToolDefinition = {
 interface CodeModuleReviewDependencies {
   prepareHandler?: (args: ToolArgs) => Promise<WorkerResult>
   applyHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  samplingRequester?: (params: CreateMessageRequest['params']) => Promise<SamplingResult>
+  samplingRequester?: (
+    params: CreateMessageRequest['params'],
+    options?: { signal?: AbortSignal }
+  ) => Promise<SamplingResult>
   clientCapabilitiesProvider?: () => ClientCapabilities | undefined
   clientVersionProvider?: () => Implementation | undefined
 }
@@ -328,7 +336,8 @@ export function createCodeModuleReviewHandler(
   const samplingRequester =
     dependencies?.samplingRequester ||
     (mcpServer
-      ? (params: CreateMessageRequest['params']) => mcpServer.createMessage(params)
+      ? (params: CreateMessageRequest['params'], options?: { signal?: AbortSignal }) =>
+          mcpServer.createMessage(params, options)
       : undefined)
   const clientCapabilitiesProvider =
     dependencies?.clientCapabilitiesProvider ||
@@ -337,13 +346,16 @@ export function createCodeModuleReviewHandler(
     dependencies?.clientVersionProvider ||
     (mcpServer ? () => mcpServer.getClientVersion() : undefined)
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
+    throwIfAnalysisAborted(abortSignal)
+    const runHandler = (handler: AbortableHandler<ToolArgs, WorkerResult>, handlerArgs: ToolArgs) =>
+      invokeAbortable(handler, handlerArgs, abortSignal)
     const startTime = Date.now()
     const warnings: string[] = []
     const artifacts: any[] = []
     try {
       const input = codeModuleReviewInputSchema.parse(args)
-      const prepareResult = await prepareHandler({
+      const prepareResult = await runHandler(prepareHandler, {
         sample_id: input.sample_id,
         topk: input.topk,
         module_limit: input.module_limit,
@@ -483,7 +495,10 @@ export function createCodeModuleReviewHandler(
         }
       }
 
-      const samplingResult = await samplingRequester(buildSamplingRequest(input, taskPrompt))
+      const samplingResult = await samplingRequester(buildSamplingRequest(input, taskPrompt), {
+        signal: abortSignal,
+      })
+      throwIfAnalysisAborted(abortSignal)
       const responseText = extractTextBlocks(samplingResult)
       let parsedReviews: z.infer<typeof ReviewModuleSchema>[]
       try {
@@ -542,7 +557,7 @@ export function createCodeModuleReviewHandler(
 
       if (input.auto_apply) {
         applyAttempted = true
-        const applyResult = await applyHandler({
+        const applyResult = await runHandler(applyHandler, {
           sample_id: input.sample_id,
           client_name: clientVersion?.name || null,
           model_name: samplingResult.model || null,
@@ -615,6 +630,7 @@ export function createCodeModuleReviewHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [error instanceof Error ? error.message : String(error)],

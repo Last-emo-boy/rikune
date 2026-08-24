@@ -69,6 +69,8 @@ export async function callStaticWorker(
     family?: string
     compatibilityKey?: string
     timeoutMs?: number
+    abortSignal?: AbortSignal
+    terminationGraceMs?: number
   } = {}
 ): Promise<StaticWorkerResponse> {
   const compatibilityKey = options.compatibilityKey || buildStaticWorkerCompatibilityKey(request)
@@ -85,6 +87,8 @@ export async function callStaticWorker(
       family,
       compatibilityKey,
       timeoutMs: options.timeoutMs || (config.workers.static.timeout || 60) * 1000,
+      abortSignal: options.abortSignal,
+      terminationGraceMs: options.terminationGraceMs,
     }
   )
 

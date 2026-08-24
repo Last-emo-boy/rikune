@@ -22,7 +22,16 @@ const TERMINAL_JOB_STATUSES = new Set(['completed', 'failed', 'cancelled', 'inte
 export const taskStatusInputSchema = z.object({
   job_id: z.string().optional().describe('Optional job id for single-job lookup'),
   status: z
-    .enum(['queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted'])
+    .enum([
+      'queued',
+      'retry_wait',
+      'running',
+      'cancelling',
+      'completed',
+      'failed',
+      'cancelled',
+      'interrupted',
+    ])
     .optional()
     .describe('Optional status filter'),
   include_result: z
@@ -352,7 +361,10 @@ export function createTaskStatusHandler(
         database && input.status
           ? database.findJobsByStatus(input.status, input.limit)
           : database && !input.status
-            ? database.findJobsByStatuses(['queued', 'running', 'interrupted'], input.limit)
+            ? database.findJobsByStatuses(
+                ['queued', 'retry_wait', 'running', 'cancelling', 'interrupted'],
+                input.limit
+              )
             : []
       const mergedRows = new Map<string, any>()
       for (const row of [...persistedRows, ...queueRows]) {
@@ -451,7 +463,11 @@ export function createTaskStatusHandler(
         }),
       }))
       const activeRows = limitedRows.filter(
-        (row: any) => row.status === 'queued' || row.status === 'running'
+        (row: any) =>
+          row.status === 'queued' ||
+          row.status === 'retry_wait' ||
+          row.status === 'running' ||
+          row.status === 'cancelling'
       )
       const activeAnalysisRunId = activeRows.find(
         (row: any) =>

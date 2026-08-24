@@ -43,6 +43,11 @@ import { createUPXInspectHandler } from '../plugins/upx/tools/upx-inspect.js'
 import { createYaraXScanHandler } from '../plugins/yara-x/tools/yara-x-scan.js'
 import { collectCryptoApiNames } from '../artifacts/crypto-breakpoint-analysis.js'
 import { ToolSurfaceRoleSchema } from '../tool-surface-guidance.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../analysis/analysis-cancellation.js'
 
 // ============================================================================
 // Constants
@@ -2452,10 +2457,11 @@ export async function triageWorkflow(
   sampleId: string,
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
-  cacheManager: CacheManager
+  cacheManager: CacheManager,
+  abortSignal?: AbortSignal
 ): Promise<TriageWorkflowOutput> {
   const handler = createTriageWorkflowHandler(workspaceManager, database, cacheManager)
-  const result = await handler({ sample_id: sampleId })
+  const result = await handler({ sample_id: sampleId }, abortSignal)
 
   // Convert WorkerResult to TriageWorkflowOutput
   return {
@@ -2531,7 +2537,12 @@ export function createTriageWorkflowHandler(
   const rizinAnalyzeHandler =
     dependencies.rizinAnalyze || createRizinAnalyzeHandler(workspaceManager, database)
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
+    throwIfAnalysisAborted(abortSignal)
+    const runHandler = <TResult extends WorkerResult>(
+      handler: AbortableHandler<ToolArgs, TResult>,
+      handlerArgs: ToolArgs
+    ) => invokeAbortable(handler, handlerArgs, abortSignal)
     let input: z.infer<typeof TriageWorkflowInputSchema>
     try {
       input = TriageWorkflowInputSchema.parse(args)
@@ -2547,7 +2558,7 @@ export function createTriageWorkflowHandler(
 
     try {
       if (dependencies.analyzeStart) {
-        const delegated = await dependencies.analyzeStart({
+        const delegated = await runHandler(dependencies.analyzeStart, {
           sample_id: input.sample_id,
           goal: 'triage',
           depth: input.depth,
@@ -2611,7 +2622,7 @@ export function createTriageWorkflowHandler(
 
       // Step 1: PE Fingerprint (fast mode)
       // Requirement: 15.1
-      const fingerprintResult = await peFingerprintHandler({
+      const fingerprintResult = await runHandler(peFingerprintHandler, {
         sample_id: input.sample_id,
         fast: true,
         force_refresh: input.force_refresh,
@@ -2626,7 +2637,7 @@ export function createTriageWorkflowHandler(
 
       // Step 2: Runtime Detection
       // Requirement: 15.1
-      const runtimeResult = await runtimeDetectHandler({
+      const runtimeResult = await runHandler(runtimeDetectHandler, {
         sample_id: input.sample_id,
         force_refresh: input.force_refresh,
       })
@@ -2640,7 +2651,7 @@ export function createTriageWorkflowHandler(
 
       // Step 3: Import Table Extraction
       // Requirement: 15.1
-      const importsResult = await peImportsExtractHandler({
+      const importsResult = await runHandler(peImportsExtractHandler, {
         sample_id: input.sample_id,
         group_by_dll: true,
         force_refresh: input.force_refresh,
@@ -2655,7 +2666,7 @@ export function createTriageWorkflowHandler(
 
       // Step 4: String Extraction
       // Requirement: 15.1
-      const stringsResult = await stringsExtractHandler({
+      const stringsResult = await runHandler(stringsExtractHandler, {
         sample_id: input.sample_id,
         min_len: 6,
         encoding: 'all',
@@ -2671,7 +2682,7 @@ export function createTriageWorkflowHandler(
 
       // Step 5: YARA Scan
       // Requirement: 15.1
-      const yaraResult = await yaraScanHandler({
+      const yaraResult = await runHandler(yaraScanHandler, {
         sample_id: input.sample_id,
         rule_set: 'malware_families',
         rule_tier: 'production',
@@ -2686,7 +2697,7 @@ export function createTriageWorkflowHandler(
       }
 
       // Step 6: Static capability triage
-      const staticCapabilityResult = await staticCapabilityTriageHandler({
+      const staticCapabilityResult = await runHandler(staticCapabilityTriageHandler, {
         sample_id: input.sample_id,
       })
       if (!staticCapabilityResult.ok) {
@@ -2697,7 +2708,7 @@ export function createTriageWorkflowHandler(
       }
 
       // Step 7: Canonical PE structure analysis
-      const peStructureResult = await peStructureAnalyzeHandler({
+      const peStructureResult = await runHandler(peStructureAnalyzeHandler, {
         sample_id: input.sample_id,
       })
       if (!peStructureResult.ok) {
@@ -2708,7 +2719,7 @@ export function createTriageWorkflowHandler(
       }
 
       // Step 8: Compiler / packer attribution
-      const compilerPackerResult = await compilerPackerDetectHandler({
+      const compilerPackerResult = await runHandler(compilerPackerDetectHandler, {
         sample_id: input.sample_id,
       })
       if (!compilerPackerResult.ok) {
@@ -2719,7 +2730,7 @@ export function createTriageWorkflowHandler(
       }
 
       // Step 9: Compact string/Xref context correlation
-      const stringContextResult = await analysisContextLinkHandler({
+      const stringContextResult = await runHandler(analysisContextLinkHandler, {
         sample_id: input.sample_id,
         include_decoded: true,
         max_records: 40,
@@ -3011,7 +3022,7 @@ export function createTriageWorkflowHandler(
       let rizinEnrichment: unknown = null
 
       if (selectedBackends.has('upx.inspect')) {
-        const upxResult = await upxInspectHandler({
+        const upxResult = await runHandler(upxInspectHandler, {
           sample_id: input.sample_id,
           operation: 'test',
           timeout_sec: 20,
@@ -3033,7 +3044,7 @@ export function createTriageWorkflowHandler(
       }
 
       if (selectedBackends.has('yara_x.scan') && defaultYaraXRulesPath) {
-        const yaraXResult = await yaraXScanHandler({
+        const yaraXResult = await runHandler(yaraXScanHandler, {
           sample_id: input.sample_id,
           rules_path: defaultYaraXRulesPath,
           timeout_sec: 25,
@@ -3061,7 +3072,7 @@ export function createTriageWorkflowHandler(
           : !peStructureResult.ok
             ? 'sections'
             : 'info'
-        const rizinResult = await rizinAnalyzeHandler({
+        const rizinResult = await runHandler(rizinAnalyzeHandler, {
           sample_id: input.sample_id,
           operation: rizinOperation,
           max_items: 20,
@@ -3331,6 +3342,7 @@ export function createTriageWorkflowHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [(error as Error).message, ...errors],

@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals'
 import fs from 'fs'
 import path from 'path'
@@ -141,7 +142,7 @@ describe('pe.security.profile tool', () => {
 
     workspaceManager = new WorkspaceManager(testWorkspaceRoot)
     database = new DatabaseManager(testDbPath)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '8'.repeat(64),
       md5: '8'.repeat(32),

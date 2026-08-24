@@ -3587,6 +3587,13 @@ describe('built-in plugin format matrix discovery', () => {
         evidence: ['signatures', 'workflow', 'provenance'],
         safety: ['passive', 'opt_in_dynamic', 'requires_isolation', 'no_live_sample_by_default'],
         runtimeBackends: ['debugger', 'sandbox', 'qiling', 'frida'],
+        harnessOptions: {
+          deps: {
+            ...passiveDeps.deps,
+            policyGuard: {},
+            sampleOperationGate: {},
+          },
+        },
       },
       {
         pluginId: 'similarity',

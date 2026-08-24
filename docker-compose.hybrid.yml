@@ -16,14 +16,14 @@ services:
     image: rikune-analyzer:latest
     build:
       context: .
-      dockerfile: docker/Dockerfile.analyzer
+      dockerfile: docker/Dockerfile.hybrid
       args:
         ANGR_VERSION: "9.2.205"
         CAPA_RULES_VERSION: "v9.3.1"
         CAPA_VERSION: "9.3.1"
         DIE_RELEASE_CHANNEL: "3.10"
         DIE_VERSION: "3.10"
-        GHIDRA_VERSION: "12.0.4"
+        GHIDRA_VERSION: "12.1.3"
         GORESYM_VERSION: "3.3"
         http_proxy: "${RIKUNE_BUILD_HTTP_PROXY:-}"
         HTTP_PROXY: "${RIKUNE_BUILD_HTTP_PROXY:-}"
@@ -31,13 +31,14 @@ services:
         HTTPS_PROXY: "${RIKUNE_BUILD_HTTPS_PROXY:-}"
         ILSPYCMD_VERSION: "9.1.0.7988"
         JADX_VERSION: "1.5.1"
-        NO_PROXY: "${RIKUNE_BUILD_NO_PROXY:-localhost,127.0.0.1,deb.debian.org,security.debian.org,mirrors.aliyun.com,archive.ubuntu.com,security.ubuntu.com,aliyuncs.com}"
+        NO_PROXY: "${RIKUNE_BUILD_NO_PROXY:-localhost,127.0.0.1,deb.debian.org,security.debian.org,archive.ubuntu.com,security.ubuntu.com}"
         RETDEC_VERSION: "5.0"
         RIZIN_VERSION: "0.8.2"
         UPX_VERSION: "5.1.1"
         WABT_VERSION: "1.0.39"
     container_name: rikune-analyzer
-    user: appuser
+    # A root operator can replace the entrypoint/user; deployment admission is the trust boundary.
+    user: "1000:1000"
     stdin_open: true
     tty: true
     security_opt:
@@ -45,6 +46,8 @@ services:
     cap_drop:
       - ALL
     read_only: true
+    mem_limit: 8g
+    pids_limit: 512
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=512m
     deploy:
@@ -52,6 +55,7 @@ services:
         limits:
           memory: 8G
           cpus: '2'
+          pids: 512
         reservations:
           memory: 2G
     volumes:
@@ -112,10 +116,11 @@ services:
       - RUNTIME_HOST_AGENT_ENDPOINT=${RUNTIME_HOST_AGENT_ENDPOINT:-}
       - RUNTIME_HOST_AGENT_API_KEY=${RUNTIME_HOST_AGENT_API_KEY:-}
       - RUNTIME_API_KEY=${RUNTIME_API_KEY:-}
+      - RIKUNE_ALLOW_INSECURE_RUNTIME_HTTP=${RIKUNE_ALLOW_INSECURE_RUNTIME_HTTP:-false}
       # API File Server
       - API_ENABLED=true
       - API_PORT=18080
-      # - API_KEY=your-secret-key-here
+      - API_KEY=${RIKUNE_API_KEY:?RIKUNE_API_KEY_required_when_API_ENABLED_true}
       - API_STORAGE_ROOT=/app/storage
       - API_MAX_FILE_SIZE=524288000
       - API_RETENTION_DAYS=30
@@ -126,7 +131,7 @@ services:
       retries: 3
       start_period: 10s
     ports:
-      - "18080:18080"
+      - "127.0.0.1:${RIKUNE_API_PORT:-18080}:18080"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

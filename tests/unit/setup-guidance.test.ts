@@ -12,6 +12,8 @@ import {
   buildFridaSetupActions,
   buildFridaRequiredUserInputs,
   buildDynamicDependencySetupActions,
+  getBaselinePythonInstallCommand,
+  getDynamicPythonInstallCommand,
   mergeSetupActions,
   mergeRequiredUserInputs,
   inferSetupGuidanceFromMessages,
@@ -55,7 +57,13 @@ describe('SetupActionSchema', () => {
   })
 
   test('should accept all valid action kinds', () => {
-    const validKinds = ['pip_install', 'install_package', 'set_env', 'provide_path', 'verify_install']
+    const validKinds = [
+      'pip_install',
+      'install_package',
+      'set_env',
+      'provide_path',
+      'verify_install',
+    ]
 
     validKinds.forEach((kind) => {
       const input = {
@@ -145,7 +153,7 @@ describe('buildFridaSetupActions', () => {
 
     pipActions.forEach((action) => {
       expect(action.command).toBeDefined()
-      expect(action.command?.includes('pip install')).toBe(true)
+      expect(action.command).toContain('pip install --require-hashes')
     })
   })
 
@@ -200,8 +208,31 @@ describe('buildDynamicDependencySetupActions', () => {
 
     pipActions.forEach((action) => {
       expect(action.command).toBeDefined()
-      expect(action.command?.includes('pip install')).toBe(true)
+      expect(action.command).toContain('--require-hashes')
     })
+    const qilingAction = actions.find((action) => action.id === 'configure_qiling_python')
+    expect(qilingAction).toEqual(
+      expect.objectContaining({
+        kind: 'set_env',
+        env_var: 'QILING_PYTHON',
+      })
+    )
+    expect(qilingAction?.command).toBeUndefined()
+  })
+
+  test('should choose platform-specific hash locks', () => {
+    expect(getBaselinePythonInstallCommand('linux')).toBe(
+      'python -m pip install --require-hashes -r requirements.lock.txt'
+    )
+    expect(getBaselinePythonInstallCommand('win32')).toBe(
+      'python -m pip install --require-hashes -r requirements.windows.lock.txt'
+    )
+    expect(getDynamicPythonInstallCommand('linux')).toBe(
+      'python -m pip install --require-hashes -r workers/requirements-dynamic.lock.txt'
+    )
+    expect(getDynamicPythonInstallCommand('win32')).toBe(
+      'python -m pip install --require-hashes -r workers/requirements-dynamic.windows.lock.txt'
+    )
   })
 })
 
@@ -220,8 +251,9 @@ describe('buildCoreLinuxToolchainSetupActions', () => {
 })
 
 describe('buildDynamicDependencyRequiredUserInputs', () => {
-  test('should include Qiling rootfs input', () => {
+  test('should include externally audited Qiling interpreter and rootfs inputs', () => {
     const inputs = buildDynamicDependencyRequiredUserInputs()
+    expect(inputs.map((item) => item.key)).toContain('qiling_python_path')
     expect(inputs.map((item) => item.key)).toContain('qiling_rootfs_path')
   })
 })
@@ -238,12 +270,44 @@ describe('buildHeavyBackendSetupActions', () => {
 describe('mergeSetupActions', () => {
   test('should merge multiple action groups without duplicates', () => {
     const group1 = [
-      { id: 'action1', required: true, kind: 'pip_install' as const, title: 'A1', summary: 'S1', examples: [], applies_to: [] },
-      { id: 'action2', required: false, kind: 'set_env' as const, title: 'A2', summary: 'S2', examples: [], applies_to: [] },
+      {
+        id: 'action1',
+        required: true,
+        kind: 'pip_install' as const,
+        title: 'A1',
+        summary: 'S1',
+        examples: [],
+        applies_to: [],
+      },
+      {
+        id: 'action2',
+        required: false,
+        kind: 'set_env' as const,
+        title: 'A2',
+        summary: 'S2',
+        examples: [],
+        applies_to: [],
+      },
     ]
     const group2 = [
-      { id: 'action2', required: true, kind: 'set_env' as const, title: 'A2 Updated', summary: 'S2 Updated', examples: [], applies_to: [] },
-      { id: 'action3', required: false, kind: 'verify_install' as const, title: 'A3', summary: 'S3', examples: [], applies_to: [] },
+      {
+        id: 'action2',
+        required: true,
+        kind: 'set_env' as const,
+        title: 'A2 Updated',
+        summary: 'S2 Updated',
+        examples: [],
+        applies_to: [],
+      },
+      {
+        id: 'action3',
+        required: false,
+        kind: 'verify_install' as const,
+        title: 'A3',
+        summary: 'S3',
+        examples: [],
+        applies_to: [],
+      },
     ]
 
     const merged = mergeSetupActions(group1, group2)
@@ -265,7 +329,15 @@ describe('mergeSetupActions', () => {
 
   test('should handle single group', () => {
     const group = [
-      { id: 'solo', required: true, kind: 'pip_install' as const, title: 'Solo', summary: 'Solo', examples: [], applies_to: [] },
+      {
+        id: 'solo',
+        required: true,
+        kind: 'pip_install' as const,
+        title: 'Solo',
+        summary: 'Solo',
+        examples: [],
+        applies_to: [],
+      },
     ]
     const merged = mergeSetupActions(group)
     expect(merged.length).toBe(1)
@@ -280,7 +352,14 @@ describe('mergeRequiredUserInputs', () => {
       { key: 'input2', label: 'I2', summary: 'S2', required: false, env_vars: [], examples: [] },
     ]
     const group2 = [
-      { key: 'input2', label: 'I2 Updated', summary: 'S2 Updated', required: true, env_vars: [], examples: [] },
+      {
+        key: 'input2',
+        label: 'I2 Updated',
+        summary: 'S2 Updated',
+        required: true,
+        env_vars: [],
+        examples: [],
+      },
       { key: 'input3', label: 'I3', summary: 'S3', required: false, env_vars: [], examples: [] },
     ]
 
@@ -320,12 +399,17 @@ describe('inferSetupGuidanceFromMessages', () => {
   })
 
   test('should infer Linux full-stack setup actions from Docker toolchain errors', () => {
-    const messages = ['Graphviz not found', 'qiling module missing', 'retdec-decompiler unavailable']
+    const messages = [
+      'Graphviz not found',
+      'qiling module missing',
+      'retdec-decompiler unavailable',
+    ]
     const result = inferSetupGuidanceFromMessages(messages)
 
     expect(result.setupActions.map((a) => a.id)).toContain('install_graphviz_package')
-    expect(result.setupActions.map((a) => a.id)).toContain('install_qiling_runtime')
+    expect(result.setupActions.map((a) => a.id)).toContain('configure_qiling_python')
     expect(result.setupActions.map((a) => a.id)).toContain('install_retdec_backend')
+    expect(result.requiredUserInputs.map((i) => i.key)).toContain('qiling_python_path')
     expect(result.requiredUserInputs.map((i) => i.key)).toContain('qiling_rootfs_path')
   })
 

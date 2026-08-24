@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals'
 import fs from 'fs'
 import path from 'path'
@@ -24,7 +25,7 @@ describe('compiler.packer.detect noisy backend output', () => {
     database = new DatabaseManager(dbPath)
     workspaceManager = new WorkspaceManager(workspaceRoot)
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: sampleSha,
       md5: 'b'.repeat(32),

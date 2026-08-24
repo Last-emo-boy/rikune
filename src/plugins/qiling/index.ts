@@ -50,9 +50,14 @@ const qilingPlugin: Plugin = {
       envVar: 'QILING_PYTHON',
       dockerDefault: '/opt/qiling-venv/bin/python',
       required: false,
-      description: 'Qiling emulation framework (venv)',
-      dockerInstall: 'python3 -m venv /opt/qiling-venv && pip install qiling',
+      description: 'Externally managed, security-audited Qiling emulation environment',
+      dockerInstall:
+        'Provide a separately managed Qiling environment and point QILING_PYTHON at its interpreter',
       dockerFeature: 'qiling',
+      dockerInstallRoute: 'validation-only',
+      dockerInstallNotes: [
+        'Automatic installation is disabled because Qiling 1.4.6 requires Pillow <11, which is below the v1.4.0 vulnerability baseline.',
+      ],
       dockerValidation: ['/opt/qiling-venv/bin/python -c "import qiling; print(\'✓ qiling\')"'],
       extraEnv: { QILING_ROOTFS: '/opt/qiling-rootfs' },
       directories: [{ path: '/opt/qiling-rootfs', chown: 'appuser:appuser' }],

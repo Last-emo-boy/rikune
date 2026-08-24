@@ -15,6 +15,7 @@ import {
   type ArtifactRef,
   type PluginToolDeps,
 } from '../../sdk.js'
+import { createSampleFinalizationService } from '../../../sample/sample-finalization.js'
 
 const TOOL_NAME = 'patch.generate'
 
@@ -169,6 +170,15 @@ export function createPatchGenerateHandler(deps: PluginToolDeps) {
     resolvePrimarySamplePath,
     persistStaticAnalysisJsonArtifact,
   } = deps
+  if (!policyGuard || !deps.sampleOperationGate) {
+    throw new Error('patch.generate requires PolicyGuard and SampleOperationGate')
+  }
+  const finalizer = createSampleFinalizationService(
+    workspaceManager,
+    database,
+    policyGuard,
+    deps.sampleOperationGate
+  )
 
   return async (args: z.infer<typeof PatchGenerateInputSchema>): Promise<WorkerResult> => {
     const t0 = Date.now()
@@ -325,25 +335,13 @@ export function createPatchGenerateHandler(deps: PluginToolDeps) {
       // Generate patched binary
       let patchedSampleId: string | null = null
       if (args.output_format === 'patched_binary' || args.output_format === 'both') {
-        const hash = crypto.createHash('sha256').update(patchedData).digest('hex')
-        patchedSampleId = `sha256:${hash}`
-        const patchedWorkspace = await workspaceManager.createWorkspace(patchedSampleId)
-        const patchedPath = path.join(patchedWorkspace.original, 'sample.bin')
-        await fs.writeFile(patchedPath, patchedData)
-
-        try {
-          database.insertSample({
-            id: patchedSampleId,
-            sha256: hash,
-            md5: null,
-            size: patchedData.length,
-            file_type: sample.file_type,
-            created_at: new Date().toISOString(),
-            source: `patched_from:${args.sample_id}`,
-          })
-        } catch {
-          /* may already exist */
-        }
+        const finalized = await finalizer.finalizeBuffer({
+          data: patchedData,
+          filename: 'sample.bin',
+          source: `patched_from:${args.sample_id}`,
+          auditOperation: TOOL_NAME,
+        })
+        patchedSampleId = finalized.sample_id
 
         try {
           const artRef = await persistStaticAnalysisJsonArtifact(

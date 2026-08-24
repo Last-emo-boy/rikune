@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals'
 import fs from 'fs/promises'
 import os from 'os'
@@ -154,7 +155,7 @@ describe('context write leases', () => {
     const sampleId = `sha256:${sampleSha256}`
     const lockKey = 'claim:artifact-fence'
     const takeoverToken = 'owner-takeover'
-    databaseA.insertSample({
+    databaseA.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: sampleSha256,
       md5: null,

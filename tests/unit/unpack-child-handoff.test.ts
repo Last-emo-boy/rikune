@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from '../../src/database.js'
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals'
 import fs from 'fs'
 import os from 'os'
@@ -5,6 +6,9 @@ import path from 'path'
 import { createHash } from 'crypto'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
+import { PolicyGuard } from '../../src/policy-guard.js'
+import { SampleOperationGate } from '../../src/sample/sample-operation-gate.js'
+import { createSampleFinalizationService } from '../../src/sample/sample-finalization.js'
 import { persistStaticAnalysisJsonArtifact } from '../../src/artifacts/static-analysis-artifacts.js'
 import {
   createUnpackChildHandoffHandler,
@@ -39,6 +43,8 @@ describe('unpack.child.handoff tool', () => {
   let tempRoot: string
   let workspaceManager: WorkspaceManager
   let database: DatabaseManager
+  let sampleOperationGate: SampleOperationGate
+  let finalizer: ReturnType<typeof createSampleFinalizationService>
   let childPayload: Buffer
   let childOffset: number
 
@@ -46,13 +52,20 @@ describe('unpack.child.handoff tool', () => {
     tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rikune-unpack-child-'))
     workspaceManager = new WorkspaceManager(path.join(tempRoot, 'workspaces'))
     database = new DatabaseManager(path.join(tempRoot, 'rikune.db'))
+    sampleOperationGate = new SampleOperationGate(database)
+    finalizer = createSampleFinalizationService(
+      workspaceManager,
+      database,
+      new PolicyGuard(path.join(tempRoot, 'audit.log')),
+      sampleOperationGate
+    )
 
     const primary = createMinimalPe(0)
     childPayload = createMinimalPe(0x41)
     const padding = Buffer.from('embedded-resource-padding', 'ascii')
     childOffset = primary.length + padding.length
     const sampleBytes = Buffer.concat([primary, padding, childPayload])
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: SAMPLE_ID,
       sha256: SAMPLE_HASH,
       md5: '9'.repeat(32),
@@ -64,23 +77,32 @@ describe('unpack.child.handoff tool', () => {
     const workspace = await workspaceManager.createWorkspace(SAMPLE_ID)
     fs.writeFileSync(path.join(workspace.original, 'packed.exe'), sampleBytes)
 
-    await persistStaticAnalysisJsonArtifact(workspaceManager, database, SAMPLE_ID, 'static_resource_graph', 'resource_graph', {
-      schema: 'rikune.static_resource_graph.v1',
-      resources: [
-        {
-          path: ['resources', 'id_10', 'id_1033'],
-          dataOffset: childOffset,
-          size: childPayload.length,
-          magic: 'pe_or_dos',
-          entropy: 6.7,
-          sha256: createHash('sha256').update(childPayload).digest('hex'),
-        },
-      ],
-    }, 'resource-session')
+    await persistStaticAnalysisJsonArtifact(
+      workspaceManager,
+      database,
+      SAMPLE_ID,
+      'static_resource_graph',
+      'resource_graph',
+      {
+        schema: 'rikune.static_resource_graph.v1',
+        resources: [
+          {
+            path: ['resources', 'id_10', 'id_1033'],
+            dataOffset: childOffset,
+            size: childPayload.length,
+            magic: 'pe_or_dos',
+            entropy: 6.7,
+            sha256: createHash('sha256').update(childPayload).digest('hex'),
+          },
+        ],
+      },
+      'resource-session'
+    )
   })
 
   afterEach(() => {
     try {
+      sampleOperationGate.close()
       database.close()
     } catch {
       // ignore cleanup races in failed tests
@@ -94,7 +116,11 @@ describe('unpack.child.handoff tool', () => {
   })
 
   test('registers embedded payload candidates as child samples', async () => {
-    const result = await createUnpackChildHandoffHandler(workspaceManager, database)({
+    const result = await createUnpackChildHandoffHandler(
+      workspaceManager,
+      database,
+      finalizer
+    )({
       sample_id: SAMPLE_ID,
       resource_scope: 'session',
       resource_session_tag: 'resource-session',
@@ -111,9 +137,13 @@ describe('unpack.child.handoff tool', () => {
     expect(data.summary.candidate_count).toBeGreaterThanOrEqual(1)
     expect(data.summary.registered_child_count).toBeGreaterThanOrEqual(1)
     expect(data.candidates.some((candidate: any) => candidate.sha256 === childSha256)).toBe(true)
-    expect(data.registered_children.some((child: any) => child.sample_id === childSampleId)).toBe(true)
+    expect(data.registered_children.some((child: any) => child.sample_id === childSampleId)).toBe(
+      true
+    )
     expect(database.findSample(childSampleId)).toBeTruthy()
-    expect(database.findArtifactsByType(SAMPLE_ID, 'unpack_child_payload').length).toBeGreaterThanOrEqual(1)
+    expect(
+      database.findArtifactsByType(SAMPLE_ID, 'unpack_child_payload').length
+    ).toBeGreaterThanOrEqual(1)
     expect(database.findArtifactsByType(SAMPLE_ID, 'unpack_child_handoff')).toHaveLength(1)
   })
 })

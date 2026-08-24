@@ -116,7 +116,12 @@ describe('unpack.workflow.plan', () => {
 
   test('registers unpack workflow recipe metadata', () => {
     const harness = createPluginTestHarness({
-      deps: { workspaceManager: {}, database: {} },
+      deps: {
+        workspaceManager: {},
+        database: {},
+        policyGuard: {},
+        sampleOperationGate: {},
+      },
     })
     const names = harness.registerPlugin(unpackingPlugin)
     const tool = harness.registeredTools.find(
@@ -129,6 +134,19 @@ describe('unpack.workflow.plan', () => {
         id: 'unpacking.detect-plan-retriage',
         runtimeBackends: expect.arrayContaining(['debugger', 'frida']),
       })
+    )
+  })
+
+  test.each([
+    ['PolicyGuard', { sampleOperationGate: {} }],
+    ['SampleOperationGate', { policyGuard: {} }],
+  ])('fails closed when %s is missing', (_missingDependency, deps) => {
+    const harness = createPluginTestHarness({
+      deps: { workspaceManager: {}, database: {}, ...deps },
+    })
+
+    expect(() => harness.registerPlugin(unpackingPlugin)).toThrow(
+      'unpacking plugin requires PolicyGuard and SampleOperationGate'
     )
   })
 })

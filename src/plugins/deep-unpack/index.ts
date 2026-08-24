@@ -77,8 +77,14 @@ const deepUnpackPlugin: Plugin = {
       envVar: 'QILING_PYTHON',
       dockerDefault: '/opt/qiling-venv/bin/python',
       required: false,
-      description: 'Qiling full-system emulator for advanced unpacking',
+      description: 'Externally managed, security-audited Qiling emulator for advanced unpacking',
+      dockerInstall:
+        'Provide a separately managed Qiling environment and point QILING_PYTHON at its interpreter',
       dockerFeature: 'qiling',
+      dockerInstallRoute: 'validation-only',
+      dockerInstallNotes: [
+        'Automatic installation is disabled because Qiling 1.4.6 requires Pillow <11, which is below the v1.4.0 vulnerability baseline.',
+      ],
       dockerValidation: [
         '/opt/qiling-venv/bin/python -c "import qiling; print(qiling.__version__)"',
       ],

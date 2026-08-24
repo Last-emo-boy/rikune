@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
 import fs from 'fs'
 import path from 'path'
@@ -43,7 +44,7 @@ describe('dynamic.trace.import tool', () => {
 
   test('should import inline runtime trace and persist artifact plus analysis record', async () => {
     const sampleId = 'sha256:' + '1'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '1'.repeat(64),
       md5: '1'.repeat(32),
@@ -111,7 +112,7 @@ describe('dynamic.trace.import tool', () => {
 
   test('should auto-normalize sandbox-like payloads as hybrid evidence', async () => {
     const sampleId = 'sha256:' + '2'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '2'.repeat(64),
       md5: '2'.repeat(32),
@@ -176,7 +177,7 @@ describe('dynamic.trace.import tool', () => {
 
   test('should auto-normalize behavior capture artifacts through embedded normalized trace', async () => {
     const sampleId = 'sha256:' + '3'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '3'.repeat(64),
       md5: '3'.repeat(32),

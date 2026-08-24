@@ -3,7 +3,6 @@
  * Dynamic-analysis execution entrypoint supporting simulation-first and Speakeasy user-mode emulation.
  */
 
-import { spawn } from 'child_process'
 import { existsSync } from 'fs'
 import fs from 'fs/promises'
 import path from 'path'
@@ -25,6 +24,8 @@ import type { PolicyGuard } from '../../../policy-guard.js'
 import { normalizeDynamicTraceArtifactPayload } from '../../../artifacts/dynamic-trace.js'
 import { resolvePackagePath } from '../../../runtime-paths.js'
 import { getPythonCommand } from '../../../utils/shared-helpers.js'
+import { runAbortableProcess } from '../../../worker/abortable-process.js'
+import { throwIfAnalysisAborted } from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'sandbox.execute'
 const TOOL_VERSION = '0.1.0'
@@ -396,58 +397,38 @@ interface SandboxPayload {
 }
 
 interface SandboxExecuteDependencies {
-  callWorker?: (request: WorkerRequest) => Promise<WorkerResponse>
+  callWorker?: (request: WorkerRequest, abortSignal?: AbortSignal) => Promise<WorkerResponse>
 }
 
-async function callStaticWorker(request: WorkerRequest): Promise<WorkerResponse> {
-  return new Promise((resolve, reject) => {
-    const workerPath = resolvePackagePath('workers', 'static_worker.py')
-    const pythonCommand = getPythonCommand()
-    const child = spawn(pythonCommand, [workerPath], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-
-    let stdout = ''
-    let stderr = ''
-
-    child.stdout.on('data', (data) => {
-      stdout += data.toString()
-    })
-
-    child.stderr.on('data', (data) => {
-      stderr += data.toString()
-    })
-
-    child.on('error', (error) => {
-      reject(new Error(`Failed to spawn Python worker: ${error.message}`))
-    })
-
-    child.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`Python worker exited with code ${code}. stderr: ${stderr}`))
-        return
-      }
-
-      try {
-        const lines = stdout.trim().split('\n')
-        const lastLine = lines[lines.length - 1]
-        resolve(JSON.parse(lastLine) as WorkerResponse)
-      } catch (error) {
-        reject(
-          new Error(
-            `Failed to parse worker response: ${(error as Error).message}. stdout: ${stdout}`
-          )
-        )
-      }
-    })
-
-    try {
-      child.stdin.write(JSON.stringify(request) + '\n')
-      child.stdin.end()
-    } catch (error) {
-      reject(new Error(`Failed to write to worker stdin: ${(error as Error).message}`))
-    }
+async function callStaticWorker(
+  request: WorkerRequest,
+  abortSignal?: AbortSignal
+): Promise<WorkerResponse> {
+  const workerPath = resolvePackagePath('workers', 'static_worker.py')
+  const requestedSeconds = Number(request.args.timeout_sec || 20)
+  const result = await runAbortableProcess({
+    command: getPythonCommand(),
+    args: [workerPath],
+    cwd: process.cwd(),
+    stdin: `${JSON.stringify(request)}\n`,
+    timeoutMs: Math.max(5_000, requestedSeconds * 1_000),
+    abortSignal,
   })
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `Python worker exited with code ${result.exitCode ?? 'unknown'}. stderr: ${result.stderr}`
+    )
+  }
+
+  try {
+    const lines = result.stdout.trim().split('\n')
+    const lastLine = lines[lines.length - 1]
+    return JSON.parse(lastLine) as WorkerResponse
+  } catch (error) {
+    throw new Error(
+      `Failed to parse worker response: ${(error as Error).message}. stdout: ${result.stdout}`
+    )
+  }
 }
 
 function mergeWarnings(...warningLists: Array<string[] | undefined>): string[] | undefined {
@@ -603,8 +584,9 @@ export function createSandboxExecuteHandler(
   dependencies?: SandboxExecuteDependencies
 ) {
   const runWorker = dependencies?.callWorker || callStaticWorker
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const startTime = Date.now()
+    throwIfAnalysisAborted(abortSignal)
     // Backend gate
     const workerPath = resolvePackagePath('workers', 'static_worker.py')
     if (!existsSync(workerPath)) {
@@ -616,6 +598,7 @@ export function createSandboxExecuteHandler(
     }
 
     try {
+      throwIfAnalysisAborted(abortSignal)
       const input = SandboxExecuteInputSchema.parse(args)
       const sample = database.findSample(input.sample_id)
       if (!sample) {
@@ -645,6 +628,7 @@ export function createSandboxExecuteHandler(
           timestamp: new Date().toISOString(),
         }
       )
+      throwIfAnalysisAborted(abortSignal)
 
       await policyGuard.auditLog({
         timestamp: new Date().toISOString(),
@@ -657,6 +641,7 @@ export function createSandboxExecuteHandler(
           network: input.network,
         },
       })
+      throwIfAnalysisAborted(abortSignal)
 
       if (!policyDecision.allowed) {
         const approvalHint = policyDecision.requiresApproval
@@ -675,6 +660,7 @@ export function createSandboxExecuteHandler(
 
       const workspace = await workspaceManager.getWorkspace(input.sample_id)
       const files = await fs.readdir(workspace.original)
+      throwIfAnalysisAborted(abortSignal)
       if (files.length === 0) {
         return {
           ok: false,
@@ -712,7 +698,10 @@ export function createSandboxExecuteHandler(
         },
       }
 
-      const workerResponse = await runWorker(request)
+      const workerResponse = abortSignal
+        ? await runWorker(request, abortSignal)
+        : await runWorker(request)
+      throwIfAnalysisAborted(abortSignal)
       if (!workerResponse.ok) {
         return {
           ok: false,
@@ -735,6 +724,7 @@ export function createSandboxExecuteHandler(
       if (input.persist_artifact) {
         const reportDir = path.join(workspace.reports, 'dynamic')
         await fs.mkdir(reportDir, { recursive: true })
+        throwIfAnalysisAborted(abortSignal)
 
         const persistTimestamp = Date.now()
         const fileName = `sandbox_${persistTimestamp}.json`
@@ -777,6 +767,7 @@ export function createSandboxExecuteHandler(
         ])
         const serialized = JSON.stringify(persistedEnvelope, null, 2)
         await fs.writeFile(absPath, serialized, 'utf-8')
+        throwIfAnalysisAborted(abortSignal)
 
         const artifactSha256 = createHash('sha256').update(serialized).digest('hex')
 
@@ -808,6 +799,7 @@ export function createSandboxExecuteHandler(
           normalizedSerialized
         ) {
           await fs.writeFile(normalizedAbsPath, normalizedSerialized, 'utf-8')
+          throwIfAnalysisAborted(abortSignal)
 
           const normalizedSha256 = createHash('sha256').update(normalizedSerialized).digest('hex')
 
@@ -875,6 +867,7 @@ export function createSandboxExecuteHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [(error as Error).message],

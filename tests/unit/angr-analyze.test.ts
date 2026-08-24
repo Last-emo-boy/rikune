@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals'
 import fs from 'fs/promises'
 import path from 'path'
@@ -47,7 +48,7 @@ describe('angr.analyze', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'angr-analyze-test-'))
     workspaceManager = new WorkspaceManager(path.join(tempDir, 'workspaces'))
     database = new DatabaseManager(path.join(tempDir, 'test.db'))
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '3'.repeat(64),
       md5: '3'.repeat(32),

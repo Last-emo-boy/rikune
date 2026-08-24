@@ -6,7 +6,6 @@
 import { createHash, randomUUID } from 'crypto'
 import fs from 'fs/promises'
 import path from 'path'
-import { spawn } from 'child_process'
 import { z } from 'zod'
 import type { ToolDefinition, ToolArgs, WorkerResult, ArtifactRef } from '../../../types.js'
 import { normalizeError, clamp } from '../../../utils/shared-helpers.js'
@@ -27,6 +26,12 @@ import {
 import { findBestGhidraAnalysis } from '../../../ghidra/ghidra-analysis-status.js'
 import { CACHE_TTL_7_DAYS } from '../../../constants/cache-ttl.js'
 import { DOTNET_RECONSTRUCT_EXPORT_METADATA } from './code-analysis-metadata.js'
+import { runAbortableProcess } from '../../../worker/abortable-process.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'dotnet.reconstruct.export'
 const TOOL_VERSION = '0.2.0'
@@ -282,14 +287,15 @@ interface BuildValidationResult {
 }
 
 interface DotNetReconstructDependencies {
-  runtimeDetectHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  packerDetectHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  reconstructExportHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  dotNetMetadataHandler?: (args: ToolArgs) => Promise<WorkerResult>
+  runtimeDetectHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  packerDetectHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  reconstructExportHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  dotNetMetadataHandler?: AbortableHandler<ToolArgs, WorkerResult>
   buildValidator?: (
     csprojPath: string,
     cwd: string,
-    timeoutMs: number
+    timeoutMs: number,
+    abortSignal?: AbortSignal
   ) => Promise<BuildValidationResult>
 }
 
@@ -807,89 +813,24 @@ function buildValidationLog(validation: BuildValidationResult): string {
 async function runDotNetBuildValidation(
   csprojPath: string,
   cwd: string,
-  timeoutMs: number
+  timeoutMs: number,
+  abortSignal?: AbortSignal
 ): Promise<BuildValidationResult> {
-  return new Promise((resolve) => {
-    const args = ['build', csprojPath, '-nologo', '-v', 'minimal']
-    const command = 'dotnet'
-    const commandDisplay = `${command} ${args.map((arg) => `"${arg}"`).join(' ')}`
-    const effectiveTimeoutMs = Math.max(5000, timeoutMs)
-
-    const child = spawn(command, args, {
-      cwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    })
-
-    let stdout = ''
-    let stderr = ''
-    let settled = false
-    let timedOut = false
-
-    const finish = (result: BuildValidationResult) => {
-      if (settled) {
-        return
-      }
-      settled = true
-      clearTimeout(timer)
-      resolve(result)
-    }
-
-    const timer = setTimeout(() => {
-      timedOut = true
-      child.kill()
-      finish({
-        attempted: true,
-        status: 'failed',
-        command: commandDisplay,
-        dotnet_cli_available: true,
-        exit_code: null,
-        timed_out: true,
-        stdout,
-        stderr,
-        error: `dotnet build timed out after ${effectiveTimeoutMs}ms`,
-      })
-    }, effectiveTimeoutMs)
-
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString()
-    })
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString()
-    })
-
-    child.on('error', (error: NodeJS.ErrnoException) => {
-      const unavailable = error.code === 'ENOENT'
-      finish({
-        attempted: true,
-        status: unavailable ? 'unavailable' : 'failed',
-        command: commandDisplay,
-        dotnet_cli_available: !unavailable,
-        exit_code: null,
-        timed_out: false,
-        stdout,
-        stderr,
-        error: unavailable ? 'dotnet CLI is not available in PATH' : error.message,
-      })
-    })
-
-    child.on('close', (code) => {
-      if (timedOut) {
-        return
-      }
-      finish({
-        attempted: true,
-        status: code === 0 ? 'passed' : 'failed',
-        command: commandDisplay,
-        dotnet_cli_available: true,
-        exit_code: code ?? null,
-        timed_out: false,
-        stdout,
-        stderr,
-        error: code === 0 ? null : `dotnet build failed with exit code ${code ?? 'unknown'}`,
-      })
-    })
-  })
+  const args = ['build', csprojPath, '-nologo', '-v', 'minimal']
+  const command = 'dotnet'
+  const result = await runAbortableProcess({ command, args, cwd, timeoutMs, abortSignal })
+  const unavailable = Boolean(result.error && /enoent|not found/i.test(result.error))
+  return {
+    attempted: true,
+    status: unavailable ? 'unavailable' : result.exitCode === 0 ? 'passed' : 'failed',
+    command: `${command} ${args.map((arg) => `"${arg}"`).join(' ')}`,
+    dotnet_cli_available: !unavailable,
+    exit_code: result.exitCode,
+    timed_out: result.timedOut,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    error: unavailable ? 'dotnet CLI is not available in PATH' : result.error,
+  }
 }
 
 async function sha256File(filePath: string): Promise<string> {
@@ -917,11 +858,16 @@ export function createDotNetReconstructExportHandler(
     createDotNetMetadataExtractHandler(workspaceManager, database, cacheManager)
   const runBuildValidation = dependencies?.buildValidator || runDotNetBuildValidation
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const input = DotNetReconstructExportInputSchema.parse(args)
     const startTime = Date.now()
+    const runHandler = <TArgs, TResult>(
+      handler: AbortableHandler<TArgs, TResult>,
+      handlerArgs: TArgs
+    ) => invokeAbortable(handler, handlerArgs, abortSignal)
 
     try {
+      throwIfAnalysisAborted(abortSignal)
       const sample = database.findSample(input.sample_id)
       if (!sample) {
         return {
@@ -930,7 +876,9 @@ export function createDotNetReconstructExportHandler(
         }
       }
 
-      const runtimeResult = await runtimeDetectHandler({ sample_id: input.sample_id })
+      const runtimeResult = await runHandler(runtimeDetectHandler, {
+        sample_id: input.sample_id,
+      })
       if (!runtimeResult.ok || !runtimeResult.data) {
         return {
           ok: false,
@@ -992,6 +940,7 @@ export function createDotNetReconstructExportHandler(
 
       if (input.reuse_cached) {
         const cachedLookup = await lookupCachedResult(cacheManager, cacheKey)
+        throwIfAnalysisAborted(abortSignal)
         if (cachedLookup) {
           return {
             ok: true,
@@ -1012,7 +961,7 @@ export function createDotNetReconstructExportHandler(
       }
 
       const warnings: string[] = []
-      const packerResult = await packerDetectHandler({
+      const packerResult = await runHandler(packerDetectHandler, {
         sample_id: input.sample_id,
         engines: ['yara', 'entropy', 'entrypoint'],
       })
@@ -1032,7 +981,7 @@ export function createDotNetReconstructExportHandler(
         input.export_name ||
         `dotnet_${new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '')}`
       const nativeExportName = `${baseExportName}_native`
-      const reconstructExportResult = await reconstructExportHandler({
+      const reconstructExportResult = await runHandler(reconstructExportHandler, {
         sample_id: input.sample_id,
         topk: input.topk,
         module_limit: 8,
@@ -1061,7 +1010,7 @@ export function createDotNetReconstructExportHandler(
       }
 
       let managedMetadata: DotNetMetadataData | null = null
-      const metadataResult = await dotNetMetadataHandler({
+      const metadataResult = await runHandler(dotNetMetadataHandler, {
         sample_id: input.sample_id,
         include_types: input.include_metadata_types,
         include_methods: true,
@@ -1095,6 +1044,7 @@ export function createDotNetReconstructExportHandler(
       }
 
       const workspace = await workspaceManager.getWorkspace(input.sample_id)
+      throwIfAnalysisAborted(abortSignal)
       const dotnetExportRoot = path.join(workspace.reports, 'dotnet_reconstruct', baseExportName)
       const srcRoot = path.join(dotnetExportRoot, 'src')
       const moduleSrcRoot = path.join(srcRoot, 'modules')
@@ -1112,6 +1062,7 @@ export function createDotNetReconstructExportHandler(
 
       const classOutputs: Array<z.infer<typeof DotNetClassSchema>> = []
       for (const module of modules) {
+        throwIfAnalysisAborted(abortSignal)
         const className = `${toPascalCase(module.name)}Module`
         const classFile = path.join(moduleSrcRoot, `${className}.cs`)
         const classNamespace = buildNamespace(input.namespace, 'Modules')
@@ -1148,6 +1099,7 @@ export function createDotNetReconstructExportHandler(
       const usedMetadataFiles = new Set<string>()
       if (input.include_metadata_types && managedMetadata?.types?.length) {
         for (const typeInfo of managedMetadata.types) {
+          throwIfAnalysisAborted(abortSignal)
           const typeNamespaceSuffix =
             typeInfo.namespace && typeInfo.namespace.trim().length > 0
               ? `Types.${typeInfo.namespace}`
@@ -1228,8 +1180,10 @@ export function createDotNetReconstructExportHandler(
         buildValidation = await runBuildValidation(
           csprojPath,
           dotnetExportRoot,
-          input.build_timeout_ms
+          input.build_timeout_ms,
+          abortSignal
         )
+        throwIfAnalysisAborted(abortSignal)
         buildLogPath = path.join(dotnetExportRoot, 'BUILD_VALIDATION.log')
         await fs.writeFile(buildLogPath, buildValidationLog(buildValidation), 'utf-8')
 
@@ -1299,6 +1253,7 @@ export function createDotNetReconstructExportHandler(
 
       const artifacts: ArtifactRef[] = []
 
+      throwIfAnalysisAborted(abortSignal)
       const csprojSha = await sha256File(csprojPath)
       const csprojArtifactId = randomUUID()
       const csprojRelative = toPosixRelative(workspace.root, csprojPath)
@@ -1456,7 +1411,9 @@ export function createDotNetReconstructExportHandler(
         classes: classOutputs,
       }
 
+      throwIfAnalysisAborted(abortSignal)
       await cacheManager.setCachedResult(cacheKey, outputData, CACHE_TTL_MS, sample.sha256)
+      throwIfAnalysisAborted(abortSignal)
 
       return {
         ok: true,
@@ -1469,6 +1426,7 @@ export function createDotNetReconstructExportHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [normalizeError(error)],

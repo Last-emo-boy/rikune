@@ -8,6 +8,7 @@ import os from 'os'
 import path from 'path'
 import { DatabaseManager } from '../../src/database.js'
 import { PolicyGuard } from '../../src/policy-guard.js'
+import { SampleOperationGate } from '../../src/sample/sample-operation-gate.js'
 import { createSampleIngestHandler } from '../../src/tools/sample-ingest.js'
 import { createSampleProfileGetHandler } from '../../src/tools/sample-profile-get.js'
 import { createSampleRequestUploadHandler } from '../../src/tools/sample-request-upload.js'
@@ -18,21 +19,29 @@ describe('Sample Management', () => {
   let database: DatabaseManager
   let workspaceManager: WorkspaceManager
   let policyGuard: PolicyGuard
+  let sampleOperationGate: SampleOperationGate
 
   beforeEach(() => {
     testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sample-management-'))
     database = new DatabaseManager(path.join(testDir, 'test.db'))
+    sampleOperationGate = new SampleOperationGate(database)
     workspaceManager = new WorkspaceManager(path.join(testDir, 'workspaces'))
     policyGuard = new PolicyGuard(path.join(testDir, 'audit.log'))
   })
 
   afterEach(() => {
+    sampleOperationGate.close()
     database.close()
     fs.rmSync(testDir, { recursive: true, force: true })
   })
 
   test('ingests a sample and exposes a ready profile with workspace integrity', async () => {
-    const ingest = createSampleIngestHandler(workspaceManager, database, policyGuard)
+    const ingest = createSampleIngestHandler(
+      workspaceManager,
+      database,
+      policyGuard,
+      sampleOperationGate
+    )
     const getProfile = createSampleProfileGetHandler(database, workspaceManager)
     const sampleBytes = Buffer.from('MZ\x90\x00\x03\x00\x00\x00')
 

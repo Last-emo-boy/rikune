@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 /**
  * Unit tests for code.functions.reconstruct tool
  */
@@ -63,7 +64,7 @@ describe('code.functions.reconstruct tool', () => {
   })
 
   function insertSample(sampleId: string, hashChar: string) {
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: hashChar.repeat(64),
       md5: hashChar.repeat(32),

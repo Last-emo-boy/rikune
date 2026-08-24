@@ -9,6 +9,7 @@ import fs from 'fs'
 import fsPromises from 'fs/promises'
 import path from 'path'
 import type { WorkspacePath } from '../types.js'
+import { secureValidateDirectory } from '../sample/secure-filesystem.js'
 
 /**
  * WorkspaceManager handles creation and management of sample workspaces
@@ -22,6 +23,8 @@ import type { WorkspacePath } from '../types.js'
 export class WorkspaceManager {
   private workspaceRoot: string
   private readonly trustedWorkspaceRootRealPath: string
+  private readonly trustedWorkspaceRootDevice: number
+  private readonly trustedWorkspaceRootInode: number
   private workspacePathCache: Map<string, WorkspacePath> = new Map()
   private readonly CACHE_SIZE_LIMIT = 1000
 
@@ -29,6 +32,9 @@ export class WorkspaceManager {
     this.workspaceRoot = path.resolve(workspaceRoot)
     this.ensureWorkspaceRoot()
     this.trustedWorkspaceRootRealPath = fs.realpathSync.native(this.workspaceRoot)
+    const rootStat = fs.lstatSync(this.trustedWorkspaceRootRealPath)
+    this.trustedWorkspaceRootDevice = Number(rootStat.dev)
+    this.trustedWorkspaceRootInode = Number(rootStat.ino)
   }
 
   /**
@@ -75,12 +81,12 @@ export class WorkspaceManager {
     )
     await this.ensureRealDirectory(workspacePath.root, 'Sample workspace root')
 
-    const safeWorkspacePath = await this.resolveWorkspaceForWrite(sampleId)
     await Promise.all(
       ['original', 'cache', 'ghidra', 'dotnet', 'reports'].map((subdir) =>
-        this.ensureRealDirectory(path.join(safeWorkspacePath.root, subdir), `Workspace ${subdir}`)
+        this.ensureRealDirectory(path.join(workspacePath.root, subdir), `Workspace ${subdir}`)
       )
     )
+    const safeWorkspacePath = await this.resolveWorkspaceForWrite(sampleId)
 
     // Cache the workspace path
     this.cacheWorkspacePath(sha256, safeWorkspacePath)
@@ -153,12 +159,38 @@ export class WorkspaceManager {
       throw new Error('Sample workspace root resolves outside the configured workspace root.')
     }
 
+    const originalPath = path.join(workspaceRealPath, 'original')
+    const originalStat = await fsPromises.lstat(originalPath)
+    if (!originalStat.isDirectory() || originalStat.isSymbolicLink()) {
+      throw new Error('Workspace original must be a real directory, not a symlink.')
+    }
+    secureValidateDirectory({
+      root: this.trustedWorkspaceRootRealPath,
+      rootDevice: this.trustedWorkspaceRootDevice,
+      rootInode: this.trustedWorkspaceRootInode,
+      directoryRelative: path
+        .relative(this.trustedWorkspaceRootRealPath, originalPath)
+        .replaceAll(path.sep, '/'),
+    })
+    const originalRealPath = await fsPromises.realpath(originalPath)
+    if (path.dirname(originalRealPath) !== workspaceRealPath) {
+      throw new Error('Workspace original resolves outside the sample workspace.')
+    }
+
     return {
       root: workspaceRealPath,
-      original: path.join(workspaceRealPath, 'original'),
+      original: originalRealPath,
       cache: path.join(workspaceRealPath, 'cache'),
       ghidra: path.join(workspaceRealPath, 'ghidra'),
       reports: path.join(workspaceRealPath, 'reports'),
+    }
+  }
+
+  public getTrustedRootIdentity(): { root: string; device: number; inode: number } {
+    return {
+      root: this.trustedWorkspaceRootRealPath,
+      device: this.trustedWorkspaceRootDevice,
+      inode: this.trustedWorkspaceRootInode,
     }
   }
 

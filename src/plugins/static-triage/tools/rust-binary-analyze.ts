@@ -16,6 +16,11 @@ import { createCodeFunctionsSmartRecoverHandler } from '../../code-analysis/tool
 import { createPESymbolsRecoverHandler } from '../../../plugins/pe-analysis/tools/pe-symbols-recover.js'
 import { buildLibraryProfile } from '../../../workflows/triage.js'
 import { CACHE_TTL_7_DAYS } from '../../../constants/cache-ttl.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'rust_binary.analyze'
 const TOOL_VERSION = '0.1.0'
@@ -183,11 +188,11 @@ type SymbolsRecoverData = {
 }
 
 interface RustBinaryAnalyzeDependencies {
-  runtimeHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  stringsHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  smartRecoverHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  symbolsRecoverHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  binaryRoleHandler?: (args: ToolArgs) => Promise<WorkerResult>
+  runtimeHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  stringsHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  smartRecoverHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  symbolsRecoverHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  binaryRoleHandler?: AbortableHandler<ToolArgs, WorkerResult>
 }
 
 function extractCrateNameFromCargoPath(input: string): string | null {
@@ -309,11 +314,12 @@ export function createRustBinaryAnalyzeHandler(
     dependencies.binaryRoleHandler ||
     createBinaryRoleProfileHandler(workspaceManager, database, cacheManager)
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const input = rustBinaryAnalyzeInputSchema.parse(args)
     const startTime = Date.now()
 
     try {
+      throwIfAnalysisAborted(abortSignal)
       const sample = database.findSample(input.sample_id)
       if (!sample) {
         return {
@@ -338,6 +344,7 @@ export function createRustBinaryAnalyzeHandler(
 
       if (!input.force_refresh) {
         const cachedLookup = await lookupCachedResult(cacheManager, cacheKey)
+        throwIfAnalysisAborted(abortSignal)
         if (cachedLookup) {
           return {
             ok: true,
@@ -358,24 +365,44 @@ export function createRustBinaryAnalyzeHandler(
         symbolsRecoverResult,
         binaryRoleResult,
       ] = await Promise.all([
-        runtimeHandler({ sample_id: input.sample_id, force_refresh: input.force_refresh }),
-        stringsHandler({
-          sample_id: input.sample_id,
-          category_filter: 'all',
-          max_strings: input.max_strings,
-          force_refresh: input.force_refresh,
-        }),
-        smartRecoverHandler({ sample_id: input.sample_id, force_refresh: input.force_refresh }),
-        symbolsRecoverHandler({
-          sample_id: input.sample_id,
-          max_string_hints: input.max_strings,
-          force_refresh: input.force_refresh,
-        }),
-        binaryRoleHandler({
-          sample_id: input.sample_id,
-          max_strings: input.max_strings,
-          force_refresh: input.force_refresh,
-        }),
+        invokeAbortable(
+          runtimeHandler,
+          { sample_id: input.sample_id, force_refresh: input.force_refresh },
+          abortSignal
+        ),
+        invokeAbortable(
+          stringsHandler,
+          {
+            sample_id: input.sample_id,
+            category_filter: 'all',
+            max_strings: input.max_strings,
+            force_refresh: input.force_refresh,
+          },
+          abortSignal
+        ),
+        invokeAbortable(
+          smartRecoverHandler,
+          { sample_id: input.sample_id, force_refresh: input.force_refresh },
+          abortSignal
+        ),
+        invokeAbortable(
+          symbolsRecoverHandler,
+          {
+            sample_id: input.sample_id,
+            max_string_hints: input.max_strings,
+            force_refresh: input.force_refresh,
+          },
+          abortSignal
+        ),
+        invokeAbortable(
+          binaryRoleHandler,
+          {
+            sample_id: input.sample_id,
+            max_strings: input.max_strings,
+            force_refresh: input.force_refresh,
+          },
+          abortSignal
+        ),
       ])
 
       const componentStatus = {
@@ -554,6 +581,7 @@ export function createRustBinaryAnalyzeHandler(
       }
 
       await cacheManager.setCachedResult(cacheKey, payload, CACHE_TTL_MS, sample.sha256)
+      throwIfAnalysisAborted(abortSignal)
 
       return {
         ok: true,
@@ -565,6 +593,7 @@ export function createRustBinaryAnalyzeHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [error instanceof Error ? error.message : String(error)],

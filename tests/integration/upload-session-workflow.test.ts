@@ -9,6 +9,7 @@ import { PolicyGuard } from '../../src/policy-guard.js'
 import { StorageManager } from '../../src/storage/storage-manager.js'
 import { FileServer } from '../../src/api/file-server.js'
 import { createSampleFinalizationService } from '../../src/sample/sample-finalization.js'
+import { SampleOperationGate } from '../../src/sample/sample-operation-gate.js'
 import { createSampleRequestUploadHandler } from '../../src/tools/sample-request-upload.js'
 import { createSampleIngestHandler } from '../../src/tools/sample-ingest.js'
 
@@ -58,6 +59,8 @@ describe('upload session workflow', () => {
   let storageRoot: string
   let workerDatabase: DatabaseManager
   let daemonDatabase: DatabaseManager
+  let workerSampleOperationGate: SampleOperationGate
+  let daemonSampleOperationGate: SampleOperationGate
   let fileServer: FileServer
   let port: number
 
@@ -71,6 +74,8 @@ describe('upload session workflow', () => {
 
     workerDatabase = new DatabaseManager(dbPath)
     daemonDatabase = new DatabaseManager(dbPath)
+    workerSampleOperationGate = new SampleOperationGate(workerDatabase)
+    daemonSampleOperationGate = new SampleOperationGate(daemonDatabase)
 
     const daemonWorkspaceManager = new WorkspaceManager(workspaceRoot)
     const daemonPolicyGuard = new PolicyGuard(auditLogPath)
@@ -84,6 +89,7 @@ describe('upload session workflow', () => {
     fileServer = new FileServer(
       {
         port,
+        apiKey: 'upload-session-test-key',
         maxFileSize: 500 * 1024 * 1024,
       },
       {
@@ -92,7 +98,8 @@ describe('upload session workflow', () => {
         finalizationService: createSampleFinalizationService(
           daemonWorkspaceManager,
           daemonDatabase,
-          daemonPolicyGuard
+          daemonPolicyGuard,
+          daemonSampleOperationGate
         ),
       }
     )
@@ -101,6 +108,8 @@ describe('upload session workflow', () => {
 
   afterEach(async () => {
     await fileServer.stop()
+    workerSampleOperationGate.close()
+    daemonSampleOperationGate.close()
     workerDatabase.close()
     daemonDatabase.close()
     fs.rmSync(testDir, { recursive: true, force: true })
@@ -113,7 +122,8 @@ describe('upload session workflow', () => {
     const ingest = createSampleIngestHandler(
       workerWorkspaceManager,
       workerDatabase,
-      workerPolicyGuard
+      workerPolicyGuard,
+      workerSampleOperationGate
     )
 
     const tokenResult = await requestUpload({

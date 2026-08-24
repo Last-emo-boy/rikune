@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 /**
  * Unit tests for code.reconstruct.plan tool
  */
@@ -88,7 +89,7 @@ describe('code.reconstruct.plan tool', () => {
 
   test('should produce high feasibility plan for unpacked dotnet sample', async () => {
     const sampleId = 'sha256:' + '1'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '1'.repeat(64),
       md5: '1'.repeat(32),
@@ -149,7 +150,7 @@ describe('code.reconstruct.plan tool', () => {
 
   test('should cache reconstruction plan', async () => {
     const sampleId = 'sha256:' + '2'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '2'.repeat(64),
       md5: '2'.repeat(32),
@@ -209,7 +210,7 @@ describe('code.reconstruct.plan tool', () => {
 
   test('should return low feasibility when runtime and packer data are unavailable', async () => {
     const sampleId = 'sha256:' + '3'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '3'.repeat(64),
       md5: '3'.repeat(32),

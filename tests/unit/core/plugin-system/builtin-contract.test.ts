@@ -51,6 +51,7 @@ function createDeps() {
     jobQueue: {},
     storageManager: {},
     policyGuard: {},
+    sampleOperationGate: {},
     server: {},
     logger,
     resolvePackagePath: (...segments: string[]) => segments.join('/'),

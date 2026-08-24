@@ -64,12 +64,9 @@ import { createMachoStructureAnalyzeHandler } from '../plugins/elf-macho/tools/m
 import { createAnalysisContextLinkHandler } from '../plugins/static-triage/tools/analysis-context-link.js'
 import { createCryptoIdentifyHandler } from '../plugins/static-triage/tools/crypto-identify.js'
 import { createRustBinaryAnalyzeHandler } from '../plugins/static-triage/tools/rust-binary-analyze.js'
-import { createDynamicDependenciesHandler } from '../plugins/dynamic/tools/dynamic-dependencies.js'
-import { createDynamicDeepPlanHandler } from '../plugins/dynamic/tools/dynamic-deep-plan.js'
 import { createBreakpointSmartHandler } from '../plugins/static-triage/tools/breakpoint-smart.js'
 import { createTraceConditionHandler } from '../plugins/static-triage/tools/trace-condition.js'
 import { createStaticBehaviorClassifyHandler } from '../plugins/static-triage/tools/static-behavior-classify.js'
-import { createSandboxExecuteHandler } from '../plugins/dynamic/tools/sandbox-execute.js'
 import { createWorkflowSummarizeHandler } from './summarize.js'
 import { createReconstructWorkflowHandler } from './reconstruct.js'
 import { createSemanticNameReviewWorkflowHandler } from './semantic-name-review.js'
@@ -81,8 +78,6 @@ import { createRetDecDecompileHandler } from '../plugins/retdec/tools/retdec-dec
 import { createRizinAnalyzeHandler } from '../plugins/rizin/tools/rizin-analyze.js'
 import { createUPXInspectHandler } from '../plugins/upx/tools/upx-inspect.js'
 import { createYaraXScanHandler } from '../plugins/yara-x/tools/yara-x-scan.js'
-import { createPandaInspectHandler } from '../plugins/panda/tools/panda-inspect.js'
-import { createQilingInspectHandler } from '../plugins/qiling/tools/qiling-inspect.js'
 import { buildPollingGuidance } from '../polling-guidance.js'
 import { logger } from '../logger.js'
 import {
@@ -97,6 +92,14 @@ import {
 } from '../ghidra/ghidra-analysis-status.js'
 import { loadDynamicTraceEvidence } from '../artifacts/dynamic-trace.js'
 import { createSampleFinalizationService } from '../sample/sample-finalization.js'
+import type { SampleOperationGate } from '../sample/sample-operation-gate.js'
+import {
+  STATIC_ANALYSIS_STAGE_JOB_TOOL,
+  STATIC_WORKFLOW_STAGE_IDS,
+  assertStaticAnalysisRunContract,
+  assertStaticWorkflowStage,
+  isStaticDockerProfile,
+} from '../core/static-profile-lock.js'
 import { buildFreshEvidenceState, persistCanonicalEvidence } from '../analysis/analysis-evidence.js'
 import {
   ANALYSIS_DIFF_DIGEST_ARTIFACT_TYPE,
@@ -124,7 +127,7 @@ import {
 const TOOL_NAME_START = 'workflow.analyze.start'
 const TOOL_NAME_STATUS = 'workflow.analyze.status'
 const TOOL_NAME_PROMOTE = 'workflow.analyze.promote'
-export const ANALYSIS_STAGE_JOB_TOOL = 'workflow.analyze.stage'
+export const ANALYSIS_STAGE_JOB_TOOL = STATIC_ANALYSIS_STAGE_JOB_TOOL
 
 const FAST_PROFILE_STAGE = 'fast_profile'
 const FAST_PROFILE_TIMEOUT_MS = 90_000
@@ -325,43 +328,50 @@ export const analyzeWorkflowPromoteToolDefinition: ToolDefinition = {
 }
 
 export interface AnalyzePipelineDependencies {
-  peFingerprint?: (args: ToolArgs) => Promise<WorkerResult>
-  runtimeDetect?: (args: ToolArgs) => Promise<WorkerResult>
-  peImportsExtract?: (args: ToolArgs) => Promise<WorkerResult>
-  stringsExtract?: (args: ToolArgs) => Promise<WorkerResult>
-  stringsFlossDecode?: (args: ToolArgs) => Promise<WorkerResult>
-  yaraScan?: (args: ToolArgs) => Promise<WorkerResult>
-  packerDetect?: (args: ToolArgs) => Promise<WorkerResult>
-  compilerPackerDetect?: (args: ToolArgs) => Promise<WorkerResult>
-  binaryRoleProfile?: (args: ToolArgs) => Promise<WorkerResult>
-  staticCapabilityTriage?: (args: ToolArgs) => Promise<WorkerResult>
-  peStructureAnalyze?: (args: ToolArgs) => Promise<WorkerResult>
-  elfStructureAnalyze?: (args: ToolArgs) => Promise<WorkerResult>
-  machoStructureAnalyze?: (args: ToolArgs) => Promise<WorkerResult>
-  analysisContextLink?: (args: ToolArgs) => Promise<WorkerResult>
-  cryptoIdentify?: (args: ToolArgs) => Promise<WorkerResult>
-  rustBinaryAnalyze?: (args: ToolArgs) => Promise<WorkerResult>
-  dynamicDependencies?: (args: ToolArgs) => Promise<WorkerResult>
-  dynamicDeepPlan?: (args: ToolArgs) => Promise<WorkerResult>
-  staticBehaviorClassify?: (args: ToolArgs) => Promise<WorkerResult>
-  breakpointSmart?: (args: ToolArgs) => Promise<WorkerResult>
-  traceCondition?: (args: ToolArgs) => Promise<WorkerResult>
-  sandboxExecute?: (args: ToolArgs) => Promise<WorkerResult>
-  workflowSummarize?: (args: ToolArgs) => Promise<WorkerResult>
-  reconstructWorkflow?: (args: ToolArgs) => Promise<WorkerResult>
-  semanticNameReviewWorkflow?: (args: ToolArgs) => Promise<WorkerResult>
-  functionExplanationReviewWorkflow?: (args: ToolArgs) => Promise<WorkerResult>
-  moduleReconstructionReviewWorkflow?: (args: ToolArgs) => Promise<WorkerResult>
-  ghidraAnalyze?: (args: ToolArgs) => Promise<ToolResult | WorkerResult>
-  rizinAnalyze?: (args: ToolArgs) => Promise<WorkerResult>
-  yaraXScan?: (args: ToolArgs) => Promise<WorkerResult>
-  upxInspect?: (args: ToolArgs) => Promise<WorkerResult>
-  qilingInspect?: (args: ToolArgs) => Promise<WorkerResult>
-  pandaInspect?: (args: ToolArgs) => Promise<WorkerResult>
-  angrAnalyze?: (args: ToolArgs) => Promise<WorkerResult>
-  retdecDecompile?: (args: ToolArgs) => Promise<WorkerResult>
+  staticOnly?: boolean
+  sampleOperationGate?: SampleOperationGate
+  peFingerprint?: StageWorkerHandler
+  runtimeDetect?: StageWorkerHandler
+  peImportsExtract?: StageWorkerHandler
+  stringsExtract?: StageWorkerHandler
+  stringsFlossDecode?: StageWorkerHandler
+  yaraScan?: StageWorkerHandler
+  packerDetect?: StageWorkerHandler
+  compilerPackerDetect?: StageWorkerHandler
+  binaryRoleProfile?: StageWorkerHandler
+  staticCapabilityTriage?: StageWorkerHandler
+  peStructureAnalyze?: StageWorkerHandler
+  elfStructureAnalyze?: StageWorkerHandler
+  machoStructureAnalyze?: StageWorkerHandler
+  analysisContextLink?: StageWorkerHandler
+  cryptoIdentify?: StageWorkerHandler
+  rustBinaryAnalyze?: StageWorkerHandler
+  dynamicDependencies?: StageWorkerHandler
+  dynamicDeepPlan?: StageWorkerHandler
+  staticBehaviorClassify?: StageWorkerHandler
+  breakpointSmart?: StageWorkerHandler
+  traceCondition?: StageWorkerHandler
+  sandboxExecute?: StageWorkerHandler
+  workflowSummarize?: StageWorkerHandler
+  reconstructWorkflow?: StageWorkerHandler
+  semanticNameReviewWorkflow?: StageWorkerHandler
+  functionExplanationReviewWorkflow?: StageWorkerHandler
+  moduleReconstructionReviewWorkflow?: StageWorkerHandler
+  ghidraAnalyze?: StageWorkerHandler<ToolResult | WorkerResult>
+  rizinAnalyze?: StageWorkerHandler
+  yaraXScan?: StageWorkerHandler
+  upxInspect?: StageWorkerHandler
+  qilingInspect?: StageWorkerHandler
+  pandaInspect?: StageWorkerHandler
+  angrAnalyze?: StageWorkerHandler
+  retdecDecompile?: StageWorkerHandler
   resolveBackends?: typeof resolveAnalysisBackends
 }
+
+type StageWorkerHandler<TResult extends WorkerResult | ToolResult = WorkerResult> = (
+  args: ToolArgs,
+  abortSignal?: AbortSignal
+) => Promise<TResult>
 
 interface StageExecutionContext {
   workspaceManager: WorkspaceManager
@@ -370,6 +380,13 @@ interface StageExecutionContext {
   policyGuard: PolicyGuard
   server?: SamplingClient
   dependencies: AnalyzePipelineDependencies
+  abortSignal?: AbortSignal
+}
+
+function throwIfStageAborted(context: StageExecutionContext): void {
+  if (context.abortSignal?.aborted) {
+    throw new Error('E_JOB_ABORTED: queued analysis stage was cancelled')
+  }
 }
 
 interface StageExecutionOutput {
@@ -380,6 +397,15 @@ interface StageExecutionOutput {
   metadata?: Record<string, unknown>
   warnings?: string[]
   errors?: string[]
+}
+
+function createLazyWorkerHandler(load: () => Promise<StageWorkerHandler>): StageWorkerHandler {
+  let handlerPromise: Promise<StageWorkerHandler> | undefined
+  return async (args, abortSignal) => {
+    handlerPromise ??= load()
+    const handler = await handlerPromise
+    return abortSignal ? handler(args, abortSignal) : handler(args)
+  }
 }
 
 function collectArtifactsFromResult(result: WorkerResult | undefined): ArtifactRef[] {
@@ -905,14 +931,19 @@ function findStageDependencyBlocker(
   }
   const stagePlan = parseStagePlanFromRun(run)
   const stageIndex = stagePlan.indexOf(stage)
-  if (stageIndex <= 0) {
+  if (stageIndex < 0) {
+    return {
+      stage,
+      blocked_by_stage: FAST_PROFILE_STAGE,
+      blocked_by_status: 'invalid_plan',
+      reason: `${stage} is absent from the persisted stage plan.`,
+    }
+  }
+  if (stageIndex === 0) {
     return null
   }
 
   for (const predecessor of stagePlan.slice(0, stageIndex)) {
-    if (predecessor === FAST_PROFILE_STAGE) {
-      continue
-    }
     const row = database.findAnalysisRunStage(run.id, predecessor)
     if (isCompletedStageStatus(row?.status)) {
       continue
@@ -1038,7 +1069,13 @@ function createDependencies(
   dependencies: AnalyzePipelineDependencies = {},
   jobQueue?: JobQueue
 ): AnalyzePipelineDependencies {
+  // A caller-supplied false/undefined must never downgrade the baked static
+  // profile. Explicit true remains useful for native tests and deployments.
+  const staticOnly = isStaticDockerProfile() || dependencies.staticOnly === true
+  const deferredJobQueue = staticOnly ? undefined : jobQueue
   return {
+    staticOnly,
+    sampleOperationGate: dependencies.sampleOperationGate,
     peFingerprint:
       dependencies.peFingerprint ||
       createPEFingerprintHandler({ workspaceManager, database, cacheManager } as any),
@@ -1050,10 +1087,10 @@ function createDependencies(
       createPEImportsExtractHandler({ workspaceManager, database, cacheManager } as any),
     stringsExtract:
       dependencies.stringsExtract ||
-      createStringsExtractHandler(workspaceManager, database, cacheManager, jobQueue),
+      createStringsExtractHandler(workspaceManager, database, cacheManager, deferredJobQueue),
     stringsFlossDecode:
       dependencies.stringsFlossDecode ||
-      createStringsFlossDecodeHandler(workspaceManager, database, cacheManager, jobQueue),
+      createStringsFlossDecodeHandler(workspaceManager, database, cacheManager, deferredJobQueue),
     yaraScan:
       dependencies.yaraScan || createYaraScanHandler(workspaceManager, database, cacheManager),
     packerDetect:
@@ -1064,7 +1101,13 @@ function createDependencies(
       createCompilerPackerDetectHandler(workspaceManager, database),
     binaryRoleProfile:
       dependencies.binaryRoleProfile ||
-      createBinaryRoleProfileHandler(workspaceManager, database, cacheManager, undefined, jobQueue),
+      createBinaryRoleProfileHandler(
+        workspaceManager,
+        database,
+        cacheManager,
+        undefined,
+        deferredJobQueue
+      ),
     staticCapabilityTriage:
       dependencies.staticCapabilityTriage ||
       createStaticCapabilityTriageHandler(workspaceManager, database),
@@ -1079,62 +1122,89 @@ function createDependencies(
       createMachoStructureAnalyzeHandler(workspaceManager, database),
     analysisContextLink:
       dependencies.analysisContextLink ||
-      createAnalysisContextLinkHandler(workspaceManager, database, cacheManager, {}, jobQueue),
+      createAnalysisContextLinkHandler(
+        workspaceManager,
+        database,
+        cacheManager,
+        {},
+        deferredJobQueue
+      ),
     cryptoIdentify:
       dependencies.cryptoIdentify ||
-      createCryptoIdentifyHandler(workspaceManager, database, cacheManager, {}, jobQueue),
+      createCryptoIdentifyHandler(workspaceManager, database, cacheManager, {}, deferredJobQueue),
     rustBinaryAnalyze:
       dependencies.rustBinaryAnalyze ||
       createRustBinaryAnalyzeHandler(workspaceManager, database, cacheManager),
-    dynamicDependencies:
-      dependencies.dynamicDependencies ||
-      createDynamicDependenciesHandler(workspaceManager, database),
-    dynamicDeepPlan:
-      dependencies.dynamicDeepPlan ||
-      createDynamicDeepPlanHandler({ workspaceManager, database } as any),
     staticBehaviorClassify:
       dependencies.staticBehaviorClassify ||
       createStaticBehaviorClassifyHandler(workspaceManager, database),
-    breakpointSmart:
-      dependencies.breakpointSmart ||
-      createBreakpointSmartHandler(workspaceManager, database, cacheManager),
-    traceCondition:
-      dependencies.traceCondition ||
-      createTraceConditionHandler(workspaceManager, database, cacheManager),
-    sandboxExecute:
-      dependencies.sandboxExecute ||
-      createSandboxExecuteHandler(workspaceManager, database, policyGuard),
-    workflowSummarize:
-      dependencies.workflowSummarize ||
-      createWorkflowSummarizeHandler(workspaceManager, database, cacheManager, server),
-    reconstructWorkflow:
-      dependencies.reconstructWorkflow ||
-      createReconstructWorkflowHandler(workspaceManager, database, cacheManager),
-    semanticNameReviewWorkflow:
-      dependencies.semanticNameReviewWorkflow ||
-      createSemanticNameReviewWorkflowHandler(workspaceManager, database, cacheManager, server),
-    functionExplanationReviewWorkflow:
-      dependencies.functionExplanationReviewWorkflow ||
-      createFunctionExplanationReviewWorkflowHandler(
-        workspaceManager,
-        database,
-        cacheManager,
-        server
-      ),
-    moduleReconstructionReviewWorkflow:
-      dependencies.moduleReconstructionReviewWorkflow ||
-      createModuleReconstructionReviewWorkflowHandler(
-        workspaceManager,
-        database,
-        cacheManager,
-        server
-      ),
+    ...(!staticOnly
+      ? {
+          dynamicDependencies:
+            dependencies.dynamicDependencies ||
+            createLazyWorkerHandler(async () => {
+              const { createDynamicDependenciesHandler } =
+                await import('../plugins/dynamic/tools/dynamic-dependencies.js')
+              return createDynamicDependenciesHandler(workspaceManager, database)
+            }),
+          dynamicDeepPlan:
+            dependencies.dynamicDeepPlan ||
+            createLazyWorkerHandler(async () => {
+              const { createDynamicDeepPlanHandler } =
+                await import('../plugins/dynamic/tools/dynamic-deep-plan.js')
+              return createDynamicDeepPlanHandler({ workspaceManager, database } as any)
+            }),
+          breakpointSmart:
+            dependencies.breakpointSmart ||
+            createBreakpointSmartHandler(workspaceManager, database, cacheManager),
+          traceCondition:
+            dependencies.traceCondition ||
+            createTraceConditionHandler(workspaceManager, database, cacheManager),
+          sandboxExecute:
+            dependencies.sandboxExecute ||
+            createLazyWorkerHandler(async () => {
+              const { createSandboxExecuteHandler } =
+                await import('../plugins/dynamic/tools/sandbox-execute.js')
+              return createSandboxExecuteHandler(workspaceManager, database, policyGuard)
+            }),
+          workflowSummarize:
+            dependencies.workflowSummarize ||
+            createWorkflowSummarizeHandler(workspaceManager, database, cacheManager, server),
+          reconstructWorkflow:
+            dependencies.reconstructWorkflow ||
+            createReconstructWorkflowHandler(workspaceManager, database, cacheManager),
+          semanticNameReviewWorkflow:
+            dependencies.semanticNameReviewWorkflow ||
+            createSemanticNameReviewWorkflowHandler(
+              workspaceManager,
+              database,
+              cacheManager,
+              server
+            ),
+          functionExplanationReviewWorkflow:
+            dependencies.functionExplanationReviewWorkflow ||
+            createFunctionExplanationReviewWorkflowHandler(
+              workspaceManager,
+              database,
+              cacheManager,
+              server
+            ),
+          moduleReconstructionReviewWorkflow:
+            dependencies.moduleReconstructionReviewWorkflow ||
+            createModuleReconstructionReviewWorkflowHandler(
+              workspaceManager,
+              database,
+              cacheManager,
+              server
+            ),
+        }
+      : {}),
     ghidraAnalyze:
       dependencies.ghidraAnalyze ||
       (createGhidraAnalyzeHandler({
         workspaceManager,
         database,
-        jobQueue,
+        jobQueue: deferredJobQueue,
         logger,
         DecompilerWorker,
         getGhidraDiagnostics,
@@ -1148,13 +1218,29 @@ function createDependencies(
       dependencies.rizinAnalyze || createRizinAnalyzeHandler(workspaceManager, database),
     yaraXScan: dependencies.yaraXScan || createYaraXScanHandler(workspaceManager, database),
     upxInspect: dependencies.upxInspect || createUPXInspectHandler(workspaceManager, database),
-    qilingInspect:
-      dependencies.qilingInspect || createQilingInspectHandler(workspaceManager, database),
-    pandaInspect:
-      dependencies.pandaInspect || createPandaInspectHandler(workspaceManager, database),
-    angrAnalyze: dependencies.angrAnalyze || createAngrAnalyzeHandler(workspaceManager, database),
-    retdecDecompile:
-      dependencies.retdecDecompile || createRetDecDecompileHandler(workspaceManager, database),
+    ...(!staticOnly
+      ? {
+          qilingInspect:
+            dependencies.qilingInspect ||
+            createLazyWorkerHandler(async () => {
+              const { createQilingInspectHandler } =
+                await import('../plugins/qiling/tools/qiling-inspect.js')
+              return createQilingInspectHandler(workspaceManager, database)
+            }),
+          pandaInspect:
+            dependencies.pandaInspect ||
+            createLazyWorkerHandler(async () => {
+              const { createPandaInspectHandler } =
+                await import('../plugins/panda/tools/panda-inspect.js')
+              return createPandaInspectHandler(workspaceManager, database)
+            }),
+          angrAnalyze:
+            dependencies.angrAnalyze || createAngrAnalyzeHandler(workspaceManager, database),
+          retdecDecompile:
+            dependencies.retdecDecompile ||
+            createRetDecDecompileHandler(workspaceManager, database),
+        }
+      : {}),
     resolveBackends: dependencies.resolveBackends || resolveAnalysisBackends,
   }
 }
@@ -1165,6 +1251,7 @@ async function buildFastProfileStage(
   sample: Sample,
   input: z.infer<typeof analyzeStartInputSchema>
 ): Promise<StageExecutionOutput> {
+  throwIfStageAborted(context)
   const deps = context.dependencies
   const readiness = (deps.resolveBackends || resolveAnalysisBackends)()
   const defaultYaraXRulesPath = resolveDefaultYaraXRulesPath()
@@ -1187,52 +1274,81 @@ async function buildFastProfileStage(
     binaryRoleResult,
     rizinResult,
   ] = await Promise.all([
-    deps.peFingerprint({ sample_id: sample.id, force_refresh: input.force_refresh }),
-    deps.runtimeDetect({ sample_id: sample.id, force_refresh: input.force_refresh }),
-    deps.peImportsExtract({
-      sample_id: sample.id,
-      group_by_dll: true,
-      force_refresh: input.force_refresh,
-    }),
-    deps.stringsExtract({
-      sample_id: sample.id,
-      mode: 'preview',
-      max_strings: boundedPreview.maxStrings,
-      force_refresh: input.force_refresh,
-      defer_if_slow: false,
-    }),
-    deps.yaraScan({
-      sample_id: sample.id,
-      rule_set: YARA_DEFAULT_RULE_SET,
-      rule_tier: 'production',
-      force_refresh: input.force_refresh,
-    }),
-    deps.packerDetect({ sample_id: sample.id, force_refresh: input.force_refresh }),
-    deps.compilerPackerDetect({ sample_id: sample.id }),
-    deps.binaryRoleProfile({
-      sample_id: sample.id,
-      mode: boundedPreview.binaryMode,
-      force_refresh: input.force_refresh,
-      defer_if_slow: false,
-    }),
+    deps.peFingerprint(
+      { sample_id: sample.id, force_refresh: input.force_refresh },
+      context.abortSignal
+    ),
+    deps.runtimeDetect(
+      { sample_id: sample.id, force_refresh: input.force_refresh },
+      context.abortSignal
+    ),
+    deps.peImportsExtract(
+      {
+        sample_id: sample.id,
+        group_by_dll: true,
+        force_refresh: input.force_refresh,
+      },
+      context.abortSignal
+    ),
+    deps.stringsExtract(
+      {
+        sample_id: sample.id,
+        mode: 'preview',
+        max_strings: boundedPreview.maxStrings,
+        force_refresh: input.force_refresh,
+        defer_if_slow: false,
+      },
+      context.abortSignal
+    ),
+    deps.yaraScan(
+      {
+        sample_id: sample.id,
+        rule_set: YARA_DEFAULT_RULE_SET,
+        rule_tier: 'production',
+        force_refresh: input.force_refresh,
+      },
+      context.abortSignal
+    ),
+    deps.packerDetect(
+      { sample_id: sample.id, force_refresh: input.force_refresh },
+      context.abortSignal
+    ),
+    deps.compilerPackerDetect({ sample_id: sample.id }, context.abortSignal),
+    deps.binaryRoleProfile(
+      {
+        sample_id: sample.id,
+        mode: boundedPreview.binaryMode,
+        force_refresh: input.force_refresh,
+        defer_if_slow: false,
+      },
+      context.abortSignal
+    ),
     readiness.rizin.available
-      ? deps.rizinAnalyze({
-          sample_id: sample.id,
-          operation: 'info',
-          timeout_sec: 20,
-          persist_artifact: true,
-        })
+      ? deps.rizinAnalyze(
+          {
+            sample_id: sample.id,
+            operation: 'info',
+            timeout_sec: 20,
+            persist_artifact: true,
+          },
+          context.abortSignal
+        )
       : Promise.resolve({ ok: false, warnings: ['rizin unavailable'] } as WorkerResult),
   ])
+  throwIfStageAborted(context)
 
   let yaraXResult: WorkerResult | undefined
   if (readiness.yara_x.available && defaultYaraXRulesPath) {
-    yaraXResult = await deps.yaraXScan({
-      sample_id: sample.id,
-      rules_path: defaultYaraXRulesPath,
-      timeout_sec: 20,
-      persist_artifact: true,
-    })
+    yaraXResult = await deps.yaraXScan(
+      {
+        sample_id: sample.id,
+        rules_path: defaultYaraXRulesPath,
+        timeout_sec: 20,
+        persist_artifact: true,
+      },
+      context.abortSignal
+    )
+    throwIfStageAborted(context)
   }
 
   const packerHint =
@@ -1240,12 +1356,16 @@ async function buildFastProfileStage(
     Boolean((compilerPackerResult.data as Record<string, unknown> | undefined)?.summary)
   let upxResult: WorkerResult | undefined
   if (packerHint && readiness.upx.available) {
-    upxResult = await deps.upxInspect({
-      sample_id: sample.id,
-      operation: 'test',
-      timeout_sec: 15,
-      persist_artifact: true,
-    })
+    upxResult = await deps.upxInspect(
+      {
+        sample_id: sample.id,
+        operation: 'test',
+        timeout_sec: 15,
+        persist_artifact: true,
+      },
+      context.abortSignal
+    )
+    throwIfStageAborted(context)
   }
 
   const importsMap = extractImportsMap(importsResult)
@@ -1489,6 +1609,7 @@ async function runEnrichStaticStage(
   sampleId: string,
   forceRefresh: boolean
 ): Promise<StageExecutionOutput> {
+  throwIfStageAborted(context)
   const deps = context.dependencies
 
   // Format-aware structural analysis: route to the correct tool based on file_type
@@ -1496,53 +1617,82 @@ async function runEnrichStaticStage(
   const fileType = sample?.file_type ?? 'PE'
   const runStructureAnalyze = () => {
     if (fileType === 'ELF' && deps.elfStructureAnalyze) {
-      return deps.elfStructureAnalyze({ sample_id: sampleId })
+      return deps.elfStructureAnalyze({ sample_id: sampleId }, context.abortSignal)
     }
     if ((fileType === 'Mach-O' || fileType === 'Mach-O-Fat') && deps.machoStructureAnalyze) {
-      return deps.machoStructureAnalyze({ sample_id: sampleId })
+      return deps.machoStructureAnalyze({ sample_id: sampleId }, context.abortSignal)
     }
-    return deps.peStructureAnalyze({ sample_id: sampleId })
+    return deps.peStructureAnalyze({ sample_id: sampleId }, context.abortSignal)
   }
 
-  const stringsResult = await deps.stringsExtract({
-    sample_id: sampleId,
-    mode: 'full',
-    force_refresh: forceRefresh,
-    defer_if_slow: false,
-  })
-  const binaryRoleResult = await deps.binaryRoleProfile({
-    sample_id: sampleId,
-    mode: 'full',
-    force_refresh: forceRefresh,
-    defer_if_slow: false,
-  })
+  const stringsResult = await deps.stringsExtract(
+    {
+      sample_id: sampleId,
+      mode: 'full',
+      force_refresh: forceRefresh,
+      defer_if_slow: false,
+    },
+    context.abortSignal
+  )
+  throwIfStageAborted(context)
+  const binaryRoleResult = await deps.binaryRoleProfile(
+    {
+      sample_id: sampleId,
+      mode: 'full',
+      force_refresh: forceRefresh,
+      defer_if_slow: false,
+    },
+    context.abortSignal
+  )
+  throwIfStageAborted(context)
   const peStructureResult = await runStructureAnalyze()
+  throwIfStageAborted(context)
 
   // FLOSS, capa, context-linking, and crypto correlation can each spawn heavyweight
   // static backends. Keep them sequential so one enrich_static stage cannot
   // overrun the container by overlapping multiple multi-GB analyzers.
-  const flossResult = await deps.stringsFlossDecode({
-    sample_id: sampleId,
-    force_refresh: forceRefresh,
-    defer_if_slow: false,
-  })
-  const capabilityResult = await deps.staticCapabilityTriage({ sample_id: sampleId })
-  const contextLinkResult = await deps.analysisContextLink({
-    sample_id: sampleId,
-    mode: 'full',
-    force_refresh: forceRefresh,
-    defer_if_slow: false,
-  })
-  const cryptoResult = await deps.cryptoIdentify({
-    sample_id: sampleId,
-    mode: 'full',
-    force_refresh: forceRefresh,
-    defer_if_slow: false,
-  })
-  const rustResult = await deps.rustBinaryAnalyze({
-    sample_id: sampleId,
-    force_refresh: forceRefresh,
-  })
+  const flossResult = await deps.stringsFlossDecode(
+    {
+      sample_id: sampleId,
+      force_refresh: forceRefresh,
+      defer_if_slow: false,
+    },
+    context.abortSignal
+  )
+  throwIfStageAborted(context)
+  const capabilityResult = await deps.staticCapabilityTriage(
+    { sample_id: sampleId },
+    context.abortSignal
+  )
+  throwIfStageAborted(context)
+  const contextLinkResult = await deps.analysisContextLink(
+    {
+      sample_id: sampleId,
+      mode: 'full',
+      force_refresh: forceRefresh,
+      defer_if_slow: false,
+    },
+    context.abortSignal
+  )
+  throwIfStageAborted(context)
+  const cryptoResult = await deps.cryptoIdentify(
+    {
+      sample_id: sampleId,
+      mode: 'full',
+      force_refresh: forceRefresh,
+      defer_if_slow: false,
+    },
+    context.abortSignal
+  )
+  throwIfStageAborted(context)
+  const rustResult = await deps.rustBinaryAnalyze(
+    {
+      sample_id: sampleId,
+      force_refresh: forceRefresh,
+    },
+    context.abortSignal
+  )
+  throwIfStageAborted(context)
 
   const artifacts = [
     ...collectArtifactsFromResult(stringsResult),
@@ -1596,23 +1746,32 @@ async function runFunctionMapStage(
   context: StageExecutionContext,
   sampleId: string
 ): Promise<StageExecutionOutput> {
+  throwIfStageAborted(context)
   const ghidraResult = normalizeToolLikeResult(
-    await context.dependencies.ghidraAnalyze({
-      sample_id: sampleId,
-      options: {
-        timeout: 900,
-        max_cpu: '2',
+    await context.dependencies.ghidraAnalyze(
+      {
+        sample_id: sampleId,
+        options: {
+          timeout: 900,
+          max_cpu: '2',
+        },
       },
-    })
+      context.abortSignal
+    )
   )
+  throwIfStageAborted(context)
   const ghidraState = summarizeGhidraAnalyzeResult(ghidraResult)
-  const rizinFunctions = await context.dependencies.rizinAnalyze({
-    sample_id: sampleId,
-    operation: 'functions',
-    max_items: 64,
-    timeout_sec: 30,
-    persist_artifact: true,
-  })
+  const rizinFunctions = await context.dependencies.rizinAnalyze(
+    {
+      sample_id: sampleId,
+      operation: 'functions',
+      max_items: 64,
+      timeout_sec: 30,
+      persist_artifact: true,
+    },
+    context.abortSignal
+  )
+  throwIfStageAborted(context)
   const artifacts = [
     ...collectArtifactsFromResult(ghidraResult),
     ...collectArtifactsFromResult(rizinFunctions),
@@ -1676,24 +1835,37 @@ async function runReconstructStage(
   context: StageExecutionContext,
   sampleId: string
 ): Promise<StageExecutionOutput> {
-  const reconstructResult = await context.dependencies.reconstructWorkflow({
-    sample_id: sampleId,
-    path: 'auto',
-    topk: 12,
-    allow_partial: true,
-    include_plan: true,
-    include_preflight: true,
-  })
-  const angrResult = await context.dependencies.angrAnalyze({
-    sample_id: sampleId,
-    analysis: 'cfg_fast',
-    persist_artifact: true,
-  })
-  const retdecResult = await context.dependencies.retdecDecompile({
-    sample_id: sampleId,
-    output_format: 'plain',
-    persist_artifact: true,
-  })
+  throwIfStageAborted(context)
+  const reconstructResult = await context.dependencies.reconstructWorkflow(
+    {
+      sample_id: sampleId,
+      path: 'auto',
+      topk: 12,
+      allow_partial: true,
+      include_plan: true,
+      include_preflight: true,
+    },
+    context.abortSignal
+  )
+  throwIfStageAborted(context)
+  const angrResult = await context.dependencies.angrAnalyze(
+    {
+      sample_id: sampleId,
+      analysis: 'cfg_fast',
+      persist_artifact: true,
+    },
+    context.abortSignal
+  )
+  throwIfStageAborted(context)
+  const retdecResult = await context.dependencies.retdecDecompile(
+    {
+      sample_id: sampleId,
+      output_format: 'plain',
+      persist_artifact: true,
+    },
+    context.abortSignal
+  )
+  throwIfStageAborted(context)
   const retdecQuality = summarizeRetDecQuality(retdecResult)
   const artifacts = [
     ...collectArtifactsFromResult(reconstructResult),
@@ -1836,6 +2008,7 @@ async function runSemanticReviewStage(
   sampleId: string,
   stage: AnalysisPipelineStage
 ): Promise<StageExecutionOutput> {
+  throwIfStageAborted(context)
   const sessionTag = semanticReviewSessionTag(runId, stage)
   const commonArgs = {
     sample_id: sampleId,
@@ -1861,34 +2034,45 @@ async function runSemanticReviewStage(
         : 'code.module.review'
   const workflowResult =
     stage === 'semantic_name_review'
-      ? await context.dependencies.semanticNameReviewWorkflow({
-          ...commonArgs,
-          topk: 12,
-          max_functions: 10,
-          include_resolved: false,
-          rerun_reconstruct: true,
-          analysis_goal:
-            'Review high-value reconstructed functions and propose evidence-grounded semantic names for this staged analysis run.',
-        })
-      : stage === 'semantic_explain_review'
-        ? await context.dependencies.functionExplanationReviewWorkflow({
+      ? await context.dependencies.semanticNameReviewWorkflow(
+          {
             ...commonArgs,
             topk: 12,
             max_functions: 10,
-            include_resolved: true,
+            include_resolved: false,
+            rerun_reconstruct: true,
             analysis_goal:
-              'Explain high-value reconstructed functions and produce evidence-grounded behavior summaries for this staged analysis run.',
-          })
-        : await context.dependencies.moduleReconstructionReviewWorkflow({
-            ...commonArgs,
-            topk: 12,
-            module_limit: 6,
-            min_module_size: 2,
-            include_imports: true,
-            include_strings: true,
-            analysis_goal:
-              'Review reconstructed modules and refine module roles for this staged analysis run.',
-          })
+              'Review high-value reconstructed functions and propose evidence-grounded semantic names for this staged analysis run.',
+          },
+          context.abortSignal
+        )
+      : stage === 'semantic_explain_review'
+        ? await context.dependencies.functionExplanationReviewWorkflow(
+            {
+              ...commonArgs,
+              topk: 12,
+              max_functions: 10,
+              include_resolved: true,
+              analysis_goal:
+                'Explain high-value reconstructed functions and produce evidence-grounded behavior summaries for this staged analysis run.',
+            },
+            context.abortSignal
+          )
+        : await context.dependencies.moduleReconstructionReviewWorkflow(
+            {
+              ...commonArgs,
+              topk: 12,
+              module_limit: 6,
+              min_module_size: 2,
+              include_imports: true,
+              include_strings: true,
+              analysis_goal:
+                'Review reconstructed modules and refine module roles for this staged analysis run.',
+            },
+            context.abortSignal
+          )
+
+  throwIfStageAborted(context)
 
   const artifacts = collectArtifactsFromResult(workflowResult)
   const data =
@@ -1979,6 +2163,7 @@ async function runDynamicPlanStage(
   runId: string,
   sampleId: string
 ): Promise<StageExecutionOutput> {
+  throwIfStageAborted(context)
   const sample = context.database.findSample(sampleId)
   const run = context.database.findAnalysisRun(runId)
   if (!sample || !run) {
@@ -1997,33 +2182,53 @@ async function runDynamicPlanStage(
       sessionTag: `analysis/${runId}`,
     }
   )
+  throwIfStageAborted(context)
   const unpackPlan = unpackSelection.latest_payload
 
-  const behaviorClassifierResult = await context.dependencies.staticBehaviorClassify({
-    sample_id: sampleId,
-    static_artifact_scope: 'latest',
-    include_dynamic_evidence: false,
-    session_tag: `analysis/${runId}`,
-  })
+  const behaviorClassifierResult = await context.dependencies.staticBehaviorClassify(
+    {
+      sample_id: sampleId,
+      static_artifact_scope: 'latest',
+      include_dynamic_evidence: false,
+      session_tag: `analysis/${runId}`,
+    },
+    context.abortSignal
+  )
+  throwIfStageAborted(context)
   const [dependenciesResult, qilingResult, pandaResult, breakpointResult] = await Promise.all([
-    context.dependencies.dynamicDependencies({ sample_id: sampleId }),
-    context.dependencies.qilingInspect({ sample_id: sampleId, operation: 'preflight' }),
-    context.dependencies.pandaInspect({ sample_id: sampleId }),
-    context.dependencies.breakpointSmart({ sample_id: sampleId, session_tag: debugSessionTag }),
+    context.dependencies.dynamicDependencies({ sample_id: sampleId }, context.abortSignal),
+    context.dependencies.qilingInspect(
+      { sample_id: sampleId, operation: 'preflight' },
+      context.abortSignal
+    ),
+    context.dependencies.pandaInspect({ sample_id: sampleId }, context.abortSignal),
+    context.dependencies.breakpointSmart(
+      { sample_id: sampleId, session_tag: debugSessionTag },
+      context.abortSignal
+    ),
   ])
-  const deepPlanResult = await context.dependencies.dynamicDeepPlan({
-    sample_id: sampleId,
-    goals: ['all'],
-    static_artifact_scope: 'session',
-    static_artifact_session_tag: `analysis/${runId}`,
-    runtime_preference: 'auto',
-  })
-  const tracePlanResult = await context.dependencies.traceCondition({
-    sample_id: sampleId,
-    reuse_cached: true,
-    artifact_scope: 'session',
-    session_tag: debugSessionTag,
-  })
+  throwIfStageAborted(context)
+  const deepPlanResult = await context.dependencies.dynamicDeepPlan(
+    {
+      sample_id: sampleId,
+      goals: ['all'],
+      static_artifact_scope: 'session',
+      static_artifact_session_tag: `analysis/${runId}`,
+      runtime_preference: 'auto',
+    },
+    context.abortSignal
+  )
+  throwIfStageAborted(context)
+  const tracePlanResult = await context.dependencies.traceCondition(
+    {
+      sample_id: sampleId,
+      reuse_cached: true,
+      artifact_scope: 'session',
+      session_tag: debugSessionTag,
+    },
+    context.abortSignal
+  )
+  throwIfStageAborted(context)
   const artifacts = [
     ...collectArtifactsFromResult(behaviorClassifierResult),
     ...collectArtifactsFromResult(dependenciesResult),
@@ -2176,6 +2381,7 @@ async function runDynamicExecuteStage(
   runId: string,
   sampleId: string
 ): Promise<StageExecutionOutput> {
+  throwIfStageAborted(context)
   const sample = context.database.findSample(sampleId)
   const run = context.database.findAnalysisRun(runId)
   if (!sample || !run) {
@@ -2195,6 +2401,7 @@ async function runDynamicExecuteStage(
       sessionTag: `analysis/${runId}`,
     }
   )
+  throwIfStageAborted(context)
   const unpackPlan = unpackSelection.latest_payload
   const artifacts: ArtifactRef[] = []
   const diffDigests: Array<z.infer<typeof AnalysisDiffDigestSchema>> = []
@@ -2207,18 +2414,23 @@ async function runDynamicExecuteStage(
       sessionTag: debugSessionTag,
     }
   )
+  throwIfStageAborted(context)
 
   let unpackExecution: z.infer<typeof UnpackExecutionSchema> | undefined
   let unpackedSampleId: string | null = null
 
   if (unpackPlan?.strategy === 'upx_decompress' && executionPolicy.allowTransformations) {
-    const upxDecompressResult = await context.dependencies.upxInspect({
-      sample_id: sampleId,
-      operation: 'decompress',
-      timeout_sec: 30,
-      persist_artifact: true,
-      session_tag: debugSessionTag,
-    })
+    const upxDecompressResult = await context.dependencies.upxInspect(
+      {
+        sample_id: sampleId,
+        operation: 'decompress',
+        timeout_sec: 30,
+        persist_artifact: true,
+        session_tag: debugSessionTag,
+      },
+      context.abortSignal
+    )
+    throwIfStageAborted(context)
     artifacts.push(...collectArtifactsFromResult(upxDecompressResult))
 
     const unpackedArtifact =
@@ -2230,15 +2442,18 @@ async function runDynamicExecuteStage(
 
     if (unpackedArtifact) {
       const workspace = await context.workspaceManager.getWorkspace(sampleId)
+      throwIfStageAborted(context)
       const unpackedPath = context.workspaceManager.normalizePath(
         workspace.root,
         unpackedArtifact.path
       )
       const unpackedBytes = await fs.promises.readFile(unpackedPath)
+      throwIfStageAborted(context)
       const finalizer = createSampleFinalizationService(
         context.workspaceManager,
         context.database,
-        context.policyGuard
+        context.policyGuard,
+        context.dependencies.sampleOperationGate
       )
       const finalized = await finalizer.finalizeBuffer({
         data: unpackedBytes,
@@ -2246,37 +2461,54 @@ async function runDynamicExecuteStage(
         source: 'unpack:upx',
         auditOperation: 'workflow.analyze.stage',
       })
+      throwIfStageAborted(context)
       unpackedSampleId = finalized.sample_id
 
       const [unpackedImports, unpackedStrings, unpackedStructure] = await Promise.all([
-        context.dependencies.peImportsExtract({
-          sample_id: unpackedSampleId,
-          group_by_dll: true,
-          force_refresh: false,
-        }),
-        context.dependencies.stringsExtract({
-          sample_id: unpackedSampleId,
-          mode: 'preview',
-          max_strings: 96,
-          force_refresh: false,
-          defer_if_slow: false,
-        }),
+        context.dependencies.peImportsExtract(
+          {
+            sample_id: unpackedSampleId,
+            group_by_dll: true,
+            force_refresh: false,
+          },
+          context.abortSignal
+        ),
+        context.dependencies.stringsExtract(
+          {
+            sample_id: unpackedSampleId,
+            mode: 'preview',
+            max_strings: 96,
+            force_refresh: false,
+            defer_if_slow: false,
+          },
+          context.abortSignal
+        ),
         // Format-aware: route unpacked sample to correct structural analysis
         (() => {
           const unpackedSample = context.database.findSample(unpackedSampleId)
           const ft = unpackedSample?.file_type ?? 'PE'
           if (ft === 'ELF' && context.dependencies.elfStructureAnalyze) {
-            return context.dependencies.elfStructureAnalyze({ sample_id: unpackedSampleId })
+            return context.dependencies.elfStructureAnalyze(
+              { sample_id: unpackedSampleId },
+              context.abortSignal
+            )
           }
           if (
             (ft === 'Mach-O' || ft === 'Mach-O-Fat') &&
             context.dependencies.machoStructureAnalyze
           ) {
-            return context.dependencies.machoStructureAnalyze({ sample_id: unpackedSampleId })
+            return context.dependencies.machoStructureAnalyze(
+              { sample_id: unpackedSampleId },
+              context.abortSignal
+            )
           }
-          return context.dependencies.peStructureAnalyze({ sample_id: unpackedSampleId })
+          return context.dependencies.peStructureAnalyze(
+            { sample_id: unpackedSampleId },
+            context.abortSignal
+          )
         })(),
       ])
+      throwIfStageAborted(context)
       const packedDiff = buildPackedVsUnpackedDiffDigest({
         sampleId,
         beforeRef: unpackSelection.latest_artifact,
@@ -2516,15 +2748,18 @@ async function runDynamicExecuteStage(
   }
 
   const sandboxResult = executionPolicy.allowLiveExecution
-    ? await context.dependencies.sandboxExecute({
-        sample_id: sampleId,
-        mode:
-          unpackPlan?.packed_state && unpackPlan.packed_state !== 'not_packed'
-            ? 'memory_guided'
-            : 'safe_simulation',
-        approved: true,
-        persist_artifact: true,
-      })
+    ? await context.dependencies.sandboxExecute(
+        {
+          sample_id: sampleId,
+          mode:
+            unpackPlan?.packed_state && unpackPlan.packed_state !== 'not_packed'
+              ? 'memory_guided'
+              : 'safe_simulation',
+          approved: true,
+          persist_artifact: true,
+        },
+        context.abortSignal
+      )
     : ({
         ok: false,
         data: {
@@ -2539,6 +2774,7 @@ async function runDynamicExecuteStage(
         },
         warnings: ['Dynamic execution requires allow_live_execution=true on the analysis run.'],
       } as WorkerResult)
+  throwIfStageAborted(context)
   artifacts.push(...collectArtifactsFromResult(sandboxResult))
   const afterDynamicEvidence = await loadDynamicTraceEvidence(
     context.workspaceManager,
@@ -2549,6 +2785,7 @@ async function runDynamicExecuteStage(
       sessionTag: undefined,
     }
   )
+  throwIfStageAborted(context)
   const sandboxData =
     sandboxResult.data && typeof sandboxResult.data === 'object'
       ? (sandboxResult.data as Record<string, unknown>)
@@ -2710,11 +2947,16 @@ async function runSummarizeStage(
   context: StageExecutionContext,
   sampleId: string
 ): Promise<StageExecutionOutput> {
-  const summarizeResult = await context.dependencies.workflowSummarize({
-    sample_id: sampleId,
-    through_stage: 'final',
-    synthesis_mode: 'deterministic',
-  })
+  throwIfStageAborted(context)
+  const summarizeResult = await context.dependencies.workflowSummarize(
+    {
+      sample_id: sampleId,
+      through_stage: 'final',
+      synthesis_mode: 'deterministic',
+    },
+    context.abortSignal
+  )
+  throwIfStageAborted(context)
   const artifacts = collectArtifactsFromResult(summarizeResult)
   return {
     result: {
@@ -2742,11 +2984,18 @@ export async function executeQueuedAnalysisStage(
     run_id: string
     stage: AnalysisPipelineStage
     job_id?: string
+    job_sample_id?: string
     force_refresh?: boolean
-  }
+  },
+  abortSignal?: AbortSignal
 ): Promise<JobResult> {
   const startTime = Date.now()
-  const run = context.database.findAnalysisRun(input.run_id)
+  const executionContext: StageExecutionContext = { ...context, abortSignal }
+  throwIfStageAborted(executionContext)
+  if (isStaticDockerProfile() || executionContext.dependencies.staticOnly) {
+    assertStaticWorkflowStage(input.stage)
+  }
+  const run = executionContext.database.findAnalysisRun(input.run_id)
   if (!run) {
     return {
       jobId: input.run_id,
@@ -2758,10 +3007,20 @@ export async function executeQueuedAnalysisStage(
     }
   }
 
-  const blocker = findStageDependencyBlocker(context.database, run, input.stage)
+  if (isStaticDockerProfile() || executionContext.dependencies.staticOnly) {
+    assertStaticAnalysisRunContract({
+      run,
+      stage: input.stage,
+      jobSampleId: input.job_sample_id || run.sample_id,
+      getStageStatus: (stage) =>
+        executionContext.database.findAnalysisRunStage(run.id, stage)?.status,
+    })
+  }
+
+  const blocker = findStageDependencyBlocker(executionContext.database, run, input.stage)
   if (blocker) {
     const result = buildDependencyBlockedStageResult(input.stage, blocker)
-    upsertAnalysisRunStage(context.database, {
+    upsertAnalysisRunStage(executionContext.database, {
       runId: run.id,
       stage: input.stage,
       status: 'partial',
@@ -2788,7 +3047,8 @@ export async function executeQueuedAnalysisStage(
     }
   }
 
-  upsertAnalysisRunStage(context.database, {
+  throwIfStageAborted(executionContext)
+  upsertAnalysisRunStage(executionContext.database, {
     runId: run.id,
     stage: input.stage,
     status: 'running',
@@ -2803,27 +3063,27 @@ export async function executeQueuedAnalysisStage(
     const runner = (() => {
       switch (input.stage) {
         case 'enrich_static':
-          return runEnrichStaticStage(context, run.sample_id, Boolean(input.force_refresh))
+          return runEnrichStaticStage(executionContext, run.sample_id, Boolean(input.force_refresh))
         case 'function_map':
-          return runFunctionMapStage(context, run.sample_id)
+          return runFunctionMapStage(executionContext, run.sample_id)
         case 'reconstruct':
-          return runReconstructStage(context, run.sample_id)
+          return runReconstructStage(executionContext, run.sample_id)
         case 'semantic_name_review':
         case 'semantic_explain_review':
         case 'semantic_module_review':
-          return runSemanticReviewStage(context, run.id, run.sample_id, input.stage)
+          return runSemanticReviewStage(executionContext, run.id, run.sample_id, input.stage)
         case 'dynamic_plan':
-          return runDynamicPlanStage(context, run.id, run.sample_id)
+          return runDynamicPlanStage(executionContext, run.id, run.sample_id)
         case 'dynamic_execute':
-          return runDynamicExecuteStage(context, run.id, run.sample_id)
+          return runDynamicExecuteStage(executionContext, run.id, run.sample_id)
         case 'summarize':
-          return runSummarizeStage(context, run.sample_id)
+          return runSummarizeStage(executionContext, run.sample_id)
         case 'fast_profile':
         default:
           return buildFastProfileStage(
-            context,
+            executionContext,
             run.id,
-            context.database.findSample(run.sample_id),
+            executionContext.database.findSample(run.sample_id),
             {
               sample_id: run.sample_id,
               goal: run.goal as z.infer<typeof AnalysisIntentGoalSchema>,
@@ -2838,11 +3098,12 @@ export async function executeQueuedAnalysisStage(
     })()
 
     const stageOutput = await runner
+    throwIfStageAborted(executionContext)
     const stageStatus = stageOutput.stageStatus || 'completed'
     const executionState =
       stageOutput.executionState || (stageStatus === 'completed' ? 'completed' : 'partial')
-    appendAnalysisRunArtifactRefs(context.database, run.id, stageOutput.artifacts)
-    upsertAnalysisRunStage(context.database, {
+    appendAnalysisRunArtifactRefs(executionContext.database, run.id, stageOutput.artifacts)
+    upsertAnalysisRunStage(executionContext.database, {
       runId: run.id,
       stage: input.stage,
       status: stageStatus,
@@ -2868,24 +3129,29 @@ export async function executeQueuedAnalysisStage(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const memoryRelated = /oom|out of memory|memory|allocation|killed/i.test(message)
-    upsertAnalysisRunStage(context.database, {
+    const cancelled = abortSignal?.aborted || /cancelled|aborted/i.test(message)
+    upsertAnalysisRunStage(executionContext.database, {
       runId: run.id,
       stage: input.stage,
-      status: memoryRelated ? 'recoverable' : 'failed',
+      status: cancelled ? 'partial' : memoryRelated ? 'recoverable' : 'failed',
       executionState: 'partial',
       tool: ANALYSIS_STAGE_JOB_TOOL,
       jobId: input.job_id,
       result: { error: message },
-      metadata: memoryRelated
+      metadata: cancelled
         ? {
-            recovery_state: 'recoverable',
-            recovery_reason:
-              'The queued stage stopped under memory pressure. Re-promote it after headroom recovers or continue from earlier bounded artifacts.',
-            interruption_cause: 'memory_pressure',
+            interruption_cause: 'cancelled',
           }
-        : {
-            interruption_cause: 'tool_error',
-          },
+        : memoryRelated
+          ? {
+              recovery_state: 'recoverable',
+              recovery_reason:
+                'The queued stage stopped under memory pressure. Re-promote it after headroom recovers or continue from earlier bounded artifacts.',
+              interruption_cause: 'memory_pressure',
+            }
+          : {
+              interruption_cause: 'tool_error',
+            },
       finishedAt: new Date().toISOString(),
     })
     return {
@@ -3054,8 +3320,11 @@ function queueStage(
   runId: string,
   stage: AnalysisPipelineStage,
   sampleId: string,
-  forceRefresh: boolean
+  forceRefresh: boolean,
+  staticOnly = false
 ) {
+  const enforcedStatic = isStaticDockerProfile() || staticOnly
+  if (enforcedStatic) assertStaticWorkflowStage(stage)
   const timeout =
     stage === 'enrich_static'
       ? ENRICH_STAGE_TIMEOUT_MS
@@ -3072,6 +3341,14 @@ function queueStage(
                 : DYNAMIC_PLAN_TIMEOUT_MS
 
   const run = database.findAnalysisRun(runId)
+  if (enforcedStatic) {
+    assertStaticAnalysisRunContract({
+      run,
+      stage,
+      jobSampleId: sampleId,
+      getStageStatus: (predecessor) => database.findAnalysisRunStage(runId, predecessor)?.status,
+    })
+  }
   const executionPolicy = run
     ? readExecutionPolicy(run)
     : { allowTransformations: false, allowLiveExecution: false }
@@ -3253,6 +3530,14 @@ export function createAnalyzeWorkflowStartHandler(
     const startTime = Date.now()
     try {
       const input = analyzeStartInputSchema.parse(args)
+      if (
+        deps.staticOnly &&
+        (input.goal !== 'static' || input.allow_transformations || input.allow_live_execution)
+      ) {
+        throw new Error(
+          'E_STATIC_PROFILE_CONTRACT: start requires goal=static, allow_transformations=false, allow_live_execution=false'
+        )
+      }
       const sample = database.findSample(input.sample_id)
       if (!sample) {
         return {
@@ -3274,6 +3559,7 @@ export function createAnalyzeWorkflowStartHandler(
           allow_transformations: input.allow_transformations,
           allow_live_execution: input.allow_live_execution,
         },
+        ...(deps.staticOnly ? { stagePlan: [...STATIC_WORKFLOW_STAGE_IDS] } : {}),
       })
 
       const existingFastProfile = database.findAnalysisRunStage(runState.run.id, FAST_PROFILE_STAGE)
@@ -3467,6 +3753,14 @@ export function createAnalyzeWorkflowPromoteHandler(
     const startTime = Date.now()
     try {
       const input = analyzePromoteInputSchema.parse(args)
+      if (
+        deps.staticOnly &&
+        (input.stages !== undefined || input.through_stage !== 'function_map')
+      ) {
+        throw new Error(
+          'E_STATIC_PROFILE_CONTRACT: promote requires exactly through_stage=function_map and forbids stages'
+        )
+      }
       const run = database.findAnalysisRun(input.run_id)
       if (!run) {
         return {
@@ -3474,6 +3768,14 @@ export function createAnalyzeWorkflowPromoteHandler(
           errors: [`Analysis run not found: ${input.run_id}`],
           metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME_PROMOTE },
         }
+      }
+      if (deps.staticOnly) {
+        assertStaticAnalysisRunContract({
+          run,
+          stage: 'enrich_static',
+          jobSampleId: run.sample_id,
+          getStageStatus: (stage) => database.findAnalysisRunStage(run.id, stage)?.status,
+        })
       }
       if (!jobQueue) {
         return {
@@ -3485,7 +3787,7 @@ export function createAnalyzeWorkflowPromoteHandler(
         }
       }
 
-      const stagePlan = buildStagePlan(run.goal as z.infer<typeof AnalysisIntentGoalSchema>)
+      const stagePlan = parseStagePlanFromRun(run)
       const targetStages = input.stages?.length
         ? input.stages
         : input.through_stage
@@ -3513,7 +3815,15 @@ export function createAnalyzeWorkflowPromoteHandler(
         ) {
           continue
         }
-        queueStage(database, jobQueue, run.id, stage, run.sample_id, input.force_refresh)
+        queueStage(
+          database,
+          jobQueue,
+          run.id,
+          stage,
+          run.sample_id,
+          input.force_refresh,
+          deps.staticOnly
+        )
         queuedStages.push(stage)
       }
 

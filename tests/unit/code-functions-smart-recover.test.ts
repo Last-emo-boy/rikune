@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
 import fs from 'fs'
 import path from 'path'
@@ -110,7 +111,7 @@ describe('code.functions.smart_recover tool', () => {
     database = new DatabaseManager(testDbPath)
     cacheManager = new CacheManager(testCachePath, database)
 
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: '8'.repeat(64),
       md5: '8'.repeat(32),

@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
 import fs from 'fs'
 import path from 'path'
@@ -31,7 +32,7 @@ describe('static analysis tools', () => {
     database = new DatabaseManager(testDbPath)
 
     const sampleId = 'sha256:' + 'e'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: 'e'.repeat(64),
       md5: 'e'.repeat(32),

@@ -72,8 +72,8 @@
     <section id="authentication" class="reveal">
       <h2><span data-lang-en>Authentication</span><span data-lang-zh>身份验证</span></h2>
       <p>
-        <span data-lang-en>Most endpoints require API key authentication via the <code>X-API-Key</code> header. If the <code>API_KEY</code> environment variable is not set, authentication is disabled.</span>
-        <span data-lang-zh>大多数端点需要通过 <code>X-API-Key</code> 请求头进行 API 密钥认证。如果未设置 <code>API_KEY</code> 环境变量，则禁用认证。</span>
+        <span data-lang-en>All non-health HTTP surfaces require API key authentication via the <code>X-API-Key</code> header (or the dashboard-only <code>?key=</code> query parameter). The server refuses to start when HTTP API access is enabled without a non-empty <code>API_KEY</code>.</span>
+        <span data-lang-zh>除健康检查外，所有 HTTP 接口均要求通过 <code>X-API-Key</code> 请求头鉴权（Dashboard 也支持专用的 <code>?key=</code> 查询参数）。启用 HTTP API 却未提供非空 <code>API_KEY</code> 时，服务器会拒绝启动。</span>
       </p>
       <div class="code-block">
         <div class="code-block__header"><span>bash</span><button class="code-block__copy">Copy</button></div>

@@ -24,6 +24,11 @@ import {
   mergeSetupActions,
 } from '../setup-guidance.js'
 import { PollingGuidanceSchema, buildPollingGuidance } from '../polling-guidance.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'workflow.module_reconstruction_review'
 
@@ -197,7 +202,10 @@ export function createModuleReconstructionReviewWorkflowHandler(
     dependencies?.reconstructWorkflowHandler ||
     createReconstructWorkflowHandler(workspaceManager, database, cacheManager)
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
+    throwIfAnalysisAborted(abortSignal)
+    const runHandler = (handler: AbortableHandler<ToolArgs, WorkerResult>, handlerArgs: ToolArgs) =>
+      invokeAbortable(handler, handlerArgs, abortSignal)
     const startTime = Date.now()
     const warnings: string[] = []
     const errors: string[] = []
@@ -253,7 +261,7 @@ export function createModuleReconstructionReviewWorkflowHandler(
         }
       }
 
-      const reviewResult = await moduleReviewHandler({
+      const reviewResult = await runHandler(moduleReviewHandler, {
         sample_id: input.sample_id,
         topk: input.topk,
         module_limit: input.module_limit,
@@ -346,7 +354,7 @@ export function createModuleReconstructionReviewWorkflowHandler(
       }
 
       if (canRefreshExport) {
-        const exportResult = await reconstructWorkflowHandler({
+        const exportResult = await runHandler(reconstructWorkflowHandler, {
           sample_id: input.sample_id,
           path: input.export_path,
           topk: input.export_topk,
@@ -451,6 +459,7 @@ export function createModuleReconstructionReviewWorkflowHandler(
         metrics: { elapsed_ms: Date.now() - startTime, tool: TOOL_NAME },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [error instanceof Error ? error.message : String(error)],

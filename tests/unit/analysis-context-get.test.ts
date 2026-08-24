@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from '../../src/database.js'
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals'
 import fs from 'fs/promises'
 import os from 'os'
@@ -21,6 +22,7 @@ describe('analysis.context.get tool', () => {
   })
 
   afterEach(async () => {
+    jobQueue.close()
     database.close()
     await fs.rm(tempDir, { recursive: true, force: true })
   })
@@ -28,7 +30,7 @@ describe('analysis.context.get tool', () => {
   test('should return reuse hints for active jobs and sample cache entries', async () => {
     const sampleId = `sha256:${'a'.repeat(64)}`
     const sampleSha = 'a'.repeat(64)
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: sampleId,
       sha256: sampleSha,
       md5: 'b'.repeat(32),

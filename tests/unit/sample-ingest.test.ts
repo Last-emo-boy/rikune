@@ -10,6 +10,7 @@ import crypto from 'crypto'
 import { WorkspaceManager } from '../../src/workspace-manager.js'
 import { DatabaseManager } from '../../src/database.js'
 import { PolicyGuard } from '../../src/policy-guard.js'
+import { SampleOperationGate } from '../../src/sample/sample-operation-gate.js'
 import { createSampleIngestHandler, SampleIngestOutput } from '../../src/tools/sample-ingest.js'
 
 describe('sample.ingest tool', () => {
@@ -21,6 +22,7 @@ describe('sample.ingest tool', () => {
   let workspaceManager: WorkspaceManager
   let database: DatabaseManager
   let policyGuard: PolicyGuard
+  let sampleOperationGate: SampleOperationGate
   let handler: ReturnType<typeof createSampleIngestHandler>
 
   beforeEach(() => {
@@ -33,12 +35,19 @@ describe('sample.ingest tool', () => {
     // Initialize components
     workspaceManager = new WorkspaceManager(workspaceRoot)
     database = new DatabaseManager(dbPath)
+    sampleOperationGate = new SampleOperationGate(database)
     policyGuard = new PolicyGuard(auditLogPath)
-    handler = createSampleIngestHandler(workspaceManager, database, policyGuard)
+    handler = createSampleIngestHandler(
+      workspaceManager,
+      database,
+      policyGuard,
+      sampleOperationGate
+    )
   })
 
   afterEach(() => {
     // Clean up
+    sampleOperationGate.close()
     database.close()
     if (fs.existsSync(testDir)) {
       fs.rmSync(testDir, { recursive: true, force: true })
@@ -77,7 +86,7 @@ describe('sample.ingest tool', () => {
       const base64Data = testData.toString('base64')
 
       // Ingest sample
-      const result = await handler({ 
+      const result = await handler({
         bytes_b64: base64Data,
         filename: 'test.exe',
       })
@@ -95,14 +104,14 @@ describe('sample.ingest tool', () => {
       const base64Data = testData.toString('base64')
       const customFilename = 'custom-sample.exe'
 
-      const result = await handler({ 
+      const result = await handler({
         bytes_b64: base64Data,
         filename: customFilename,
       })
       const data = result.data as SampleIngestOutput['data']
 
       expect(result.ok).toBe(true)
-      
+
       // Verify file was stored with custom filename
       const workspace = await workspaceManager.getWorkspace(data?.sample_id as string)
       const storedFilePath = path.join(workspace.original, customFilename)
@@ -148,7 +157,10 @@ describe('sample.ingest tool', () => {
       expect(data2?.existed).toBe(true)
 
       // Verify only one database record exists
-      const samples = database.getDatabase().prepare('SELECT COUNT(*) as count FROM samples').get() as { count: number }
+      const samples = database
+        .getDatabase()
+        .prepare('SELECT COUNT(*) as count FROM samples')
+        .get() as { count: number }
       expect(samples.count).toBe(1)
     })
   })
@@ -158,7 +170,7 @@ describe('sample.ingest tool', () => {
       // Create large file (simulate 501MB)
       const largeSize = 501 * 1024 * 1024
       const largeFilePath = path.join(testDir, 'large-sample.bin')
-      
+
       // Write in chunks to avoid memory issues
       const fd = fs.openSync(largeFilePath, 'w')
       const chunkSize = 10 * 1024 * 1024 // 10MB chunks
@@ -168,7 +180,7 @@ describe('sample.ingest tool', () => {
       }
       fs.closeSync(fd)
 
-      const result = await handler({ 
+      const result = await handler({
         path: largeFilePath,
       })
 
@@ -176,7 +188,7 @@ describe('sample.ingest tool', () => {
       expect(result.errors).toBeDefined()
       expect(result.errors?.[0]).toContain('exceeds maximum limit')
       expect(result.errors?.[0]).toContain('500MB')
-      
+
       // Cleanup
       fs.unlinkSync(largeFilePath)
     })
@@ -185,7 +197,7 @@ describe('sample.ingest tool', () => {
       // Create file at exactly 500MB
       const maxSize = 500 * 1024 * 1024
       const maxFilePath = path.join(testDir, 'max-sample.bin')
-      
+
       // Write in chunks to avoid memory issues
       const fd = fs.openSync(maxFilePath, 'w')
       const chunkSize = 10 * 1024 * 1024 // 10MB chunks
@@ -195,14 +207,14 @@ describe('sample.ingest tool', () => {
       }
       fs.closeSync(fd)
 
-      const result = await handler({ 
+      const result = await handler({
         path: maxFilePath,
       })
       const data = result.data as SampleIngestOutput['data']
 
       expect(result.ok).toBe(true)
       expect(data?.size).toBe(maxSize)
-      
+
       // Cleanup
       fs.unlinkSync(maxFilePath)
     })
@@ -239,13 +251,13 @@ describe('sample.ingest tool', () => {
       const expectedSha256 = crypto.createHash('sha256').update(testData).digest('hex')
       const expectedMd5 = crypto.createHash('md5').update(testData).digest('hex')
 
-      const result = await handler({ 
+      const result = await handler({
         bytes_b64: testData.toString('base64'),
       })
       const data = result.data as SampleIngestOutput['data']
 
       expect(result.ok).toBe(true)
-      
+
       const sample = database.findSample(data?.sample_id as string)
       expect(sample?.sha256).toBe(expectedSha256)
       expect(sample?.md5).toBe(expectedMd5)
@@ -258,7 +270,7 @@ describe('sample.ingest tool', () => {
       const testData = Buffer.from('MZ\x90\x00\x03\x00\x00\x00')
       const base64Data = testData.toString('base64')
 
-      await handler({ 
+      await handler({
         bytes_b64: base64Data,
         source: 'test-source',
       })
@@ -266,9 +278,9 @@ describe('sample.ingest tool', () => {
       // Read audit log
       const auditLog = fs.readFileSync(auditLogPath, 'utf-8')
       const logLines = auditLog.trim().split('\n')
-      
+
       expect(logLines.length).toBeGreaterThan(0)
-      
+
       const lastLog = JSON.parse(logLines[logLines.length - 1])
       expect(lastLog.operation).toBe('sample.ingest')
       expect(lastLog.decision).toBe('allow')
@@ -282,16 +294,16 @@ describe('sample.ingest tool', () => {
 
       // First ingestion
       await handler({ bytes_b64: base64Data })
-      
+
       // Second ingestion (duplicate)
       await handler({ bytes_b64: base64Data })
 
       // Read audit log
       const auditLog = fs.readFileSync(auditLogPath, 'utf-8')
       const logLines = auditLog.trim().split('\n')
-      
+
       expect(logLines.length).toBe(2)
-      
+
       const secondLog = JSON.parse(logLines[1])
       expect(secondLog.reason).toContain('already exists')
       expect(secondLog.metadata.existed).toBe(true)
@@ -300,7 +312,7 @@ describe('sample.ingest tool', () => {
 
   describe('Error handling', () => {
     test('should return error for non-existent file path', async () => {
-      const result = await handler({ 
+      const result = await handler({
         path: '/non/existent/file.exe',
       })
 
@@ -310,7 +322,7 @@ describe('sample.ingest tool', () => {
     })
 
     test('should return error for invalid Base64', async () => {
-      const result = await handler({ 
+      const result = await handler({
         bytes_b64: 'invalid-base64!!!',
       })
 
@@ -408,7 +420,7 @@ describe('sample.ingest tool', () => {
   describe('File type detection', () => {
     test('should detect PE file type', async () => {
       const peData = Buffer.from('MZ\x90\x00\x03\x00\x00\x00')
-      const result = await handler({ 
+      const result = await handler({
         bytes_b64: peData.toString('base64'),
       })
       const data = result.data as SampleIngestOutput['data']
@@ -419,7 +431,7 @@ describe('sample.ingest tool', () => {
 
     test('should detect ELF file type', async () => {
       const elfData = Buffer.from('\x7FELF\x02\x01\x01\x00')
-      const result = await handler({ 
+      const result = await handler({
         bytes_b64: elfData.toString('base64'),
       })
       const data = result.data as SampleIngestOutput['data']
@@ -430,7 +442,7 @@ describe('sample.ingest tool', () => {
 
     test('should return unknown for unrecognized file type', async () => {
       const unknownData = Buffer.from('random data')
-      const result = await handler({ 
+      const result = await handler({
         bytes_b64: unknownData.toString('base64'),
       })
       const data = result.data as SampleIngestOutput['data']

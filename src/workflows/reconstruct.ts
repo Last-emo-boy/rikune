@@ -84,6 +84,11 @@ import { createAngrAnalyzeHandler } from '../plugins/angr/tools/angr-analyze.js'
 import { createRetDecDecompileHandler } from '../plugins/retdec/tools/retdec-decompile.js'
 import { createRizinAnalyzeHandler } from '../plugins/rizin/tools/rizin-analyze.js'
 import { CACHE_TTL_7_DAYS } from '../constants/cache-ttl.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'workflow.reconstruct'
 const TOOL_VERSION = '0.1.5'
@@ -705,18 +710,18 @@ interface FunctionIndexRecoveryData {
 }
 
 interface ReconstructWorkflowDependencies {
-  runtimeDetectHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  planHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  nativeExportHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  dotnetExportHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  binaryRoleProfileHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  dllExportProfileHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  comRoleProfileHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  rustBinaryAnalyzeHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  functionIndexRecoverHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  rizinAnalyzeHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  angrAnalyzeHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  retdecDecompileHandler?: (args: ToolArgs) => Promise<WorkerResult>
+  runtimeDetectHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  planHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  nativeExportHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  dotnetExportHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  binaryRoleProfileHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  dllExportProfileHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  comRoleProfileHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  rustBinaryAnalyzeHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  functionIndexRecoverHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  rizinAnalyzeHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  angrAnalyzeHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  retdecDecompileHandler?: AbortableHandler<ToolArgs, WorkerResult>
   resolveBackends?: typeof resolveAnalysisBackends
 }
 
@@ -973,7 +978,10 @@ export function createReconstructWorkflowHandler(
   const retdecDecompileHandler =
     dependencies?.retdecDecompileHandler || createRetDecDecompileHandler(workspaceManager, database)
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
+    throwIfAnalysisAborted(abortSignal)
+    const runHandler = (handler: AbortableHandler<ToolArgs, WorkerResult>, handlerArgs: ToolArgs) =>
+      invokeAbortable(handler, handlerArgs, abortSignal)
     const input = ReconstructWorkflowInputSchema.parse(args)
     const startTime = Date.now()
 
@@ -1071,7 +1079,9 @@ export function createReconstructWorkflowHandler(
         export_fallback: 'skipped' as 'ok' | 'failed' | 'skipped',
       }
 
-      const runtimeResult = await runtimeDetectHandler({ sample_id: input.sample_id })
+      const runtimeResult = await runHandler(runtimeDetectHandler, {
+        sample_id: input.sample_id,
+      })
       const runtimeData =
         runtimeResult.ok && runtimeResult.data
           ? (runtimeResult.data as RuntimeDetectData)
@@ -1149,7 +1159,7 @@ export function createReconstructWorkflowHandler(
       let roleStrategy: ReturnType<typeof buildRoleAwareStrategy> | null = null
 
       if (input.include_preflight) {
-        const binaryProfileResult = await binaryRoleProfileHandler({
+        const binaryProfileResult = await runHandler(binaryRoleProfileHandler, {
           sample_id: input.sample_id,
           force_refresh: !input.reuse_cached,
         })
@@ -1182,7 +1192,7 @@ export function createReconstructWorkflowHandler(
       }
 
       if (selectedPath === 'native' && !runtimeData?.is_dotnet && input.include_preflight) {
-        const dllProfileResult = await dllExportProfileHandler({
+        const dllProfileResult = await runHandler(dllExportProfileHandler, {
           sample_id: input.sample_id,
           force_refresh: !input.reuse_cached,
         })
@@ -1209,7 +1219,7 @@ export function createReconstructWorkflowHandler(
           )
         }
 
-        const comProfileResult = await comRoleProfileHandler({
+        const comProfileResult = await runHandler(comRoleProfileHandler, {
           sample_id: input.sample_id,
           force_refresh: !input.reuse_cached,
         })
@@ -1238,7 +1248,7 @@ export function createReconstructWorkflowHandler(
       }
 
       if (selectedPath === 'native' && !runtimeData?.is_dotnet && input.include_preflight) {
-        const rustProfileResult = await rustBinaryAnalyzeHandler({
+        const rustProfileResult = await runHandler(rustBinaryAnalyzeHandler, {
           sample_id: input.sample_id,
           force_refresh: !input.reuse_cached,
         })
@@ -1282,7 +1292,7 @@ export function createReconstructWorkflowHandler(
         !hasReadyGhidraFunctionIndex &&
         !hasFunctionDefinitionIndex
       ) {
-        const functionIndexRecoverResult = await functionIndexRecoverHandler({
+        const functionIndexRecoverResult = await runHandler(functionIndexRecoverHandler, {
           sample_id: input.sample_id,
           define_from: 'auto',
           include_rank_preview: false,
@@ -1333,6 +1343,7 @@ export function createReconstructWorkflowHandler(
           sessionTag: input.evidence_session_tag,
         }
       )
+      throwIfAnalysisAborted(abortSignal)
       const semanticNameIndex = await loadSemanticNameSuggestionIndex(
         workspaceManager,
         database,
@@ -1342,6 +1353,7 @@ export function createReconstructWorkflowHandler(
           sessionTag: input.semantic_session_tag,
         }
       )
+      throwIfAnalysisAborted(abortSignal)
       const semanticExplanationIndex = await loadSemanticFunctionExplanationIndex(
         workspaceManager,
         database,
@@ -1351,6 +1363,7 @@ export function createReconstructWorkflowHandler(
           sessionTag: input.semantic_session_tag,
         }
       )
+      throwIfAnalysisAborted(abortSignal)
       const provenance = {
         runtime: buildRuntimeArtifactProvenance(
           dynamicEvidence,
@@ -1381,6 +1394,7 @@ export function createReconstructWorkflowHandler(
             sessionTag: input.compare_evidence_session_tag,
           }
         )
+        throwIfAnalysisAborted(abortSignal)
         selectionDiffs.runtime = buildArtifactSelectionDiff(
           'runtime',
           provenance.runtime,
@@ -1401,6 +1415,7 @@ export function createReconstructWorkflowHandler(
             sessionTag: input.compare_semantic_session_tag,
           }
         )
+        throwIfAnalysisAborted(abortSignal)
         const baselineSemanticExplanationIndex = await loadSemanticFunctionExplanationIndex(
           workspaceManager,
           database,
@@ -1410,6 +1425,7 @@ export function createReconstructWorkflowHandler(
             sessionTag: input.compare_semantic_session_tag,
           }
         )
+        throwIfAnalysisAborted(abortSignal)
         selectionDiffs.semantic_names = buildArtifactSelectionDiff(
           'semantic_names',
           provenance.semantic_names,
@@ -1493,6 +1509,7 @@ export function createReconstructWorkflowHandler(
 
       if (input.reuse_cached) {
         const cachedLookup = await lookupCachedResult(cacheManager, cacheKey)
+        throwIfAnalysisAborted(abortSignal)
         if (cachedLookup) {
           return {
             ok: true,
@@ -1514,7 +1531,7 @@ export function createReconstructWorkflowHandler(
 
       let planSummary: PlanData | null = null
       if (input.include_plan) {
-        const planResult = await planHandler({
+        const planResult = await runHandler(planHandler, {
           sample_id: input.sample_id,
           target_language: selectedPath === 'dotnet' ? 'csharp' : 'c',
           depth: 'standard',
@@ -1585,7 +1602,7 @@ export function createReconstructWorkflowHandler(
 
       const runExport = async (pathToRun: 'native' | 'dotnet'): Promise<ExportRunResult> => {
         if (pathToRun === 'dotnet') {
-          const dotnetResult = await dotnetExportHandler({
+          const dotnetResult = await runHandler(dotnetExportHandler, {
             sample_id: input.sample_id,
             topk: input.topk,
             export_name: input.export_name,
@@ -1636,7 +1653,7 @@ export function createReconstructWorkflowHandler(
           }
         }
 
-        const nativeResult = await nativeExportHandler({
+        const nativeResult = await runHandler(nativeExportHandler, {
           sample_id: input.sample_id,
           topk: Math.max(input.topk, nativeExportTuning.topk),
           module_limit: nativeExportTuning.module_limit,
@@ -1917,7 +1934,7 @@ export function createReconstructWorkflowHandler(
         alternateBackends = {}
 
         if (selectedBackends.has('rizin.analyze')) {
-          const rizinResult = await rizinAnalyzeHandler({
+          const rizinResult = await runHandler(rizinAnalyzeHandler, {
             sample_id: input.sample_id,
             operation: 'functions',
             max_items: 20,
@@ -1940,7 +1957,7 @@ export function createReconstructWorkflowHandler(
         }
 
         if (selectedBackends.has('angr.analyze')) {
-          const angrResult = await angrAnalyzeHandler({
+          const angrResult = await runHandler(angrAnalyzeHandler, {
             sample_id: input.sample_id,
             analysis: 'cfg_fast',
             max_functions: 20,
@@ -1963,7 +1980,7 @@ export function createReconstructWorkflowHandler(
         }
 
         if (selectedBackends.has('retdec.decompile')) {
-          const retdecResult = await retdecDecompileHandler({
+          const retdecResult = await runHandler(retdecDecompileHandler, {
             sample_id: input.sample_id,
             output_format: 'plain',
             timeout_sec: 180,
@@ -2042,7 +2059,9 @@ export function createReconstructWorkflowHandler(
         routingMetadata
       )
 
+      throwIfAnalysisAborted(abortSignal)
       await cacheManager.setCachedResult(cacheKey, outputData, CACHE_TTL_MS, sample.sha256)
+      throwIfAnalysisAborted(abortSignal)
 
       return {
         ok: true,
@@ -2057,6 +2076,7 @@ export function createReconstructWorkflowHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [normalizeError(error)],

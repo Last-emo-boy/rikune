@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 /**
  * Unit tests for vuln.pattern.summary tool
  */
@@ -111,7 +112,7 @@ describe('vuln.pattern.summary tool', () => {
       const database = new DatabaseManager(path.join(tempRoot, 'rikune.db'))
 
       try {
-        database.insertSample({
+        database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
           id: sampleId,
           sha256: sampleHash,
           md5: 'd'.repeat(32),

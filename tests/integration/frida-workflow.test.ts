@@ -11,6 +11,7 @@ import { createFridaScriptInjectHandler } from '../../src/plugins/frida/tools/fr
 import { createFridaTraceCaptureHandler } from '../../src/plugins/frida/tools/frida-trace-capture.js'
 import { createSampleIngestHandler } from '../../src/tools/sample-ingest.js'
 import { PolicyGuard } from '../../src/policy-guard.js'
+import { SampleOperationGate } from '../../src/sample/sample-operation-gate.js'
 import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
@@ -19,6 +20,7 @@ describe('Frida Integration Tests', () => {
   let workspaceManager: WorkspaceManager
   let database: DatabaseManager
   let policyGuard: PolicyGuard
+  let sampleOperationGate: SampleOperationGate
   let testDir: string
   let dbPath: string
   let auditLogPath: string
@@ -33,11 +35,13 @@ describe('Frida Integration Tests', () => {
     // Initialize components
     workspaceManager = new WorkspaceManager(workspaceRoot)
     database = new DatabaseManager(dbPath)
+    sampleOperationGate = new SampleOperationGate(database)
     policyGuard = new PolicyGuard(auditLogPath)
   })
 
   afterAll(async () => {
     // Cleanup
+    sampleOperationGate.close()
     database.close()
     await fs.rm(testDir, { recursive: true, force: true })
   })
@@ -77,7 +81,12 @@ describe('Frida Integration Tests', () => {
    * Helper to ingest a test sample
    */
   async function ingestTestSample(peBuffer: Buffer): Promise<string> {
-    const ingestHandler = createSampleIngestHandler(workspaceManager, database, policyGuard)
+    const ingestHandler = createSampleIngestHandler(
+      workspaceManager,
+      database,
+      policyGuard,
+      sampleOperationGate
+    )
     const result = await ingestHandler({
       bytes_b64: peBuffer.toString('base64'),
       filename: 'test-sample.exe',
@@ -310,8 +319,18 @@ describe('Frida Integration Tests', () => {
             captured_at: new Date().toISOString(),
             total_events: 10,
             events: [
-              { type: 'api_call', function: 'CreateFileW', module: 'kernel32.dll', args: ['C:\\test.txt'] },
-              { type: 'api_call', function: 'ReadFile', module: 'kernel32.dll', args: [0x100, 0x200, 0x300] },
+              {
+                type: 'api_call',
+                function: 'CreateFileW',
+                module: 'kernel32.dll',
+                args: ['C:\\test.txt'],
+              },
+              {
+                type: 'api_call',
+                function: 'ReadFile',
+                module: 'kernel32.dll',
+                args: [0x100, 0x200, 0x300],
+              },
               { type: 'string_access', function: 'strlen', module: 'ntdll.dll', value: 'secret' },
             ],
           },
@@ -490,7 +509,10 @@ describe('Frida Integration Tests', () => {
       expect(artifact.type).toBe('frida_trace')
 
       // Verify artifact file exists
-      const artifactExists = await fs.access(artifact.path).then(() => true).catch(() => false)
+      const artifactExists = await fs
+        .access(artifact.path)
+        .then(() => true)
+        .catch(() => false)
       expect(artifactExists).toBe(true)
     })
   })

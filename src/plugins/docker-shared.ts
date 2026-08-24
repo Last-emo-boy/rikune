@@ -7,8 +7,6 @@
 import fs from 'fs/promises'
 import os from 'os'
 import path from 'path'
-import { execFile, spawn } from 'child_process'
-import { promisify } from 'util'
 import { createHash, randomUUID } from 'crypto'
 import { z } from 'zod'
 import type { DatabaseManager, Sample } from '../database.js'
@@ -45,6 +43,7 @@ import {
   ExplanationSurfaceRoleSchema,
 } from '../artifacts/explanation-graphs.js'
 import { ToolSurfaceRoleSchema } from '../tool-surface-guidance.js'
+import { runAbortableProcess } from '../worker/abortable-process.js'
 
 export {
   fs,
@@ -84,8 +83,6 @@ export type {
   ExternalExecutableResolution,
   ToolchainBackendResolution,
 }
-
-const execFileAsync = promisify(execFile)
 
 // 鈹€鈹€ Shared Zod Schemas 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
@@ -133,14 +130,14 @@ export interface SharedBackendDependencies {
     binaryPath: string,
     args: string[],
     timeoutMs: number,
-    options?: { cwd?: string; env?: NodeJS.ProcessEnv }
+    options?: { cwd?: string; env?: NodeJS.ProcessEnv; abortSignal?: AbortSignal }
   ) => Promise<CommandResult>
   runPythonJson?: (
     pythonPath: string,
     script: string,
     payload: unknown,
     timeoutMs: number,
-    options?: { cwd?: string; env?: NodeJS.ProcessEnv }
+    options?: { cwd?: string; env?: NodeJS.ProcessEnv; abortSignal?: AbortSignal }
   ) => Promise<PythonJsonResult>
 }
 
@@ -290,49 +287,21 @@ export async function executeCommand(
   binaryPath: string,
   args: string[],
   timeoutMs: number,
-  options?: { cwd?: string; env?: NodeJS.ProcessEnv }
+  options?: { cwd?: string; env?: NodeJS.ProcessEnv; abortSignal?: AbortSignal }
 ): Promise<CommandResult> {
-  try {
-    const result = await execFileAsync(binaryPath, args, {
-      encoding: 'utf8',
-      windowsHide: true,
-      timeout: timeoutMs,
-      maxBuffer: 16 * 1024 * 1024,
-      cwd: options?.cwd,
-      env: options?.env,
-    })
-    return {
-      stdout: stripAnsi(result.stdout || ''),
-      stderr: stripAnsi(result.stderr || ''),
-      exitCode: 0,
-      timedOut: false,
-    }
-  } catch (error) {
-    const err = error as {
-      stdout?: string | Buffer | null
-      stderr?: string | Buffer | null
-      code?: string | number
-      signal?: string
-      killed?: boolean
-    }
-    const stdout =
-      typeof err.stdout === 'string'
-        ? err.stdout
-        : Buffer.isBuffer(err.stdout)
-          ? err.stdout.toString('utf8')
-          : ''
-    const stderr =
-      typeof err.stderr === 'string'
-        ? err.stderr
-        : Buffer.isBuffer(err.stderr)
-          ? err.stderr.toString('utf8')
-          : ''
-    return {
-      stdout: stripAnsi(stdout),
-      stderr: stripAnsi(stderr),
-      exitCode: typeof err.code === 'number' ? err.code : 1,
-      timedOut: err.signal === 'SIGTERM' || err.killed === true,
-    }
+  const result = await runAbortableProcess({
+    command: binaryPath,
+    args,
+    cwd: options?.cwd || process.cwd(),
+    env: options?.env,
+    timeoutMs,
+    abortSignal: options?.abortSignal,
+  })
+  return {
+    stdout: stripAnsi(result.stdout),
+    stderr: stripAnsi(result.stderr),
+    exitCode: result.exitCode ?? 1,
+    timedOut: result.timedOut,
   }
 }
 
@@ -341,88 +310,47 @@ export async function runPythonJson(
   script: string,
   payload: unknown,
   timeoutMs: number,
-  options?: { cwd?: string; env?: NodeJS.ProcessEnv }
+  options?: { cwd?: string; env?: NodeJS.ProcessEnv; abortSignal?: AbortSignal }
 ): Promise<PythonJsonResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(pythonPath, ['-c', script], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      cwd: options?.cwd,
-      env: options?.env,
-      windowsHide: true,
-    })
-
-    let stdout = ''
-    let stderr = ''
-    let settled = false
-
-    const finish = (fn: () => void) => {
-      if (settled) {
-        return
-      }
-      settled = true
-      fn()
-    }
-
-    const timer = setTimeout(() => {
-      finish(() => {
-        child.kill()
-        reject(new Error(`Python backend timed out after ${timeoutMs}ms`))
-      })
-    }, timeoutMs)
-
-    child.stdout.on('data', (data) => {
-      stdout += data.toString()
-    })
-
-    child.stderr.on('data', (data) => {
-      stderr += data.toString()
-    })
-
-    child.on('error', (error) => {
-      finish(() => {
-        clearTimeout(timer)
-        reject(error)
-      })
-    })
-
-    child.on('close', (code) => {
-      finish(() => {
-        clearTimeout(timer)
-        if (code !== 0) {
-          reject(new Error(`Python backend exited with code ${code}. stderr: ${stderr}`))
-          return
-        }
-
-        const lines = stdout
-          .trim()
-          .split(/\r?\n/)
-          .map((line) => line.trim())
-          .filter(Boolean)
-        const lastLine = lines[lines.length - 1]
-        if (!lastLine) {
-          reject(new Error(`Python backend produced no JSON output. stderr: ${stderr}`))
-          return
-        }
-
-        try {
-          resolve({
-            stdout,
-            stderr,
-            parsed: JSON.parse(lastLine),
-          })
-        } catch (error) {
-          reject(
-            new Error(
-              `Failed to parse Python backend JSON output: ${normalizeError(error)}. stdout: ${stdout}`
-            )
-          )
-        }
-      })
-    })
-
-    child.stdin.write(JSON.stringify(payload))
-    child.stdin.end()
+  const result = await runAbortableProcess({
+    command: pythonPath,
+    args: ['-c', script],
+    cwd: options?.cwd || process.cwd(),
+    env: options?.env,
+    stdin: JSON.stringify(payload),
+    timeoutMs,
+    abortSignal: options?.abortSignal,
   })
+  if (result.timedOut) {
+    throw new Error(`Python backend timed out after ${timeoutMs}ms`)
+  }
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `Python backend exited with code ${result.exitCode ?? 'unknown'}. stderr: ${result.stderr}`
+    )
+  }
+
+  const lines = result.stdout
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const lastLine = lines[lines.length - 1]
+  if (!lastLine) {
+    throw new Error(`Python backend produced no JSON output. stderr: ${result.stderr}`)
+  }
+
+  try {
+    return {
+      stdout: result.stdout,
+      stderr: result.stderr,
+      parsed: JSON.parse(lastLine),
+    }
+  } catch (error) {
+    throw new Error(
+      `Failed to parse Python backend JSON output: ${normalizeError(error)}. stdout: ${result.stdout}`
+    )
+  }
 }
 
 export function buildStaticSetupRequired(

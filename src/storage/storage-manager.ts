@@ -39,6 +39,11 @@ export class StorageManager {
     this.config = config
   }
 
+  /** Return the configured storage root for trusted-root security checks. */
+  getRoot(): string {
+    return path.resolve(this.config.root)
+  }
+
   /**
    * Initialize storage directories
    */

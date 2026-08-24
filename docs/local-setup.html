@@ -201,7 +201,7 @@
               </tr>
               <tr>
                 <td><strong>Python</strong></td>
-                <td>3.11+</td>
+                <td>CPython 3.12 x86_64</td>
                 <td>
                   <a href="https://www.python.org/downloads/" target="_blank" rel="noopener"
                     >python.org</a
@@ -253,8 +253,7 @@ cd rikune
 .\install-local.ps1
 
 <span class="comment"># Windows-native analyzer with local Windows Sandbox execution</span>
-.\install-local.ps1 -RuntimeMode auto-sandbox</pre
-            >
+.\install-local.ps1 -RuntimeMode auto-sandbox</pre>
           </div>
 
           <h3>Linux / macOS (Bash)</h3>
@@ -269,19 +268,21 @@ chmod +x install-local.sh
 ./install-local.sh
 
 <span class="comment"># Split analyzer/runtime configuration</span>
-./install-local.sh -r remote-sandbox</pre
-            >
+./install-local.sh -r remote-sandbox</pre>
           </div>
 
           <p><span data-lang-en>The script will:</span><span data-lang-zh>脚本会：</span></p>
           <ol>
             <li>
-              <span data-lang-en>Verify Node.js 22+ and Python 3.11+</span
-              ><span data-lang-zh>验证 Node.js 22+ 和 Python 3.11+</span>
+              <span data-lang-en>Verify Node.js 22+ and CPython 3.12 x86_64</span
+              ><span data-lang-zh>验证 Node.js 22+ 和 CPython 3.12 x86_64</span>
             </li>
             <li>
-              <span data-lang-en>Run <code>npm install</code> + <code>npm run build</code></span
-              ><span data-lang-zh>运行 <code>npm install</code> + <code>npm run build</code></span>
+              <span data-lang-en
+                >Run <code>npm ci --include=dev</code> + <code>npm run build</code></span
+              ><span data-lang-zh
+                >运行 <code>npm ci --include=dev</code> + <code>npm run build</code></span
+              >
             </li>
             <li>
               <span data-lang-en>Create a Python venv and install worker dependencies</span
@@ -289,8 +290,11 @@ chmod +x install-local.sh
             </li>
             <li>
               <span data-lang-en
-                >Optionally install dynamic analysis, Qiling, and angr packages</span
-              ><span data-lang-zh>可选安装动态分析、Qiling 和 angr 包</span>
+                >Optionally install the hash-locked dynamic-analysis and angr packages; Qiling is
+                BYO only</span
+              ><span data-lang-zh
+                >可选安装带 hash lock 的动态分析和 angr 包；Qiling 仅支持 BYO</span
+              >
             </li>
             <li>
               <span data-lang-en>Create data directories</span
@@ -329,7 +333,7 @@ chmod +x install-local.sh
             <pre>
 git clone https://github.com/Last-emo-boy/rikune.git
 cd rikune
-npm install
+npm ci --include=dev
 npm run build</pre
             >
           </div>
@@ -341,27 +345,26 @@ npm run build</pre
             <div class="code-block__header">
               <span>bash</span><button class="code-block__copy">Copy</button>
             </div>
-            <pre><span class="comment"># Create venv</span>
-cd workers
-python3 -m venv venv
-source venv/bin/activate   <span class="comment"># Linux/macOS</span>
+            <pre><span class="comment"># Create a CPython 3.12 x86_64 venv</span>
+python3.12 -m venv venv
+source venv/bin/activate   <span class="comment"># Linux x86_64</span>
 <span class="comment"># .\venv\Scripts\Activate.ps1  # Windows</span>
 
-<span class="comment"># Install base requirements</span>
-pip install -r ../requirements.txt
-pip install -r requirements.txt
+<span class="comment"># Install the platform-specific hash-locked baseline from the Rikune package root</span>
+python -m pip install --require-hashes -r requirements.lock.txt
+<span class="comment"># Windows: python -m pip install --require-hashes -r requirements.windows.lock.txt</span>
 
-<span class="comment"># Optional: dynamic analysis (frida, speakeasy, pandare)</span>
-pip install -r requirements-dynamic.txt
+<span class="comment"># Optional: hash-locked dynamic analysis (frida, speakeasy, pandare)</span>
+python -m pip install --require-hashes -r workers/requirements-dynamic.lock.txt
+<span class="comment"># Windows: python -m pip install --require-hashes -r workers/requirements-dynamic.windows.lock.txt</span>
 
-<span class="comment"># Optional: Qiling (isolated venv due to unicorn conflicts)</span>
-cd ..
-python3 -m venv qiling-venv
-./qiling-venv/bin/pip install -r workers/requirements-qiling.txt
+<span class="comment"># Qiling automatic installation is disabled: its supported dependency chain</span>
+<span class="comment"># requires Pillow &lt;11, below the v1.4.0 vulnerability baseline.</span>
+<span class="comment"># Configure QILING_PYTHON only for an independently audited BYO environment.</span>
 
 <span class="comment"># Optional: angr (isolated venv, large ~1.5 GB)</span>
 python3 -m venv angr-venv
-./angr-venv/bin/pip install angr</pre>
+./angr-venv/bin/python -m pip install --require-hashes -r src/plugins/angr/requirements.lock.txt</pre>
           </div>
 
           <h3>
@@ -464,7 +467,12 @@ node dist/index.js</pre
                   ><span data-lang-zh>动态插桩、Hook、跟踪</span>
                 </td>
                 <td><code>FRIDA_PATH</code></td>
-                <td><code>pip install frida-tools</code></td>
+                <td>
+                  <code
+                    >python -m pip install --require-hashes -r
+                    workers/requirements-dynamic.lock.txt</code
+                  >
+                </td>
               </tr>
               <tr>
                 <td><strong>angr</strong></td>
@@ -475,7 +483,10 @@ node dist/index.js</pre
                 <td><code>ANGR_PYTHON</code></td>
                 <td>
                   <span data-lang-en>Isolated venv</span><span data-lang-zh>隔离虚拟环境</span>:
-                  <code>pip install angr</code>
+                  <code
+                    >python -m pip install --require-hashes -r
+                    src/plugins/angr/requirements.lock.txt</code
+                  >
                 </td>
               </tr>
               <tr>
@@ -485,8 +496,9 @@ node dist/index.js</pre
                 </td>
                 <td><code>QILING_PYTHON</code></td>
                 <td>
-                  <span data-lang-en>Isolated venv</span><span data-lang-zh>隔离虚拟环境</span>:
-                  <code>pip install qiling</code>
+                  <span data-lang-en
+                    >BYO only: automatic installation is blocked by the vulnerability baseline</span
+                  ><span data-lang-zh>仅支持 BYO：自动安装被漏洞基线阻止</span>
                 </td>
               </tr>
               <tr>
@@ -560,7 +572,9 @@ node dist/index.js</pre
                   <span data-lang-en>Memory forensics</span><span data-lang-zh>内存取证</span>
                 </td>
                 <td><code>VOLATILITY3_PATH</code></td>
-                <td><code>pip install volatility3</code></td>
+                <td>
+                  <code>python -m pip install --require-hashes -r requirements.lock.txt</code>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -623,6 +637,7 @@ LOG_LEVEL=info
 <span class="comment"># API File Server</span>
 API_ENABLED=true
 API_PORT=18080
+API_KEY=replace-with-output-of-openssl-rand-hex-32
 API_STORAGE_ROOT=~/.rikune/storage
 
 <span class="comment"># Runtime mode (pick one shape)</span>
@@ -631,13 +646,13 @@ RUNTIME_MODE=disabled
 # RUNTIME_MODE=auto-sandbox
 # Split analyzer/runtime deployment:
 # RUNTIME_MODE=manual
-# RUNTIME_ENDPOINT=http://windows-vm-ip:18081
+# RUNTIME_ENDPOINT=https://runtime-vm.example.internal:18081
 # RUNTIME_MODE=remote-sandbox
-# RUNTIME_HOST_AGENT_ENDPOINT=http://windows-host-ip:18082
-# RUNTIME_HOST_AGENT_API_KEY=change-me
-# Optional if the Windows Runtime Node also requires its own key:
-# RUNTIME_API_KEY=change-me
-# On the Windows Host Agent side, Docker/WSL deployments should bind the agent to 0.0.0.0:
+# RUNTIME_HOST_AGENT_ENDPOINT=https://runtime.example.internal
+# RUNTIME_HOST_AGENT_API_KEY=replace-with-output-of-openssl-rand-hex-32
+# Runtime Node uses a required, distinct security principal; never reuse the Host Agent key:
+# RUNTIME_API_KEY=replace-with-output-of-openssl-rand-hex-32
+# Direct remote HTTP/non-loopback binding requires explicit opt-in and an isolated trusted network:
 # HOST_AGENT_BIND_HOST=0.0.0.0
 
 <span class="comment"># Ghidra (set if installed)</span>
@@ -732,7 +747,8 @@ QILING_PYTHON=./qiling-venv/bin/python</pre>
               <span>%USERPROFILE%\.codex\config.toml</span
               ><button class="code-block__copy">Copy</button>
             </div>
-            <pre>[mcp_servers.rikune]
+            <pre>
+[mcp_servers.rikune]
 command = "node"
 args = ["C:/path/to/rikune/dist/index.js"]
 
@@ -742,12 +758,12 @@ PYTHONUNBUFFERED = "1"
 WORKSPACE_ROOT = "C:/Users/you/.rikune/workspaces"
 DB_PATH = "C:/Users/you/.rikune/data/database.db"
 CACHE_ROOT = "C:/Users/you/.rikune/cache"
-GHIDRA_INSTALL_DIR = "C:/path/to/ghidra"</pre>
+GHIDRA_INSTALL_DIR = "C:/path/to/ghidra"</pre
+            >
           </div>
 
           <h3>
-            <span data-lang-en>Docker-backed MCP</span
-            ><span data-lang-zh>基于 Docker 的 MCP</span>
+            <span data-lang-en>Docker-backed MCP</span><span data-lang-zh>基于 Docker 的 MCP</span>
           </h3>
           <p>
             <span data-lang-en
@@ -756,8 +772,8 @@ GHIDRA_INSTALL_DIR = "C:/path/to/ghidra"</pre>
               <code>node dist/index.js</code> on the host.</span
             >
             <span data-lang-zh
-              >当 Rikune 使用 <code>static</code> 或 <code>hybrid</code> 部署时，MCP 客户端应通过已运行的
-              <code>rikune-analyzer</code> 容器连接，而不是在宿主机上直接运行
+              >当 Rikune 使用 <code>static</code> 或 <code>hybrid</code> 部署时，MCP
+              客户端应通过已运行的 <code>rikune-analyzer</code> 容器连接，而不是在宿主机上直接运行
               <code>node dist/index.js</code>。</span
             >
           </p>
@@ -765,7 +781,8 @@ GHIDRA_INSTALL_DIR = "C:/path/to/ghidra"</pre>
             <div class="code-block__header">
               <span>Codex Docker TOML</span><button class="code-block__copy">Copy</button>
             </div>
-            <pre>[mcp_servers.rikune]
+            <pre>
+[mcp_servers.rikune]
 command = "docker"
 startup_timeout_sec = 180
 args = [
@@ -781,15 +798,16 @@ args = [
 
 [mcp_servers.rikune.env]
 NODE_ENV = "production"
-PYTHONUNBUFFERED = "1"</pre>
+PYTHONUNBUFFERED = "1"</pre
+            >
           </div>
 
           <blockquote>
             <span data-lang-en
               >💡 <strong>Tip:</strong> The <code>install-local.ps1</code> script can auto-generate
               native configs, and <code>install-docker.ps1 -ConfigureClient</code> can generate
-              Docker JSON configs. Codex users who keep MCP servers in
-              <code>config.toml</code> can copy the TOML form above.</span
+              Docker JSON configs. Codex users who keep MCP servers in <code>config.toml</code> can
+              copy the TOML form above.</span
             >
             <span data-lang-zh
               >💡 <strong>提示</strong>：<code>install-local.ps1</code> 可以生成原生运行配置，
@@ -996,8 +1014,8 @@ Plugin dynamic: frida ✓
                   <strong><span data-lang-en>Setup</span><span data-lang-zh>安装</span></strong>
                 </td>
                 <td>
-                  <code>rikune.ps1</code> / <code>rikune.sh</code> <span data-lang-en>— one command</span
-                  ><span data-lang-zh>— 一条命令</span>
+                  <code>rikune.ps1</code> / <code>rikune.sh</code>
+                  <span data-lang-en>— one command</span><span data-lang-zh>— 一条命令</span>
                 </td>
                 <td>
                   <code>install-local.ps1</code> / <code>.sh</code>

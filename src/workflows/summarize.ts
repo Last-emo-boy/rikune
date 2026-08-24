@@ -65,6 +65,11 @@ import {
 } from '../analysis/analysis-coverage.js'
 import { getAnalysisRunSummary, createOrReuseAnalysisRun } from '../analysis/analysis-run-state.js'
 import { ToolSurfaceRoleSchema } from '../tool-surface-guidance.js'
+import {
+  invokeAbortable,
+  throwIfAnalysisAborted,
+  type AbortableHandler,
+} from '../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'workflow.summarize'
 
@@ -317,8 +322,11 @@ function extractCoverage(payload: unknown): z.infer<typeof CoverageEnvelopeSchem
 }
 
 interface WorkflowSummarizeDependencies {
-  reportSummarizeHandler?: (args: ToolArgs) => Promise<WorkerResult>
-  samplingRequester?: (params: CreateMessageRequest['params']) => Promise<any>
+  reportSummarizeHandler?: AbortableHandler<ToolArgs, WorkerResult>
+  samplingRequester?: (
+    params: CreateMessageRequest['params'],
+    options?: { signal?: AbortSignal }
+  ) => Promise<any>
   clientCapabilitiesProvider?: () => { sampling?: unknown } | undefined
   clientVersionProvider?: () => { name?: string; version?: string } | undefined
 }
@@ -482,12 +490,18 @@ async function loadFunctionExplanationSummaries(
   workspaceManager: WorkspaceManager,
   database: DatabaseManager,
   sampleId: string,
-  options?: { scope?: 'all' | 'latest' | 'session'; sessionTag?: string }
+  options?: {
+    scope?: 'all' | 'latest' | 'session'
+    sessionTag?: string
+    abortSignal?: AbortSignal
+  }
 ) {
+  throwIfAnalysisAborted(options?.abortSignal)
   const index = await loadSemanticFunctionExplanationIndex(workspaceManager, database, sampleId, {
     scope: options?.scope,
     sessionTag: options?.sessionTag,
   })
+  throwIfAnalysisAborted(options?.abortSignal)
   const explanations = Array.from(index.byAddress.values())
   explanations.sort((a, b) => {
     if (b.confidence !== a.confidence) {
@@ -548,9 +562,13 @@ function summaryPathIsWithin(rootPath: string, candidatePath: string): boolean {
   return candidatePath === rootPath || candidatePath.startsWith(rootPath + path.sep)
 }
 
-async function hashSummarySourceFile(artifactPath: string): Promise<string> {
+async function hashSummarySourceFile(
+  artifactPath: string,
+  abortSignal?: AbortSignal
+): Promise<string> {
   const hash = createHash('sha256')
   for await (const chunk of createReadStream(artifactPath)) {
+    throwIfAnalysisAborted(abortSignal)
     hash.update(chunk)
   }
   return hash.digest('hex')
@@ -560,7 +578,9 @@ async function loadSummaryFingerprintBaseState(input: {
   workspaceManager: WorkspaceManager
   database: DatabaseManager
   sampleId: string
+  abortSignal?: AbortSignal
 }): Promise<SummaryFingerprintBaseState> {
+  throwIfAnalysisAborted(input.abortSignal)
   const artifactRows = input.database
     .findArtifacts(input.sampleId)
     .filter((artifact) => !isContextOnlyArtifactType(artifact.type))
@@ -578,9 +598,11 @@ async function loadSummaryFingerprintBaseState(input: {
       return idOrder !== 0 ? idOrder : left.sha256.localeCompare(right.sha256)
     })
   const workspace = await input.workspaceManager.createWorkspace(input.sampleId)
+  throwIfAnalysisAborted(input.abortSignal)
   const workspaceRealPath = await fs.realpath(workspace.root)
   const artifactIntegrityWarnings: string[] = []
   for (const artifact of artifactRows) {
+    throwIfAnalysisAborted(input.abortSignal)
     try {
       const absolutePath = input.workspaceManager.normalizePath(workspace.root, artifact.path)
       const artifactRealPath = await fs.realpath(absolutePath)
@@ -591,11 +613,12 @@ async function loadSummaryFingerprintBaseState(input: {
       if (!stat.isFile()) {
         throw new Error('path is not a regular file')
       }
-      const actualSha256 = await hashSummarySourceFile(artifactRealPath)
+      const actualSha256 = await hashSummarySourceFile(artifactRealPath, input.abortSignal)
       if (actualSha256.toLowerCase() !== artifact.sha256.toLowerCase()) {
         throw new Error('actual SHA-256 does not match the artifact record')
       }
     } catch (error) {
+      throwIfAnalysisAborted(input.abortSignal)
       artifactIntegrityWarnings.push(
         `Summary digest source artifact ${artifact.id} failed integrity validation: ${
           error instanceof Error ? error.message : String(error)
@@ -603,6 +626,7 @@ async function loadSummaryFingerprintBaseState(input: {
       )
     }
   }
+  throwIfAnalysisAborted(input.abortSignal)
   const evidenceState = input.database
     .findAnalysisEvidenceBySample(input.sampleId)
     .filter((row) => row.evidence_family !== 'summary')
@@ -1004,7 +1028,8 @@ export function createWorkflowSummarizeHandler(
   const samplingRequester =
     deps?.samplingRequester ||
     (mcpServer
-      ? (params: CreateMessageRequest['params']) => mcpServer.createMessage(params)
+      ? (params: CreateMessageRequest['params'], options?: { signal?: AbortSignal }) =>
+          mcpServer.createMessage(params, options)
       : undefined)
   const clientCapabilitiesProvider =
     deps?.clientCapabilitiesProvider ||
@@ -1012,11 +1037,12 @@ export function createWorkflowSummarizeHandler(
   const clientVersionProvider =
     deps?.clientVersionProvider || (mcpServer ? () => mcpServer.getClientVersion() : undefined)
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const startTime = Date.now()
     const warnings: string[] = []
 
     try {
+      throwIfAnalysisAborted(abortSignal)
       const input = WorkflowSummarizeInputSchema.parse(args)
       const sample = database.findSample(input.sample_id)
       if (!sample) {
@@ -1064,6 +1090,7 @@ export function createWorkflowSummarizeHandler(
         // Load stage artifacts from run state
         const runStages = database.findAnalysisRunStages(latestRun.id)
         for (const stage of runStages) {
+          throwIfAnalysisAborted(abortSignal)
           if (stage.status === 'completed' && stage.artifact_refs_json) {
             const summaryStage = stageMap[stage.stage]
             if (summaryStage && !stageArtifacts[summaryStage]) {
@@ -1117,6 +1144,7 @@ export function createWorkflowSummarizeHandler(
             workspaceManager,
             database,
             sampleId: input.sample_id,
+            abortSignal,
           })
         }
         return summaryFingerprintBaseStatePromise
@@ -1134,7 +1162,9 @@ export function createWorkflowSummarizeHandler(
           return finalSummaryContextPromise
         }
         finalSummaryContextPromise = (async () => {
+          throwIfAnalysisAborted(abortSignal)
           await workspaceManager.createWorkspace(input.sample_id)
+          throwIfAnalysisAborted(abortSignal)
           let claimContext = emptyClaimLedgerContext()
           let caseContext = emptyCaseStateContext()
           let claimReviewRequired = false
@@ -1145,6 +1175,7 @@ export function createWorkflowSummarizeHandler(
           const [caseResult] = await Promise.allSettled([
             loadAnalysisCaseStateIndex(workspaceManager, database, input.sample_id),
           ])
+          throwIfAnalysisAborted(abortSignal)
 
           if (caseResult.status === 'fulfilled') {
             const built = buildCaseStateContext(caseResult.value, input.case_id)
@@ -1186,6 +1217,7 @@ export function createWorkflowSummarizeHandler(
                 : { scope: 'all', activeClaimIds }
             ),
           ])
+          throwIfAnalysisAborted(abortSignal)
 
           if (claimResult.status === 'fulfilled') {
             const scopedClaimLedger = scopeAnalysisClaimLedgerIndex(
@@ -1230,24 +1262,28 @@ export function createWorkflowSummarizeHandler(
         if (compactReportResult) {
           return compactReportResult
         }
-        compactReportResult = await reportSummarizeHandler({
-          sample_id: input.sample_id,
-          mode: 'triage',
-          detail_level: 'compact',
-          force_refresh: input.force_refresh,
-          evidence_scope: input.evidence_scope,
-          evidence_session_tag: input.evidence_session_tag,
-          static_scope: input.static_scope,
-          static_session_tag: input.static_session_tag,
-          semantic_scope: input.semantic_scope,
-          semantic_session_tag: input.semantic_session_tag,
-          compare_evidence_scope: input.compare_evidence_scope,
-          compare_evidence_session_tag: input.compare_evidence_session_tag,
-          compare_static_scope: input.compare_static_scope,
-          compare_static_session_tag: input.compare_static_session_tag,
-          compare_semantic_scope: input.compare_semantic_scope,
-          compare_semantic_session_tag: input.compare_semantic_session_tag,
-        })
+        compactReportResult = await invokeAbortable(
+          reportSummarizeHandler,
+          {
+            sample_id: input.sample_id,
+            mode: 'triage',
+            detail_level: 'compact',
+            force_refresh: input.force_refresh,
+            evidence_scope: input.evidence_scope,
+            evidence_session_tag: input.evidence_session_tag,
+            static_scope: input.static_scope,
+            static_session_tag: input.static_session_tag,
+            semantic_scope: input.semantic_scope,
+            semantic_session_tag: input.semantic_session_tag,
+            compare_evidence_scope: input.compare_evidence_scope,
+            compare_evidence_session_tag: input.compare_evidence_session_tag,
+            compare_static_scope: input.compare_static_scope,
+            compare_static_session_tag: input.compare_static_session_tag,
+            compare_semantic_scope: input.compare_semantic_scope,
+            compare_semantic_session_tag: input.compare_semantic_session_tag,
+          },
+          abortSignal
+        )
         // report.summarize may persist new source artifacts (for example explanation graphs).
         // Refresh the memoized fingerprint snapshot before persisting rebuilt digests so those
         // report-side effects do not make the new digest immediately stale on the next request.
@@ -1279,6 +1315,7 @@ export function createWorkflowSummarizeHandler(
             sessionTag: input.session_tag,
           }
         )
+        throwIfAnalysisAborted(abortSignal)
         if (selection.artifacts.length === 0) {
           return null
         }
@@ -1301,6 +1338,7 @@ export function createWorkflowSummarizeHandler(
         let rejectedLegacyFingerprint = false
         let rejectedByFingerprint = false
         for (const candidate of selection.artifacts) {
+          throwIfAnalysisAborted(abortSignal)
           try {
             const parsed = schema.parse(candidate.payload)
             if (accept && !accept(parsed)) {
@@ -1356,6 +1394,7 @@ export function createWorkflowSummarizeHandler(
         summaryContext?: FinalSummaryContext,
         resolvedSynthesisMode = resolvedSynthesisModeForReuse
       ): Promise<TPayload & { reuse_fingerprint: SummaryDigestReuseFingerprint }> => {
+        throwIfAnalysisAborted(abortSignal)
         const baseState = await getSummaryFingerprintBaseState()
         publishSummarySourceIntegrityWarnings(baseState)
         const persistedPayload = {
@@ -1376,6 +1415,7 @@ export function createWorkflowSummarizeHandler(
           persistedPayload,
           input.session_tag
         )
+        throwIfAnalysisAborted(abortSignal)
         stageArtifacts[stage] = artifact
         return persistedPayload
       }
@@ -1496,6 +1536,7 @@ export function createWorkflowSummarizeHandler(
           {
             scope: input.semantic_scope,
             sessionTag: input.semantic_session_tag,
+            abortSignal,
           }
         )
         const ghidraExecution = data.ghidra_execution
@@ -1677,9 +1718,17 @@ export function createWorkflowSummarizeHandler(
             })
           } else {
             try {
-              const samplingResult = await samplingRequester(
-                buildSamplingRequest(triageDigest, staticDigest, deepDigest, summaryContext)
+              throwIfAnalysisAborted(abortSignal)
+              const request = buildSamplingRequest(
+                triageDigest,
+                staticDigest,
+                deepDigest,
+                summaryContext
               )
+              const samplingResult = abortSignal
+                ? await samplingRequester(request, { signal: abortSignal })
+                : await samplingRequester(request)
+              throwIfAnalysisAborted(abortSignal)
               const responseText = extractTextBlocks(samplingResult)
               const parsed = parseSummaryJsonCandidate(responseText)
               finalDigest = applySamplingNarrative(
@@ -1688,6 +1737,7 @@ export function createWorkflowSummarizeHandler(
                 samplingResult?.model || null
               )
             } catch (error) {
+              throwIfAnalysisAborted(abortSignal)
               warnings.push(
                 error instanceof Error
                   ? `${error.message} Falling back to deterministic synthesis.`
@@ -1730,19 +1780,24 @@ export function createWorkflowSummarizeHandler(
         return persistedFinalDigest
       }
 
+      throwIfAnalysisAborted(abortSignal)
       await ensureTriageStage()
+      throwIfAnalysisAborted(abortSignal)
       if (
         input.through_stage === 'static' ||
         input.through_stage === 'deep' ||
         input.through_stage === 'final'
       ) {
         await ensureStaticStage()
+        throwIfAnalysisAborted(abortSignal)
       }
       if (input.through_stage === 'deep' || input.through_stage === 'final') {
         await ensureDeepStage()
+        throwIfAnalysisAborted(abortSignal)
       }
       if (input.through_stage === 'final') {
         await ensureFinalStage()
+        throwIfAnalysisAborted(abortSignal)
       }
 
       const finalStage = stageDigests.final as z.infer<typeof FinalStageDigestSchema> | undefined
@@ -1839,6 +1894,7 @@ export function createWorkflowSummarizeHandler(
         metrics: toolMetrics(startTime),
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [error instanceof Error ? error.message : String(error)],

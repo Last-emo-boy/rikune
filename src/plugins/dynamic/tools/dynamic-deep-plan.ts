@@ -17,6 +17,7 @@ import {
   loadStaticAnalysisArtifactSelection,
   type StaticArtifactScope,
 } from '../../../artifacts/static-analysis-artifacts.js'
+import { throwIfAnalysisAborted } from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'dynamic.deep_plan'
 
@@ -575,10 +576,12 @@ function buildExecutionOrder(profiles: DynamicPlanProfile[], runtimePreference: 
 }
 
 export function createDynamicDeepPlanHandler(deps: PluginToolDeps) {
-  return async (args: unknown): Promise<WorkerResult> => {
+  return async (args: unknown, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const started = Date.now()
+    throwIfAnalysisAborted(abortSignal)
     const input = DynamicDeepPlanInputSchema.parse(args || {})
     const staticBehaviorContext = await loadStaticBehaviorContext(deps, input)
+    throwIfAnalysisAborted(abortSignal)
     const requestedGoals = goalSet(input.goals)
     const effectiveGoals = new Set([
       ...Array.from(requestedGoals),

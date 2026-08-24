@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -33,7 +34,7 @@ describe('analysis evidence', () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'analysis-evidence-'))
     database = new DatabaseManager(path.join(tempDir, 'test.db'))
     cacheManager = new CacheManager(path.join(tempDir, 'cache'), database)
-    database.insertSample(sample)
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, sample)
   })
 
   afterEach(() => {

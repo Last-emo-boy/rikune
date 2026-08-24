@@ -5,7 +5,7 @@ ARG RIZIN_VERSION=0.8.2
 # =============================================================================
 # Rizin (static binary)
 # =============================================================================
-FROM debian:bookworm-slim AS core-tools
+FROM debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241 AS core-tools
 
 ARG HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY
 ARG RIZIN_VERSION
@@ -23,12 +23,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN set -eux; \
-    arch="$(dpkg --print-architecture)"; \
-    case "${arch}" in \
-      amd64) rizin_asset="rizin-v${RIZIN_VERSION}-static-x86_64.tar.xz" ;; \
-      *) echo "Unsupported architecture for bundled Rizin static release: ${arch}" >&2; exit 1 ;; \
-    esac; \
+    test "$(dpkg --print-architecture)" = "amd64"; \
+    rizin_asset="rizin-v${RIZIN_VERSION}-static-x86_64.tar.xz"; \
     curl -fsSL "https://github.com/rizinorg/rizin/releases/download/v${RIZIN_VERSION}/${rizin_asset}" -o /tmp/rizin.tar.xz; \
+    printf '%s  %s\n' '39299d492a43458900233e3036058b653d7554a6786192397fd4464c51fce5d6' /tmp/rizin.tar.xz | sha256sum -c -; \
     mkdir -p /opt/rizin; \
     tar -xJf /tmp/rizin.tar.xz -C /opt/rizin; \
     test -x /opt/rizin/bin/rizin; \

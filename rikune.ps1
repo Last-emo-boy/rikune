@@ -1,5 +1,5 @@
 # Rikune top-level deployment and operations script for Windows.
-# Requires: PowerShell 5.1+ or PowerShell 7+, Docker Desktop for Docker profiles.
+# Requires: PowerShell 7+ for install/runtime actions, Docker Desktop for Docker profiles.
 
 param(
     [Parameter(Position = 0)]
@@ -13,7 +13,9 @@ param(
     [string]$ProjectRoot = $PSScriptRoot,
 
     [string]$HostAgentEndpoint,
+    [Parameter(HelpMessage = "Deprecated argv-based Host Agent key input. Prefer the protected RUNTIME_HOST_AGENT_API_KEY process environment.")]
     [string]$HostAgentApiKey,
+    [Parameter(HelpMessage = "Deprecated argv-based Runtime Node key input. Prefer the protected, distinct RUNTIME_API_KEY process environment.")]
     [string]$RuntimeApiKey,
     [int]$HostAgentPort = 18082,
     [ValidateSet("windows-sandbox", "hyperv-vm")]
@@ -31,6 +33,7 @@ param(
     [switch]$ResetData,
     [switch]$UseProxy,
     [switch]$NoProxyAutoDetect,
+    [switch]$AllowInsecureRuntimeHttp,
     [string]$HttpProxy,
     [string]$HttpsProxy,
     [switch]$Follow,
@@ -107,13 +110,17 @@ function Get-ProfileConfig {
 }
 
 function Get-PowerShellExe {
+    $pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
+    if ($pwsh) { return $pwsh.Source }
+    if ($PSVersionTable.PSVersion.Major -lt 7) {
+        throw "PowerShell 7 or newer is required. Install pwsh before running Rikune installers."
+    }
     try {
         $path = (Get-Process -Id $PID).Path
         if ($path) { return $path }
     } catch {
     }
-    if (Get-Command pwsh -ErrorAction SilentlyContinue) { return "pwsh" }
-    return "powershell"
+    throw "Unable to resolve the PowerShell 7 executable"
 }
 
 function Test-Command {
@@ -153,6 +160,7 @@ function Invoke-Compose {
 
     $composeArgs = @()
     if (Test-Path $envFile) {
+        Assert-ProtectedCredentialFile -Path $envFile | Out-Null
         $composeArgs += @("--env-file", $envFile)
     } else {
         Write-Warn ".docker-runtime.env not found. Compose defaults will be used."
@@ -179,22 +187,69 @@ function Invoke-Compose {
 }
 
 function Invoke-ChildPowerShell {
-    param([string[]]$Arguments)
+    param(
+        [string[]]$Arguments,
+        [hashtable]$Environment = @{}
+    )
 
     $ps = Get-PowerShellExe
-    & $ps @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "PowerShell child process failed with exit code $LASTEXITCODE"
+    $previousEnvironment = @{}
+    foreach ($name in $Environment.Keys) {
+        $previousEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
+        [Environment]::SetEnvironmentVariable($name, [string]$Environment[$name], "Process")
+    }
+    $exitCode = 1
+    try {
+        & $ps @Arguments
+        $exitCode = $LASTEXITCODE
+    } finally {
+        foreach ($name in $Environment.Keys) {
+            [Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name], "Process")
+        }
+    }
+    if ($exitCode -ne 0) {
+        throw "PowerShell child process failed with exit code $exitCode"
     }
 }
 
-function Read-EnvFile {
-    param([string]$Path)
+function Read-SecretString {
+    param([string]$Prompt)
 
+    $secure = Read-Host $Prompt -AsSecureString
+    $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+    try {
+        return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
+    } finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)
+    }
+}
+
+function Assert-SecureRuntimeEndpoint {
+    param(
+        [string]$Endpoint,
+        [switch]$AllowInsecure
+    )
+
+    $uri = $null
+    if (-not [Uri]::TryCreate($Endpoint, [UriKind]::Absolute, [ref]$uri)) {
+        throw "Invalid Host Agent endpoint: $Endpoint"
+    }
+    if (-not [string]::IsNullOrEmpty($uri.UserInfo)) {
+        throw "Host Agent endpoints must not contain URL userinfo credentials"
+    }
+    if ($uri.Scheme -eq "https") { return }
+    if ($uri.Scheme -eq "http" -and $uri.Host -in @("localhost", "127.0.0.1", "::1", "host.docker.internal")) { return }
+    if ($uri.Scheme -eq "http" -and $AllowInsecure) {
+        Write-Warn "Using plaintext remote runtime HTTP by explicit opt-in. Restrict it to a trusted VPN/isolated network."
+        return
+    }
+    throw "Remote Host Agent endpoints must use HTTPS. Use -AllowInsecureRuntimeHttp only for an isolated trusted network."
+}
+
+function ConvertFrom-RuntimeEnvContent {
+    param([string]$Content)
     $values = @{}
-    if (-not (Test-Path $Path)) { return $values }
-
-    foreach ($line in Get-Content -Path $Path) {
+    foreach ($line in ($Content -split "`r?`n")) {
         $trimmed = $line.Trim()
         if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed.StartsWith("#")) { continue }
 
@@ -209,6 +264,104 @@ function Read-EnvFile {
         $values[$key] = $value
     }
     return $values
+}
+
+function Assert-ProtectedCredentialFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [long]$MaxBytes = 65536
+    )
+
+    $absolutePath = [System.IO.Path]::GetFullPath($Path)
+    if (-not (Test-Path -LiteralPath $absolutePath -PathType Leaf)) {
+        throw "Protected credential file does not exist or is not a regular file: $absolutePath"
+    }
+
+    $item = Get-Item -LiteralPath $absolutePath -Force
+    if ($item.PSIsContainer -or (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)) {
+        throw "Protected credential file must be a non-reparse regular file: $absolutePath"
+    }
+    if ($item.Length -gt $MaxBytes) {
+        throw "Protected credential file exceeds the $MaxBytes byte limit: $absolutePath"
+    }
+    if (-not $IsWindows) {
+        throw "Windows credential ACL verification is unavailable on this platform: $absolutePath"
+    }
+
+    $currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+    $acl = Get-Acl -LiteralPath $absolutePath
+    try {
+        $ownerSid = ([System.Security.Principal.NTAccount]$acl.Owner).Translate(
+            [System.Security.Principal.SecurityIdentifier]
+        )
+    } catch {
+        throw "Unable to resolve protected credential file owner: $absolutePath"
+    }
+    if ($ownerSid.Value -ne $currentSid.Value) {
+        throw "Protected credential file must be owned by the current user: $absolutePath"
+    }
+    if (-not $acl.AreAccessRulesProtected) {
+        throw "Protected credential file ACL inheritance must be disabled: $absolutePath"
+    }
+
+    $rules = @($acl.GetAccessRules(
+        $true,
+        $true,
+        [System.Security.Principal.SecurityIdentifier]
+    ))
+    if ($rules.Count -ne 1) {
+        throw "Protected credential file must have exactly one ACL entry: $absolutePath"
+    }
+    $rule = $rules[0]
+    if (
+        $rule.IdentityReference.Value -ne $currentSid.Value -or
+        $rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow -or
+        $rule.FileSystemRights -ne [System.Security.AccessControl.FileSystemRights]::FullControl -or
+        $rule.InheritanceFlags -ne [System.Security.AccessControl.InheritanceFlags]::None -or
+        $rule.PropagationFlags -ne [System.Security.AccessControl.PropagationFlags]::None
+    ) {
+        throw "Protected credential file ACL must grant only the current user FullControl: $absolutePath"
+    }
+
+    return $item
+}
+
+function Read-ProtectedEnvFile {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) { return @{} }
+    $item = Assert-ProtectedCredentialFile -Path $Path
+    $stream = $null
+    try {
+        $stream = [System.IO.File]::Open(
+            $item.FullName,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::None
+        )
+        if ($stream.Length -ne $item.Length -or $stream.Length -gt 65536) {
+            throw "Protected credential file changed during validation: $($item.FullName)"
+        }
+        Assert-ProtectedCredentialFile -Path $item.FullName | Out-Null
+        $reader = [System.IO.StreamReader]::new(
+            $stream,
+            [System.Text.UTF8Encoding]::new($false, $true),
+            $true,
+            1024,
+            $true
+        )
+        try {
+            $content = $reader.ReadToEnd()
+        } finally {
+            $reader.Dispose()
+        }
+    } finally {
+        if ($stream) { $stream.Dispose() }
+    }
+
+    Assert-ProtectedCredentialFile -Path $item.FullName | Out-Null
+    return ConvertFrom-RuntimeEnvContent -Content $content
 }
 
 function Read-DefaultString {
@@ -250,8 +403,8 @@ function Reset-DataRoot {
 }
 
 function Get-RuntimeCredentials {
-    $runtimeEnv = Read-EnvFile (Join-Path $ProjectRoot ".env.runtime-windows")
-    $dockerEnv = Read-EnvFile (Join-Path $ProjectRoot ".docker-runtime.env")
+    $runtimeEnv = Read-ProtectedEnvFile (Join-Path $ProjectRoot ".env.runtime-windows")
+    $dockerEnv = Read-ProtectedEnvFile (Join-Path $ProjectRoot ".docker-runtime.env")
 
     $port = $HostAgentPort
     if ($runtimeEnv.ContainsKey("HOST_AGENT_PORT") -and $runtimeEnv["HOST_AGENT_PORT"]) {
@@ -267,6 +420,9 @@ function Get-RuntimeCredentials {
     }
 
     $hostKey = $HostAgentApiKey
+    if ([string]::IsNullOrWhiteSpace($hostKey)) {
+        $hostKey = $env:RUNTIME_HOST_AGENT_API_KEY
+    }
     if ([string]::IsNullOrWhiteSpace($hostKey) -and $runtimeEnv.ContainsKey("HOST_AGENT_API_KEY")) {
         $hostKey = $runtimeEnv["HOST_AGENT_API_KEY"]
     }
@@ -275,14 +431,21 @@ function Get-RuntimeCredentials {
     }
 
     $runtimeKey = $RuntimeApiKey
+    if ([string]::IsNullOrWhiteSpace($runtimeKey)) {
+        $runtimeKey = $env:RUNTIME_API_KEY
+    }
     if ([string]::IsNullOrWhiteSpace($runtimeKey) -and $dockerEnv.ContainsKey("RUNTIME_API_KEY")) {
         $runtimeKey = $dockerEnv["RUNTIME_API_KEY"]
     }
     if ([string]::IsNullOrWhiteSpace($runtimeKey) -and $runtimeEnv.ContainsKey("HOST_AGENT_RUNTIME_API_KEY")) {
         $runtimeKey = $runtimeEnv["HOST_AGENT_RUNTIME_API_KEY"]
     }
-    if ([string]::IsNullOrWhiteSpace($runtimeKey)) {
-        $runtimeKey = $hostKey
+    if (
+        -not [string]::IsNullOrWhiteSpace($hostKey) -and
+        -not [string]::IsNullOrWhiteSpace($runtimeKey) -and
+        $hostKey -ceq $runtimeKey
+    ) {
+        throw "Host Agent and Runtime Node API keys must be distinct"
     }
 
     return [pscustomobject]@{
@@ -338,8 +501,6 @@ function Invoke-HttpJson {
 }
 
 function Install-Runtime {
-    param([string]$ExistingKey)
-
     $installer = Join-Path $ProjectRoot "install-runtime-windows.ps1"
     if (-not (Test-Path $installer)) { throw "install-runtime-windows.ps1 not found" }
 
@@ -351,6 +512,9 @@ function Install-Runtime {
         "-ProjectRoot", $ProjectRoot,
         "-WorkspaceRoot", $workspaceRoot,
         "-Port", "$HostAgentPort",
+        "-BindHost", "127.0.0.1",
+        "-RuntimeBindHost", "127.0.0.1",
+        "-RuntimeAdvertisedHost", "host.docker.internal",
         "-RuntimeBackend", $RuntimeBackend,
         "-Headless"
     )
@@ -365,18 +529,28 @@ function Install-Runtime {
     }
     if ($HyperVRestoreOnRelease) { $args += "-HyperVRestoreOnRelease" }
     if ($HyperVStopOnRelease) { $args += "-HyperVStopOnRelease" }
+    if ($AllowInsecureRuntimeHttp) { $args += "-AllowInsecureRuntimeHttp" }
     if ($Service) { $args += "-Service" }
     if ($SkipBuild) { $args += "-SkipBuild" }
-    if (-not [string]::IsNullOrWhiteSpace($ExistingKey)) {
-        $args += @("-ApiKey", $ExistingKey)
+    $childEnvironment = @{}
+    if (-not [string]::IsNullOrWhiteSpace($HostAgentApiKey)) {
+        $childEnvironment.RIKUNE_HOST_AGENT_API_KEY = $HostAgentApiKey
+    } elseif (-not [string]::IsNullOrWhiteSpace($env:RUNTIME_HOST_AGENT_API_KEY)) {
+        $childEnvironment.RIKUNE_HOST_AGENT_API_KEY = $env:RUNTIME_HOST_AGENT_API_KEY
+    }
+    if (-not [string]::IsNullOrWhiteSpace($RuntimeApiKey)) {
+        $childEnvironment.RIKUNE_RUNTIME_NODE_API_KEY = $RuntimeApiKey
+    } elseif (-not [string]::IsNullOrWhiteSpace($env:RUNTIME_API_KEY)) {
+        $childEnvironment.RIKUNE_RUNTIME_NODE_API_KEY = $env:RUNTIME_API_KEY
     }
 
     Write-Step "Installing Windows Host Agent runtime"
     Write-Info "Workspace root: $workspaceRoot"
+    Write-Info "Host Agent and runtime proxy will bind only to 127.0.0.1; Docker Desktop reaches them through host.docker.internal."
     if ($Service) {
         Write-Warn "Sandbox launch requires a logged-on desktop session; -Service uses PM2 only, not a Windows Service."
     }
-    Invoke-ChildPowerShell $args
+    Invoke-ChildPowerShell -Arguments $args -Environment $childEnvironment
     Write-Ok "Windows Host Agent installer completed"
 }
 
@@ -397,7 +571,7 @@ function Install-Stack {
     if ($ProfileName -eq "hybrid") {
         $creds = Get-RuntimeCredentials
         $localEndpoint = [string]::IsNullOrWhiteSpace($HostAgentEndpoint) -or $HostAgentEndpoint -match "host\.docker\.internal|localhost|127\.0\.0\.1"
-        $shouldInstallLocalRuntime = $InstallRuntime -or ([string]::IsNullOrWhiteSpace($creds.HostKey) -and $localEndpoint) -or ($ResetData -and $localEndpoint)
+        $shouldInstallLocalRuntime = $InstallRuntime -or (([string]::IsNullOrWhiteSpace($creds.HostKey) -or [string]::IsNullOrWhiteSpace($creds.RuntimeKey)) -and $localEndpoint) -or ($ResetData -and $localEndpoint)
 
         if ($ResetData -and $localEndpoint) {
             Reset-DataRoot
@@ -405,17 +579,24 @@ function Install-Stack {
         }
 
         if ($shouldInstallLocalRuntime) {
-            Install-Runtime -ExistingKey $creds.HostKey
+            Install-Runtime
             $creds = Get-RuntimeCredentials
         }
 
         if ([string]::IsNullOrWhiteSpace($creds.HostKey)) {
-            throw "Hybrid install needs a Host Agent API key. Pass -HostAgentApiKey, run -InstallRuntime, or install the Windows runtime first."
+            throw "Hybrid install needs a Host Agent API key. Provide RUNTIME_HOST_AGENT_API_KEY through a protected process environment, run -InstallRuntime, or install the Windows runtime first."
+        }
+        if ([string]::IsNullOrWhiteSpace($creds.RuntimeKey)) {
+            throw "Hybrid install needs a distinct Runtime Node API key. Provide RUNTIME_API_KEY through a protected process environment, run -InstallRuntime, or install the Windows runtime first."
+        }
+        if ($creds.HostKey -ceq $creds.RuntimeKey) {
+            throw "Host Agent and Runtime Node API keys must be distinct"
         }
 
         $dockerEndpoint = if ([string]::IsNullOrWhiteSpace($HostAgentEndpoint)) { "http://host.docker.internal:$($creds.Port)" } else { $HostAgentEndpoint }
         $hostKey = $creds.HostKey
-        $runtimeKey = if ([string]::IsNullOrWhiteSpace($creds.RuntimeKey)) { $hostKey } else { $creds.RuntimeKey }
+        $runtimeKey = $creds.RuntimeKey
+        Assert-SecureRuntimeEndpoint -Endpoint $dockerEndpoint -AllowInsecure:$AllowInsecureRuntimeHttp
 
         Write-Ok "Hybrid endpoint for container: $dockerEndpoint"
     }
@@ -439,14 +620,19 @@ function Install-Stack {
     if ($UseProxy -or (-not $NoProxyAutoDetect -and [string]::IsNullOrWhiteSpace($HttpProxy) -and [string]::IsNullOrWhiteSpace($HttpsProxy))) {
         $args += "-UseProxy"
     }
+    if ($AllowInsecureRuntimeHttp) { $args += "-AllowInsecureRuntimeHttp" }
     if ($ProfileName -eq "hybrid") {
         $args += @("-HostAgentEndpoint", $dockerEndpoint)
-        $args += @("-HostAgentApiKey", $hostKey)
-        $args += @("-RuntimeApiKey", $runtimeKey)
+    }
+
+    $childEnvironment = @{}
+    if ($ProfileName -eq "hybrid") {
+        $childEnvironment.RUNTIME_HOST_AGENT_API_KEY = $hostKey
+        $childEnvironment.RUNTIME_API_KEY = $runtimeKey
     }
 
     Write-Step "Running Docker profile installer"
-    Invoke-ChildPowerShell $args
+    Invoke-ChildPowerShell -Arguments $args -Environment $childEnvironment
 }
 
 function Generate-Profile {
@@ -756,7 +942,7 @@ try {
         "health" { Show-Health -ProfileName $Profile }
         "doctor" { Show-Doctor -ProfileName $Profile }
         "generate" { Generate-Profile -ProfileName $Profile }
-        "runtime-install" { Install-Runtime -ExistingKey $HostAgentApiKey }
+        "runtime-install" { Install-Runtime }
         "runtime-status" { Show-Health -ProfileName "hybrid" }
         "runtime-stop" { Stop-Runtime }
     }

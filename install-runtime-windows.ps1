@@ -19,14 +19,26 @@ param(
     [Parameter(HelpMessage="Host Agent HTTP port")]
     [int]$Port = 18082,
 
-    [Parameter(HelpMessage="Host Agent bind address. Use 0.0.0.0 for Docker/WSL analyzers to reach the agent through host.docker.internal.")]
-    [string]$BindHost = "0.0.0.0",
+    [Parameter(HelpMessage="Host Agent bind address. Non-loopback binding is an explicit network exposure decision.")]
+    [string]$BindHost = "127.0.0.1",
+
+    [Parameter(HelpMessage="Runtime portproxy bind address. Defaults to loopback when Host Agent is loopback.")]
+    [string]$RuntimeBindHost,
+
+    [Parameter(HelpMessage="Hostname advertised to Runtime clients. Local Docker installs use host.docker.internal while listeners stay on loopback.")]
+    [string]$RuntimeAdvertisedHost,
 
     [Parameter(HelpMessage="Skip best-effort Hyper-V firewall rules that allow WSL/Docker analyzers to reach Host Agent/runtime ports.")]
     [switch]$SkipHyperVFirewallRules,
 
-    [Parameter(HelpMessage="Host Agent and Runtime API key. If omitted, a random key is generated.")]
+    [Parameter(HelpMessage="Deprecated argv-based Host Agent key input. Prefer the temporary RIKUNE_HOST_AGENT_API_KEY process environment variable.")]
     [string]$ApiKey,
+
+    [Parameter(HelpMessage="Read an optional Host Agent key from standard input so remote bootstrap does not expose it in process arguments.")]
+    [switch]$ReadApiKeyFromStdin,
+
+    [Parameter(HelpMessage="Allow plaintext HTTP/non-loopback runtime exposure only on an isolated trusted network.")]
+    [switch]$AllowInsecureRuntimeHttp,
 
     [Parameter(HelpMessage="Runtime backend controlled by the Host Agent")]
     [ValidateSet("windows-sandbox", "hyperv-vm")]
@@ -50,6 +62,8 @@ param(
     [Parameter(HelpMessage="Project root directory")]
     [string]$ProjectRoot = $PSScriptRoot
 )
+
+$ErrorActionPreference = "Stop"
 
 $ColorPrimary = "Cyan"
 $ColorSuccess = "Green"
@@ -98,6 +112,262 @@ function Exit-WithError {
     param([string]$Text)
     Write-Error-Message $Text
     exit 1
+}
+
+function Assert-SafeRuntimeEnvValue {
+    param(
+        [string]$Name,
+        [AllowNull()][string]$Value,
+        [switch]$AllowEmpty
+    )
+
+    $normalized = if ($null -eq $Value) { "" } else { [string]$Value }
+    if ($normalized.Contains("`r") -or $normalized.Contains("`n") -or $normalized.Contains([char]0)) {
+        throw "$Name must not contain CR, LF, or NUL characters"
+    }
+    if (-not $AllowEmpty -and [string]::IsNullOrWhiteSpace($normalized)) {
+        throw "$Name is required"
+    }
+    return $normalized
+}
+
+function New-CryptographicApiKey {
+    $bytes = [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
+    return [Convert]::ToHexString($bytes).ToLowerInvariant()
+}
+
+function Resolve-RuntimeApiKey {
+    param(
+        [bool]$ExplicitlySupplied,
+        [AllowNull()][string]$SuppliedKey,
+        [AllowNull()][string]$EnvironmentKey
+    )
+
+    $candidates = @()
+    if ($ExplicitlySupplied) {
+        $candidates += @{ Name = "ApiKey"; Value = $SuppliedKey }
+    } else {
+        if (-not [string]::IsNullOrWhiteSpace($EnvironmentKey)) {
+            $candidates += @{ Name = "RIKUNE_RUNTIME_API_KEY"; Value = $EnvironmentKey }
+        }
+    }
+
+    if ($candidates.Count -eq 0) { return New-CryptographicApiKey }
+    $candidate = Assert-SafeRuntimeEnvValue -Name $candidates[0].Name -Value $candidates[0].Value
+    $candidate = $candidate.Trim()
+    if ($candidate -notmatch '^[\x21-\x7e]{32,}$') {
+        throw "$($candidates[0].Name) must contain at least 32 printable non-space ASCII characters"
+    }
+    return $candidate
+}
+
+function Get-SecretFingerprint {
+    param([string]$Secret)
+
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($Secret)
+        $digest = $sha.ComputeHash($bytes)
+        return [Convert]::ToHexString($digest).ToLowerInvariant().Substring(0, 12)
+    } finally {
+        $sha.Dispose()
+    }
+}
+
+function Assert-SecureRuntimeEndpoint {
+    param(
+        [string]$Endpoint,
+        [switch]$AllowInsecure
+    )
+
+    $uri = $null
+    if (-not [Uri]::TryCreate($Endpoint, [UriKind]::Absolute, [ref]$uri)) {
+        throw "Invalid runtime endpoint: $Endpoint"
+    }
+    if (-not [string]::IsNullOrEmpty($uri.UserInfo)) {
+        throw "Runtime endpoints must not contain URL userinfo credentials"
+    }
+    if ($uri.Scheme -eq "https") { return }
+    if ($uri.Scheme -eq "http" -and $uri.Host -in @("localhost", "127.0.0.1", "::1")) { return }
+    if ($uri.Scheme -eq "http" -and $AllowInsecure) {
+        Write-Warning-Message "Using plaintext remote runtime HTTP by explicit opt-in. Restrict it to a trusted VPN/isolated network."
+        return
+    }
+    throw "Remote Runtime Node endpoints must use HTTPS. Use -AllowInsecureRuntimeHttp only for an isolated trusted network."
+}
+
+function Test-IsLoopbackRuntimeHost {
+    param([string]$HostName)
+    return $HostName.Trim().ToLowerInvariant() -in @("127.0.0.1", "localhost", "::1", "[::1]")
+}
+
+function Assert-RuntimeNetworkExposureContract {
+    param(
+        [string]$HostAgentBindHost,
+        [string]$RuntimeProxyBindHost,
+        [switch]$AllowInsecureRuntimeHttp
+    )
+
+    if ((-not (Test-IsLoopbackRuntimeHost -HostName $HostAgentBindHost) -or
+        -not (Test-IsLoopbackRuntimeHost -HostName $RuntimeProxyBindHost)) -and
+        -not $AllowInsecureRuntimeHttp) {
+        throw "Non-loopback Host Agent or Runtime portproxy binding requires the explicit -AllowInsecureRuntimeHttp trusted-network opt-in."
+    }
+}
+
+function Resolve-RuntimeWorkspaceRoot {
+    param(
+        [AllowNull()][string]$RequestedRoot,
+        [string]$ProjectRoot,
+        [string]$LocalAppData
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RequestedRoot)) {
+        if ([string]::IsNullOrWhiteSpace($LocalAppData)) {
+            throw "LOCALAPPDATA is required when WorkspaceRoot is omitted"
+        }
+        $resolvedCandidate = Join-Path $LocalAppData "Rikune\Runtime"
+    } elseif ([System.IO.Path]::IsPathRooted($RequestedRoot)) {
+        $resolvedCandidate = [System.IO.Path]::GetFullPath($RequestedRoot)
+    } else {
+        $resolvedCandidate = [System.IO.Path]::GetFullPath((Join-Path $ProjectRoot $RequestedRoot))
+    }
+    [System.IO.Directory]::CreateDirectory($resolvedCandidate) | Out-Null
+    return (Resolve-Path -LiteralPath $resolvedCandidate).Path
+}
+
+function Assert-RegularNonReparseRuntimeEnvPath {
+    param([string]$Path)
+
+    $attributes = [System.IO.File]::GetAttributes($Path)
+    if (($attributes -band [System.IO.FileAttributes]::Directory) -ne 0) {
+        throw "Runtime environment path must be a regular file: $Path"
+    }
+    if (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "Runtime environment path must not be a symlink or reparse point: $Path"
+    }
+}
+
+function Assert-ProtectedRuntimeEnvFile {
+    param([string]$Path)
+
+    Assert-RegularNonReparseRuntimeEnvPath -Path $Path
+    $fileInfo = [System.IO.FileInfo]::new($Path)
+    if ($fileInfo.Length -gt 65536) {
+        throw "Runtime environment file exceeds the 64 KiB security limit"
+    }
+
+    $acl = Get-Acl -LiteralPath $Path
+    if (-not $acl.AreAccessRulesProtected) {
+        throw "Runtime environment file ACL inheritance must be disabled"
+    }
+
+    $currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $ownerSid = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+    if ($ownerSid -ne $currentSid) {
+        throw "Runtime environment file must be owned by the current Windows user"
+    }
+
+    $rules = @($acl.GetAccessRules(
+        $true,
+        $true,
+        [System.Security.Principal.SecurityIdentifier]
+    ))
+    $fullControl = [System.Security.AccessControl.FileSystemRights]::FullControl
+    $hasCurrentUserFullControl = $false
+    foreach ($rule in $rules) {
+        if ($rule.IsInherited -or
+            $rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow -or
+            $rule.IdentityReference.Value -ne $currentSid) {
+            throw "Runtime environment file ACL contains an inherited, denied, or unexpected identity entry"
+        }
+        if (($rule.FileSystemRights -band $fullControl) -eq $fullControl) {
+            $hasCurrentUserFullControl = $true
+        }
+    }
+    if (-not $hasCurrentUserFullControl) {
+        throw "Runtime environment file must grant FullControl to the current Windows user"
+    }
+}
+
+function Write-SecureRuntimeEnvFile {
+    param(
+        [string]$Path,
+        [string]$Content,
+        [string]$IcaclsPath
+    )
+
+    $absolutePath = [System.IO.Path]::GetFullPath($Path)
+    $parent = Split-Path -Parent $absolutePath
+    [System.IO.Directory]::CreateDirectory($parent) | Out-Null
+    if (Test-Path -LiteralPath $absolutePath) {
+        Assert-RegularNonReparseRuntimeEnvPath -Path $absolutePath
+    }
+
+    $temporaryPath = Join-Path $parent ".$([System.IO.Path]::GetFileName($absolutePath)).$PID.$([Guid]::NewGuid().ToString('N')).tmp"
+    $destinationReplaced = $false
+    try {
+        $stream = [System.IO.File]::Open($temporaryPath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+        $stream.Dispose()
+
+        $currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        if ([string]::IsNullOrWhiteSpace($IcaclsPath)) {
+            $IcaclsPath = Join-Path ([Environment]::SystemDirectory) "icacls.exe"
+        }
+        if (-not (Test-Path -LiteralPath $IcaclsPath -PathType Leaf)) {
+            throw "Trusted System32 icacls.exe was not found"
+        }
+        & $IcaclsPath $temporaryPath /inheritance:r /grant:r "*${currentSid}:(F)" *> $null
+        if ($LASTEXITCODE -ne 0) { throw "Unable to restrict ACL on runtime environment temp file" }
+        & $IcaclsPath $temporaryPath /setowner "*$currentSid" *> $null
+        if ($LASTEXITCODE -ne 0) { throw "Unable to set the owner on runtime environment temp file" }
+        Assert-ProtectedRuntimeEnvFile -Path $temporaryPath
+
+        [System.IO.File]::WriteAllText($temporaryPath, $Content, [System.Text.UTF8Encoding]::new($false))
+        $stream = [System.IO.File]::Open($temporaryPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+        $stream.Flush($true)
+        $stream.Dispose()
+
+        [System.IO.File]::Move($temporaryPath, $absolutePath, $true)
+        $destinationReplaced = $true
+        Assert-ProtectedRuntimeEnvFile -Path $absolutePath
+        if ([System.IO.File]::ReadAllText($absolutePath) -cne $Content) {
+            throw "Runtime environment file content changed during secure replacement"
+        }
+    } catch {
+        if ($destinationReplaced -and (Test-Path -LiteralPath $absolutePath)) {
+            Remove-Item -LiteralPath $absolutePath -Force -ErrorAction SilentlyContinue
+        }
+        throw
+    } finally {
+        if (Test-Path -LiteralPath $temporaryPath) {
+            Remove-Item -LiteralPath $temporaryPath -Force
+        }
+    }
+}
+
+function Resolve-PinnedPm2Command {
+    param([string]$ProjectRoot)
+
+    $manifest = Get-Content -LiteralPath (Join-Path $ProjectRoot "package.json") -Raw | ConvertFrom-Json
+    $expectedVersion = [string]$manifest.devDependencies.pm2
+    if ($expectedVersion -notmatch '^\d+\.\d+\.\d+$') {
+        throw "package.json must pin devDependencies.pm2 to an exact version"
+    }
+    $command = Join-Path $ProjectRoot "node_modules\.bin\pm2.cmd"
+    if (-not (Test-Path -LiteralPath $command)) {
+        throw "Pinned PM2 executable is missing. Run npm ci --include=dev in the project root."
+    }
+    $installedManifestPath = Join-Path $ProjectRoot "node_modules\pm2\package.json"
+    if (-not (Test-Path -LiteralPath $installedManifestPath)) {
+        throw "Pinned PM2 package manifest is missing. Run npm ci --include=dev in the project root."
+    }
+    $installedManifest = Get-Content -LiteralPath $installedManifestPath -Raw | ConvertFrom-Json
+    $actualVersion = [string]$installedManifest.version
+    if ([string]$installedManifest.name -ne "pm2" -or $actualVersion -ne $expectedVersion) {
+        throw "PM2 version mismatch: expected $expectedVersion, received $actualVersion"
+    }
+    return @{ Command = $command; Version = $expectedVersion }
 }
 
 function Test-IsAdmin {
@@ -174,6 +444,34 @@ function Invoke-Request {
     }
 }
 
+function Assert-LoopbackHostAgentListener {
+    param(
+        [int]$Port,
+        [string]$ExpectedNodePath
+    )
+
+    if (-not (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue)) {
+        throw "Get-NetTCPConnection is required to verify the Host Agent loopback listener"
+    }
+    $listeners = @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction Stop)
+    if ($listeners.Count -eq 0) {
+        throw "No Host Agent listener was found on port $Port"
+    }
+    foreach ($listener in $listeners) {
+        if ([string]$listener.LocalAddress -notin @("127.0.0.1", "::1")) {
+            throw "Host Agent listener escaped loopback on address '$($listener.LocalAddress)'"
+        }
+        $listenerProcess = Get-Process -Id $listener.OwningProcess -ErrorAction Stop
+        if (-not [string]::Equals(
+            [System.IO.Path]::GetFullPath($listenerProcess.Path),
+            [System.IO.Path]::GetFullPath($ExpectedNodePath),
+            [System.StringComparison]::OrdinalIgnoreCase
+        )) {
+            throw "Port $Port is not owned by the expected Node.js executable"
+        }
+    }
+}
+
 function Start-HostAgentProcess {
     param(
         [string]$NodeExecutable,
@@ -222,6 +520,65 @@ function Start-HostAgentProcess {
 # ─────────────────────────────────────────────────────────────────────────────
 if (-not $Headless) { Clear-Host }
 Write-Header "Rikune — Windows Runtime Install"
+
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    Exit-WithError "PowerShell 7 or newer is required for atomic protected environment-file replacement."
+}
+if ([string]::IsNullOrWhiteSpace($ProjectRoot)) { $ProjectRoot = $PSScriptRoot }
+$ProjectRoot = [System.IO.Path]::GetFullPath($ProjectRoot)
+if (-not (Test-Path -LiteralPath $ProjectRoot -PathType Container)) {
+    Exit-WithError "Project root does not exist: $ProjectRoot"
+}
+$stdinApiKey = $null
+if ($ReadApiKeyFromStdin) {
+    $stdinApiKey = [Console]::In.ReadToEnd()
+    if ([string]::IsNullOrWhiteSpace($stdinApiKey)) { $stdinApiKey = $null }
+}
+
+$capturedHostApiKey = if ($null -ne $stdinApiKey) {
+    $stdinApiKey
+} elseif (-not [string]::IsNullOrWhiteSpace($env:RIKUNE_HOST_AGENT_API_KEY)) {
+    $env:RIKUNE_HOST_AGENT_API_KEY
+} elseif (-not [string]::IsNullOrWhiteSpace($env:RUNTIME_HOST_AGENT_API_KEY)) {
+    $env:RUNTIME_HOST_AGENT_API_KEY
+} else {
+    $env:RIKUNE_RUNTIME_API_KEY
+}
+$capturedRuntimeApiKey = if (-not [string]::IsNullOrWhiteSpace($env:RIKUNE_RUNTIME_NODE_API_KEY)) {
+    $env:RIKUNE_RUNTIME_NODE_API_KEY
+} else {
+    $env:RUNTIME_API_KEY
+}
+
+foreach ($secretEnvironmentName in @(
+    "RIKUNE_HOST_AGENT_API_KEY",
+    "RIKUNE_RUNTIME_API_KEY",
+    "RIKUNE_RUNTIME_NODE_API_KEY",
+    "RUNTIME_HOST_AGENT_API_KEY",
+    "HOST_AGENT_API_KEY",
+    "HOST_AGENT_RUNTIME_API_KEY",
+    "RUNTIME_API_KEY",
+    "RIKUNE_API_KEY",
+    "RIKUNE_ANALYZER_API_KEY"
+)) {
+    [Environment]::SetEnvironmentVariable($secretEnvironmentName, $null, "Process")
+}
+$stdinApiKey = $null
+
+if ([string]::IsNullOrWhiteSpace($RuntimeBindHost)) {
+    $RuntimeBindHost = if (Test-IsLoopbackRuntimeHost -HostName $BindHost) { "127.0.0.1" } else { "0.0.0.0" }
+}
+try {
+    Assert-SafeRuntimeEnvValue -Name "BindHost" -Value $BindHost | Out-Null
+    Assert-SafeRuntimeEnvValue -Name "RuntimeBindHost" -Value $RuntimeBindHost | Out-Null
+    Assert-SafeRuntimeEnvValue -Name "RuntimeAdvertisedHost" -Value $RuntimeAdvertisedHost -AllowEmpty | Out-Null
+    Assert-RuntimeNetworkExposureContract `
+        -HostAgentBindHost $BindHost `
+        -RuntimeProxyBindHost $RuntimeBindHost `
+        -AllowInsecureRuntimeHttp:$AllowInsecureRuntimeHttp
+} catch {
+    Exit-WithError $_.Exception.Message
+}
 
 Write-Host "This script will:" -ForegroundColor $ColorInfo
 Write-Host "  1. Check Windows version and selected runtime backend" -ForegroundColor $ColorInfo
@@ -305,6 +662,7 @@ if ($RuntimeBackend -eq "windows-sandbox") {
     if ([string]::IsNullOrWhiteSpace($HyperVRuntimeEndpoint)) {
         Exit-WithError "-HyperVRuntimeEndpoint is required when -RuntimeBackend hyperv-vm is selected."
     }
+    Assert-SecureRuntimeEndpoint -Endpoint $HyperVRuntimeEndpoint -AllowInsecure:$AllowInsecureRuntimeHttp
     if ($HyperVRestoreOnRelease -and [string]::IsNullOrWhiteSpace($HyperVSnapshotName)) {
         Exit-WithError "-HyperVSnapshotName is required when -HyperVRestoreOnRelease is selected."
     }
@@ -356,39 +714,42 @@ Write-Success "npm: $((npm --version).Trim())"
 
 # Python
 $pythonCmd = $null
-foreach ($cmd in @('python', 'python3', 'py')) {
-    if (Get-Command $cmd -ErrorAction SilentlyContinue) {
+$pythonPrefixArgs = @()
+$pythonCandidates = @(
+    @{ Command = 'python3.12'; PrefixArgs = @() },
+    @{ Command = 'py'; PrefixArgs = @('-3.12') },
+    @{ Command = 'python'; PrefixArgs = @() },
+    @{ Command = 'python3'; PrefixArgs = @() }
+)
+foreach ($candidate in $pythonCandidates) {
+    $candidateCommand = [string]$candidate.Command
+    $candidatePrefixArgs = @($candidate.PrefixArgs)
+    if (Get-Command $candidateCommand -ErrorAction SilentlyContinue) {
         try {
-            $ver = & $cmd --version 2>&1
-            if ($ver -match '3\.(1[1-9]|[2-9][0-9])') {
-                $pythonCmd = $cmd
+            & $candidateCommand @candidatePrefixArgs -c "import struct, sys; raise SystemExit(0 if sys.implementation.name == 'cpython' and sys.version_info[:2] == (3, 12) and struct.calcsize('P') == 8 else 1)" *> $null
+            if ($LASTEXITCODE -eq 0) {
+                $pythonCmd = $candidateCommand
+                $pythonPrefixArgs = $candidatePrefixArgs
                 break
             }
         } catch {}
     }
 }
 if (-not $pythonCmd) {
-    Write-Warning-Message "Python 3.11+ not found in PATH"
-    if (-not $Headless) {
-        $installPy = Read-Host "Attempt to install Python 3.11 from Microsoft Store? (y/N)"
-        if ($installPy -eq 'y' -or $installPy -eq 'Y') {
-            Start-Process "ms-windows-store://pdp/?productid=9NRWMJP3717K" -Wait
-            Exit-WithError "Please complete Python installation in the Microsoft Store, then re-run this script."
-        }
-    }
-    Exit-WithError "Python 3.11+ is required. Install from https://www.python.org/downloads/ or Microsoft Store."
+    Exit-WithError "CPython 3.12 x86_64 is required. Install an exact 64-bit Python 3.12 release from https://www.python.org/downloads/."
 }
-$pyVersion = (& $pythonCmd --version 2>&1).ToString().Trim()
-Write-Success "Python: $pyVersion (command: $pythonCmd)"
+$pyVersion = (& $pythonCmd @pythonPrefixArgs --version 2>&1).ToString().Trim()
+$pythonDisplay = (($pythonCmd, ($pythonPrefixArgs -join ' ')) -join ' ').Trim()
+Write-Success "Python: $pyVersion (command: $pythonDisplay)"
 
 $nodePath = (Get-Command node).Source
 try {
-    $pythonPath = (& $pythonCmd -c "import sys; print(sys.executable)" 2>$null).ToString().Trim()
+    $pythonPath = (& $pythonCmd @pythonPrefixArgs -c "import sys; print(sys.executable)" 2>$null).ToString().Trim()
 } catch {
-    $pythonPath = (Get-Command $pythonCmd).Source
+    Exit-WithError "Unable to resolve the exact CPython 3.12 x86_64 executable path."
 }
-if (-not $pythonPath -or -not (Test-Path $pythonPath)) {
-    $pythonPath = (Get-Command $pythonCmd).Source
+if (-not $pythonPath -or -not (Test-Path -LiteralPath $pythonPath -PathType Leaf)) {
+    Exit-WithError "Resolved CPython 3.12 executable path is invalid: $pythonPath"
 }
 Write-Info "Node path for Sandbox mapping: $nodePath"
 Write-Info "Python path for Sandbox mapping: $pythonPath"
@@ -400,12 +761,12 @@ Write-Step "Installing npm Dependencies & Building"
 
 Push-Location $ProjectRoot
 try {
-    Write-Info "Running npm install (root)..."
-    npm install 2>&1 | Out-Null
+    Write-Info "Running npm ci --include=dev (root lockfile)..."
+    npm ci --include=dev 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        Exit-WithError "npm install failed"
+        Exit-WithError "npm ci --include=dev failed"
     }
-    Write-Success "Root npm dependencies installed"
+    Write-Success "Root npm dependencies installed from package-lock.json"
 
     if (-not $SkipBuild) {
         Write-Info "Building Runtime Node..."
@@ -431,14 +792,10 @@ try {
 # =============================================================================
 Write-Step "Creating Workspace Directories"
 
-if (-not $WorkspaceRoot) {
-    $WorkspaceRoot = "$env:LOCALAPPDATA\Rikune\Runtime"
-}
-$WorkspaceRoot = (Resolve-Path -Path $WorkspaceRoot -ErrorAction SilentlyContinue).Path
-if (-not $WorkspaceRoot) {
-    New-Item -ItemType Directory -Path "$env:LOCALAPPDATA\Rikune\Runtime" -Force | Out-Null
-    $WorkspaceRoot = "$env:LOCALAPPDATA\Rikune\Runtime"
-}
+$WorkspaceRoot = Resolve-RuntimeWorkspaceRoot `
+    -RequestedRoot $WorkspaceRoot `
+    -ProjectRoot $ProjectRoot `
+    -LocalAppData $env:LOCALAPPDATA
 
 $directories = @("workspace", "workspace\sandbox", "workspace\logs", "workspace\inbox", "workspace\outbox")
 foreach ($dir in $directories) {
@@ -454,8 +811,45 @@ foreach ($dir in $directories) {
 # =============================================================================
 Write-Step "Generating Host Agent Configuration"
 
-$apiKey = if ($ApiKey) { $ApiKey } else { -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 32 | ForEach-Object { [char]$_ }) }
 $envFile = Join-Path $ProjectRoot ".env.runtime-windows"
+$hostApiKey = Resolve-RuntimeApiKey `
+    -ExplicitlySupplied ($PSBoundParameters.ContainsKey("ApiKey")) `
+    -SuppliedKey $ApiKey `
+    -EnvironmentKey $capturedHostApiKey
+$runtimeApiKey = Resolve-RuntimeApiKey `
+    -ExplicitlySupplied $false `
+    -SuppliedKey $null `
+    -EnvironmentKey $capturedRuntimeApiKey
+$capturedHostApiKey = $null
+$capturedRuntimeApiKey = $null
+if ([string]::Equals($hostApiKey, $runtimeApiKey, [System.StringComparison]::Ordinal)) {
+    Exit-WithError "Host Agent and Runtime Node API keys must be distinct security principals."
+}
+
+if (-not (Test-IsLoopbackRuntimeHost -HostName $BindHost) -or
+    -not (Test-IsLoopbackRuntimeHost -HostName $RuntimeBindHost)) {
+    Write-Warning-Message "A Host Agent or Runtime portproxy listener will bind non-loopback by explicit trusted-network opt-in. Protect this path with TLS/VPN and a restrictive firewall."
+}
+
+$runtimeEnvValues = @{
+    HOST_AGENT_BIND_HOST = $BindHost
+    HOST_AGENT_RUNTIME_BIND_HOST = $RuntimeBindHost
+    HOST_AGENT_RUNTIME_ADVERTISED_HOST = $RuntimeAdvertisedHost
+    HOST_AGENT_API_KEY = $hostApiKey
+    HOST_AGENT_RUNTIME_API_KEY = $runtimeApiKey
+    HOST_AGENT_WORKSPACE = $WorkspaceRoot
+    HOST_AGENT_NODE_PATH = $nodePath
+    HOST_AGENT_PYTHON_PATH = $pythonPath
+    HOST_AGENT_BACKEND = $RuntimeBackend
+    HOST_AGENT_HYPERV_VM_NAME = $HyperVVmName
+    HOST_AGENT_HYPERV_SNAPSHOT_NAME = $HyperVSnapshotName
+    HOST_AGENT_HYPERV_RUNTIME_ENDPOINT = $HyperVRuntimeEndpoint
+}
+foreach ($entry in $runtimeEnvValues.GetEnumerator()) {
+    $allowEmpty = $entry.Key.StartsWith("HOST_AGENT_HYPERV_") -or
+        $entry.Key -eq "HOST_AGENT_RUNTIME_ADVERTISED_HOST"
+    Assert-SafeRuntimeEnvValue -Name $entry.Key -Value ([string]$entry.Value) -AllowEmpty:$allowEmpty | Out-Null
+}
 
 $envContent = @"
 # Rikune Windows Runtime Environment — generated by install-runtime-windows.ps1
@@ -464,8 +858,10 @@ $envContent = @"
 # Host Agent settings
 HOST_AGENT_PORT=$Port
 HOST_AGENT_BIND_HOST=$BindHost
-HOST_AGENT_API_KEY=$apiKey
-HOST_AGENT_RUNTIME_API_KEY=$apiKey
+HOST_AGENT_RUNTIME_BIND_HOST=$RuntimeBindHost
+HOST_AGENT_RUNTIME_ADVERTISED_HOST=$RuntimeAdvertisedHost
+HOST_AGENT_API_KEY=$hostApiKey
+HOST_AGENT_RUNTIME_API_KEY=$runtimeApiKey
 HOST_AGENT_WORKSPACE=$WorkspaceRoot
 HOST_AGENT_NODE_PATH=$nodePath
 HOST_AGENT_PYTHON_PATH=$pythonPath
@@ -485,90 +881,62 @@ HOST_AGENT_HYPERV_STOP_ON_RELEASE=$($HyperVStopOnRelease.IsPresent.ToString().To
 # ALLOW_UNSAFE_RUNTIME=true
 "@
 
-$envContent | Set-Content $envFile -Encoding UTF8
+$envContent = "$($envContent.TrimEnd())`n"
+Write-SecureRuntimeEnvFile -Path $envFile -Content $envContent
 Write-Success "Environment file: $envFile"
-Write-Info "API Key: $apiKey"
+Write-Info "Host Agent key fingerprint: $(Get-SecretFingerprint -Secret $hostApiKey)"
+Write-Info "Runtime Node key fingerprint: $(Get-SecretFingerprint -Secret $runtimeApiKey)"
 
 # =============================================================================
 # Step 6: Start Host Agent
 # =============================================================================
 Write-Step "Starting Windows Host Agent"
 
-$hostAgentEntry = Join-Path $ProjectRoot "packages\windows-host-agent\dist\index.js"
-if (-not (Test-Path $hostAgentEntry)) {
-    Exit-WithError "Host Agent entry not found at $hostAgentEntry. Build may have failed."
+$hostAgentBootstrapEntry = Join-Path $ProjectRoot "packages\windows-host-agent\dist\bootstrap.js"
+if (-not (Test-Path $hostAgentBootstrapEntry)) {
+    Exit-WithError "Host Agent secure bootstrap not found at $hostAgentBootstrapEntry. Build may have failed."
 }
 
-# Load env for current process
-$env:HOST_AGENT_PORT = "$Port"
-$env:HOST_AGENT_BIND_HOST = "$BindHost"
-$env:HOST_AGENT_API_KEY = "$apiKey"
-$env:HOST_AGENT_RUNTIME_API_KEY = "$apiKey"
-$env:HOST_AGENT_WORKSPACE = "$WorkspaceRoot"
-$env:HOST_AGENT_NODE_PATH = "$nodePath"
-$env:HOST_AGENT_PYTHON_PATH = "$pythonPath"
-$env:HOST_AGENT_BACKEND = "$RuntimeBackend"
-$env:HOST_AGENT_HYPERV_VM_NAME = "$HyperVVmName"
-$env:HOST_AGENT_HYPERV_SNAPSHOT_NAME = "$HyperVSnapshotName"
-$env:HOST_AGENT_HYPERV_RUNTIME_ENDPOINT = "$HyperVRuntimeEndpoint"
-$env:HOST_AGENT_HYPERV_RESTORE_ON_RELEASE = "$($HyperVRestoreOnRelease.IsPresent.ToString().ToLowerInvariant())"
-$env:HOST_AGENT_HYPERV_STOP_ON_RELEASE = "$($HyperVStopOnRelease.IsPresent.ToString().ToLowerInvariant())"
+# The bootstrap reads the protected env file after process start. Do not export
+# credentials into PM2 metadata, dump.pm2, or the child process argument vector.
 
 if ($Service) {
     Write-Warning-Message "Windows Sandbox must be launched from a logged-on interactive user session."
     Write-Warning-Message "This mode uses PM2 in the current user session only; node-windows / Windows Service mode is intentionally disabled."
     Write-Info "Starting Host Agent under PM2..."
 
-    # Prefer pm2
-    $pm2 = Get-Command pm2 -ErrorAction SilentlyContinue
-    if (-not $pm2) {
-        Write-Info "pm2 not found; attempting to install pm2 globally..."
-        $pm2InstallOutput = & npm install -g pm2 2>&1
-        $pm2InstallExitCode = $LASTEXITCODE
-        if ($pm2InstallOutput) {
-            $pm2InstallOutput | ForEach-Object { Write-Info $_.ToString() }
-        }
-        if ($pm2InstallExitCode -eq 0) {
-            $pm2 = Get-Command pm2 -ErrorAction SilentlyContinue
-            if (-not $pm2) {
-                $npmPrefix = (& npm prefix -g 2>$null).ToString().Trim()
-                if ($npmPrefix -and (Test-Path $npmPrefix)) {
-                    $env:PATH = "$npmPrefix;$env:PATH"
-                    $pm2 = Get-Command pm2 -ErrorAction SilentlyContinue
-                }
-            }
-        }
+    try {
+        $pm2Contract = Resolve-PinnedPm2Command -ProjectRoot $ProjectRoot
+    } catch {
+        Exit-WithError $_.Exception.Message
+    }
+    $pm2Command = $pm2Contract.Command
+    Write-Info "Using lockfile-pinned PM2 $($pm2Contract.Version) to manage the user-session process..."
+
+    $pm2DeleteOutput = & $pm2Command delete "rikune-host-agent" 2>&1
+    if ($pm2DeleteOutput) {
+        $pm2DeleteOutput | ForEach-Object { Write-Info $_.ToString() }
     }
 
-    if ($pm2) {
-        Write-Info "Using pm2 to manage service..."
-        $pm2DeleteOutput = & pm2 delete "rikune-host-agent" 2>&1
-        if ($pm2DeleteOutput) {
-            $pm2DeleteOutput | ForEach-Object { Write-Info $_.ToString() }
-        }
-
-        $pm2StartOutput = & pm2 start "$hostAgentEntry" --name "rikune-host-agent" --cwd "$ProjectRoot" 2>&1
-        $pm2StartExitCode = $LASTEXITCODE
-        if ($pm2StartOutput) {
-            $pm2StartOutput | ForEach-Object { Write-Info $_.ToString() }
-        }
-        if ($pm2StartExitCode -ne 0) {
-            Exit-WithError "pm2 failed to start Host Agent. Check pm2 logs rikune-host-agent for details."
-        }
-
-        $pm2SaveOutput = & pm2 save 2>&1
-        $pm2SaveExitCode = $LASTEXITCODE
-        if ($pm2SaveOutput) {
-            $pm2SaveOutput | ForEach-Object { Write-Info $_.ToString() }
-        }
-        if ($pm2SaveExitCode -ne 0) {
-            Exit-WithError "pm2 failed to save process list."
-        }
-        Write-Success "Host Agent registered with pm2 (name: rikune-host-agent)"
-        Write-Info "Manage with: pm2 logs rikune-host-agent"
-    } else {
-        Exit-WithError "PM2 is unavailable. Rerun without -Service to start Host Agent as a background process in this user session. Windows Service mode cannot launch Windows Sandbox."
+    $pm2StartOutput = & $pm2Command start "$hostAgentBootstrapEntry" --name "rikune-host-agent" --cwd "$ProjectRoot" 2>&1
+    $pm2StartExitCode = $LASTEXITCODE
+    if ($pm2StartOutput) {
+        $pm2StartOutput | ForEach-Object { Write-Info $_.ToString() }
     }
+    if ($pm2StartExitCode -ne 0) {
+        Exit-WithError "pm2 failed to start Host Agent. Check pm2 logs rikune-host-agent for details."
+    }
+
+    $pm2SaveOutput = & $pm2Command save 2>&1
+    $pm2SaveExitCode = $LASTEXITCODE
+    if ($pm2SaveOutput) {
+        $pm2SaveOutput | ForEach-Object { Write-Info $_.ToString() }
+    }
+    if ($pm2SaveExitCode -ne 0) {
+        Exit-WithError "pm2 failed to save process list."
+    }
+    Write-Success "Host Agent registered with pm2 (name: rikune-host-agent)"
+    Write-Info "Manage with: $pm2Command logs rikune-host-agent"
 } else {
     Write-Info "Starting Host Agent in the current user session..."
     Write-Info "Keep this Windows user logged in while using Windows Sandbox dynamic execution."
@@ -578,7 +946,7 @@ if ($Service) {
     # Headless mode uses the same detached process model, but skips prompts.
     $startResult = Start-HostAgentProcess `
         -NodeExecutable $nodePath `
-        -EntryPath $hostAgentEntry `
+        -EntryPath $hostAgentBootstrapEntry `
         -WorkingDirectory $ProjectRoot `
         -WorkspaceRoot $WorkspaceRoot
     Write-Success "Host Agent started as background process (PID: $($startResult.Process.Id))"
@@ -599,7 +967,7 @@ $healthOk = $false
 
 while ($attempt -lt $maxAttempts) {
     $attempt++
-    $result = Invoke-Request -Uri $healthUrl -Headers @{ Authorization = "Bearer $apiKey" } -TimeoutSec 3
+    $result = Invoke-Request -Uri $healthUrl -Headers @{ Authorization = "Bearer $hostApiKey" } -TimeoutSec 3
     if ($result.ok -eq $true) {
         $healthOk = $true
         break
@@ -611,9 +979,18 @@ while ($attempt -lt $maxAttempts) {
 if ($healthOk) {
     Write-Success "Host Agent is healthy and responding"
 } else {
-    Write-Warning-Message "Host Agent did not respond to health check. It may still be starting up."
     Write-Info "Check stdout log: $(Join-Path $WorkspaceRoot "workspace\logs\host-agent.log")"
     Write-Info "Check stderr log: $(Join-Path $WorkspaceRoot "workspace\logs\host-agent.error.log")"
+    Exit-WithError "Host Agent did not become healthy before the installation timeout."
+}
+
+if (Test-IsLoopbackRuntimeHost -HostName $BindHost) {
+    try {
+        Assert-LoopbackHostAgentListener -Port $Port -ExpectedNodePath $nodePath
+        Write-Success "Host Agent listener is owned by the expected Node.js executable and restricted to loopback"
+    } catch {
+        Exit-WithError "Host Agent listener verification failed closed: $($_.Exception.Message)"
+    }
 }
 
 # =============================================================================
@@ -636,21 +1013,22 @@ if ($RuntimeBackend -eq "hyperv-vm") {
         Write-Host "  Release Policy: preserve dirty VM state" -ForegroundColor $ColorSuccess
     }
 }
-Write-Host "  API Key:        $apiKey" -ForegroundColor $ColorSuccess
+Write-Host "  Host Key Fingerprint:    $(Get-SecretFingerprint -Secret $hostApiKey)" -ForegroundColor $ColorSuccess
+Write-Host "  Runtime Key Fingerprint: $(Get-SecretFingerprint -Secret $runtimeApiKey)" -ForegroundColor $ColorSuccess
 Write-Host "  Env File:       $envFile" -ForegroundColor $ColorSuccess
 
 Write-Host "`n  Quick Start:" -ForegroundColor $ColorPrimary
-Write-Host "    1. Ensure this Windows machine is reachable from your Linux Analyzer" -ForegroundColor $ColorInfo
-Write-Host "    2. On the Linux Analyzer, set:" -ForegroundColor $ColorInfo
+Write-Host "    1. Keep the Host Agent on loopback, or put non-loopback access behind TLS/VPN and a restrictive firewall." -ForegroundColor $ColorInfo
+Write-Host "    2. Read both distinct API keys from the protected env file and provision them through secure secret channels." -ForegroundColor $ColorInfo
+Write-Host "    3. On the Linux Analyzer, set:" -ForegroundColor $ColorInfo
 Write-Host "       RUNTIME_MODE=remote-sandbox" -ForegroundColor $ColorInfo
-Write-Host "       RUNTIME_HOST_AGENT_ENDPOINT=http://<this-windows-ip>:$Port" -ForegroundColor $ColorInfo
-Write-Host "       RUNTIME_HOST_AGENT_API_KEY=$apiKey" -ForegroundColor $ColorInfo
-Write-Host "       # Optional if Runtime Node auth should be separate:" -ForegroundColor $ColorInfo
-Write-Host "       # RUNTIME_API_KEY=$apiKey" -ForegroundColor $ColorInfo
+Write-Host "       RUNTIME_HOST_AGENT_ENDPOINT=https://<trusted-runtime-endpoint>" -ForegroundColor $ColorInfo
+Write-Host "       RUNTIME_HOST_AGENT_API_KEY=<secret-from-protected-env-file>" -ForegroundColor $ColorInfo
+Write-Host "       RUNTIME_API_KEY=<distinct-runtime-secret-from-protected-env-file>" -ForegroundColor $ColorInfo
 Write-Host "`n  Managing the Host Agent:" -ForegroundColor $ColorPrimary
 if ($Service) {
-    Write-Host "    pm2 logs rikune-host-agent" -ForegroundColor $ColorInfo
-    Write-Host "    pm2 stop rikune-host-agent" -ForegroundColor $ColorInfo
+    Write-Host "    & '$pm2Command' logs rikune-host-agent" -ForegroundColor $ColorInfo
+    Write-Host "    & '$pm2Command' stop rikune-host-agent" -ForegroundColor $ColorInfo
 } else {
     Write-Host "    Stdout: $(Join-Path $WorkspaceRoot "workspace\logs\host-agent.log")" -ForegroundColor $ColorInfo
     Write-Host "    Stderr: $(Join-Path $WorkspaceRoot "workspace\logs\host-agent.error.log")" -ForegroundColor $ColorInfo

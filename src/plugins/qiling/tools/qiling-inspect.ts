@@ -21,6 +21,7 @@ import {
   buildDynamicDependencySetupActions,
   buildDynamicDependencyRequiredUserInputs,
 } from '../../docker-shared.js'
+import { throwIfAnalysisAborted } from '../../../analysis/analysis-cancellation.js'
 import {
   QILING_INSPECT_ARCHITECTURES,
   QILING_INSPECT_ARTIFACT_TYPE,
@@ -141,9 +142,10 @@ export function createQilingInspectHandler(
   database: DatabaseManager,
   dependencies?: SharedBackendDependencies
 ) {
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
     const startTime = Date.now()
     try {
+      throwIfAnalysisAborted(abortSignal)
       const input = qilingInspectInputSchema.parse(args)
       ensureSampleExists(database, input.sample_id)
       const backends = (dependencies?.resolveBackends || resolveAnalysisBackends)()
@@ -166,8 +168,10 @@ export function createQilingInspectHandler(
         {
           rootfs: process.env.QILING_ROOTFS || null,
         },
-        input.timeout_sec * 1000
+        input.timeout_sec * 1000,
+        { abortSignal }
       )
+      throwIfAnalysisAborted(abortSignal)
 
       const rootfsConfigured = Boolean(result.parsed?.rootfs_configured)
       const rootfsExists = Boolean(result.parsed?.rootfs_exists)
@@ -226,6 +230,7 @@ export function createQilingInspectHandler(
         }
       )
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       const parsedInput = qilingInspectInputSchema.safeParse(args)
       const message = normalizeError(error)
       return enrichQilingInspectResult(

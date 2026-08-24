@@ -25,6 +25,7 @@ import {
 } from '@rikune/shared'
 import { validateRuntimeEndpointFromHostAgent } from '../infrastructure/trusted-runtime-endpoint.js'
 import type { RuntimeSidecarUpload } from './sidecar-staging.js'
+import { throwIfAnalysisAborted } from '../analysis/analysis-cancellation.js'
 
 export type { RuntimeBackendCapability } from '@rikune/shared'
 export type { RuntimeSseEvent, RuntimeTaskSnapshot } from '@rikune/shared'
@@ -48,6 +49,16 @@ export interface RuntimeExecuteRequest {
 export interface RuntimeUploadOptions {
   sidecars?: RuntimeSidecarUpload[]
   preserveFilename?: boolean
+  signal?: AbortSignal
+}
+
+export interface RuntimeExecuteOptions {
+  onProgress?: (progress: number, message?: string) => void
+  signal?: AbortSignal
+}
+
+export interface RuntimeDownloadOptions {
+  signal?: AbortSignal
 }
 
 export interface RuntimeExecuteResponse {
@@ -212,6 +223,41 @@ function getRequestHostname(url: URL): string {
   return hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname
 }
 
+function normalizeRuntimeError(error: unknown): Error {
+  if (error instanceof Error) return error
+  if (error && typeof error === 'object') {
+    const errorLike = error as { name?: unknown; message?: unknown; code?: unknown }
+    const normalized = new Error(
+      typeof errorLike.message === 'string' ? errorLike.message : String(error)
+    ) as Error & { code?: unknown }
+    if (typeof errorLike.name === 'string') normalized.name = errorLike.name
+    if (errorLike.code !== undefined) normalized.code = errorLike.code
+    return normalized
+  }
+  return new Error(String(error))
+}
+
+function waitForRuntimePoll(delayMs: number, signal?: AbortSignal): Promise<void> {
+  throwIfAnalysisAborted(signal)
+  return new Promise<void>((resolve, reject) => {
+    let timer: NodeJS.Timeout | undefined
+    const onAbort = () => {
+      if (timer) clearTimeout(timer)
+      try {
+        throwIfAnalysisAborted(signal)
+      } catch (error) {
+        reject(normalizeRuntimeError(error))
+      }
+    }
+    timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, delayMs)
+    timer.unref?.()
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
 export function createRuntimeClient(options: RuntimeClientOptions) {
   // Validate before retaining the endpoint or allowing the API key to reach
   // any request sink. Private/LAN addresses remain valid; metadata and
@@ -264,26 +310,31 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     return endpoint
   }
 
-  async function health(): Promise<RuntimeHealthResponse | null> {
+  async function health(signal?: AbortSignal): Promise<RuntimeHealthResponse | null> {
+    throwIfAnalysisAborted(signal)
     try {
-      const res = await get('/health')
+      const res = await get('/health', { signal })
+      throwIfAnalysisAborted(signal)
       if (res.statusCode !== 200) return null
       return JSON.parse(res.body) as RuntimeHealthResponse
     } catch (err) {
+      if (signal?.aborted) throwIfAnalysisAborted(signal)
       logger.debug({ err }, 'Runtime health check failed')
       return null
     }
   }
 
   async function getCapabilities(
-    options: { forceRefresh?: boolean } = {}
+    options: { forceRefresh?: boolean; signal?: AbortSignal } = {}
   ): Promise<RuntimeBackendCapability[] | null> {
+    throwIfAnalysisAborted(options.signal)
     if (!options.forceRefresh && capabilitiesCache) {
       return cloneRuntimeBackendCapabilities(capabilitiesCache)
     }
 
     try {
-      const res = await get('/capabilities')
+      const res = await get('/capabilities', { signal: options.signal })
+      throwIfAnalysisAborted(options.signal)
       if (res.statusCode !== 200) {
         invalidateCapabilitiesCache()
         return null
@@ -296,6 +347,7 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
       replaceCapabilitiesCache(capabilities)
       return cloneRuntimeBackendCapabilities(capabilities)
     } catch (err) {
+      if (options.signal?.aborted) throwIfAnalysisAborted(options.signal)
       invalidateCapabilitiesCache()
       logger.debug({ err }, 'Runtime capability discovery failed')
       return null
@@ -304,7 +356,7 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
 
   async function validateRuntimeContract(
     contract: ToolRuntimeContract,
-    options: { forceRefresh?: boolean } = {}
+    options: { forceRefresh?: boolean; signal?: AbortSignal } = {}
   ): Promise<RuntimeContractValidationResult> {
     const capabilities = await getCapabilities(options)
     if (!capabilities) {
@@ -319,12 +371,55 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     }
   }
 
+  async function requestRuntimeTaskCancellation(
+    taskId: string,
+    reason: 'abort' | 'timeout' | 'runtime_error'
+  ): Promise<boolean> {
+    const controller = new AbortController()
+    const timeout = setTimeout(
+      () => controller.abort(new Error('Runtime cancellation request timed out')),
+      5_000
+    )
+    timeout.unref?.()
+    try {
+      const response = await post(
+        `/tasks/${taskId}/cancel`,
+        {},
+        {
+          signal: controller.signal,
+          timeoutMs: 5_000,
+        }
+      )
+      const body = JSON.parse(response.body) as { ok?: boolean; error?: string }
+      if (response.statusCode !== 200 || body.ok !== true) {
+        logger.warn(
+          { taskId, reason, statusCode: response.statusCode, error: body.error },
+          'Runtime task cancellation was not confirmed'
+        )
+        return false
+      }
+      logger.debug({ taskId, reason }, 'Runtime task cancellation confirmed')
+      return true
+    } catch (error) {
+      logger.warn(
+        { taskId, reason, error },
+        'Runtime task cancellation request failed before confirmation'
+      )
+      return false
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+
   async function execute(
     req: RuntimeExecuteRequest,
-    opts?: { onProgress?: (progress: number, message?: string) => void }
+    opts?: RuntimeExecuteOptions
   ): Promise<RuntimeExecuteResponse> {
+    const signal = opts?.signal
+    throwIfAnalysisAborted(signal)
     if (req.runtime) {
-      const validation = await validateRuntimeContract(req.runtime)
+      const validation = await validateRuntimeContract(req.runtime, { signal })
+      throwIfAnalysisAborted(signal)
       if (validation.supported === false) {
         if (validation.capabilities) {
           replaceCapabilitiesCache(validation.capabilities)
@@ -338,100 +433,122 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
       }
     }
 
-    const submitRes = await post('/execute', req)
-    const submitBody = JSON.parse(submitRes.body) as {
-      ok?: boolean
-      taskId?: string
-      status?: string
-      error?: string
-      capabilities?: unknown
-    }
-    if (submitRes.statusCode !== 202 || !submitBody.ok) {
-      const hasResponseCapabilities = submitBody.capabilities !== undefined
-      const responseCapabilities = hasResponseCapabilities
-        ? parseRuntimeBackendCapabilityEntries(submitBody.capabilities)
-        : null
-      if (hasResponseCapabilities) {
-        if (responseCapabilities) {
-          replaceCapabilitiesCache(responseCapabilities)
-        } else {
+    let remoteTaskMayExist = false
+    try {
+      remoteTaskMayExist = true
+      const submitRes = await post('/execute', req, { signal })
+      throwIfAnalysisAborted(signal)
+      const submitBody = JSON.parse(submitRes.body) as {
+        ok?: boolean
+        taskId?: string
+        status?: string
+        error?: string
+        capabilities?: unknown
+      }
+      if (submitRes.statusCode !== 202 || !submitBody.ok) {
+        remoteTaskMayExist = false
+        const hasResponseCapabilities = submitBody.capabilities !== undefined
+        const responseCapabilities = hasResponseCapabilities
+          ? parseRuntimeBackendCapabilityEntries(submitBody.capabilities)
+          : null
+        if (hasResponseCapabilities) {
+          if (responseCapabilities) {
+            replaceCapabilitiesCache(responseCapabilities)
+          } else {
+            invalidateCapabilitiesCache()
+          }
+        } else if (
+          typeof submitBody.error === 'string' &&
+          submitBody.error.startsWith('Unsupported runtime contract:')
+        ) {
           invalidateCapabilitiesCache()
         }
-      } else if (
-        typeof submitBody.error === 'string' &&
-        submitBody.error.startsWith('Unsupported runtime contract:')
-      ) {
-        invalidateCapabilitiesCache()
-      }
-      return {
-        ok: false,
-        taskId: req.taskId,
-        errors: [submitBody.error || `Task submission failed: HTTP ${submitRes.statusCode}`],
-        capabilities: responseCapabilities || undefined,
-      }
-    }
-
-    const pollIntervalMs = 3000
-    const maxWaitMs = req.timeoutMs + 30_000
-    const started = Date.now()
-    let hasReportedRunning = false
-
-    while (Date.now() - started < maxWaitMs) {
-      const statusRes = await get(`/tasks/${req.taskId}`)
-      const statusBody = JSON.parse(statusRes.body) as RuntimeTaskSnapshot & {
-        ok?: boolean
-        result?: RuntimeExecuteResponse
-        error?: string
-      }
-      if (!statusBody.ok) {
         return {
           ok: false,
           taskId: req.taskId,
-          errors: [statusBody.error || 'Task status query failed'],
+          errors: [submitBody.error || `Task submission failed: HTTP ${submitRes.statusCode}`],
+          capabilities: responseCapabilities || undefined,
         }
       }
-      if (statusBody.status === 'completed') {
-        opts?.onProgress?.(1, statusBody.lastMessage || 'Runtime execution completed')
-        return (
-          statusBody.result || {
-            ok: false,
-            taskId: req.taskId,
-            errors: ['Task finished without a result'],
-          }
-        )
-      }
-      if (statusBody.status === 'failed' || statusBody.status === 'cancelled') {
-        opts?.onProgress?.(1, statusBody.lastMessage || `Runtime execution ${statusBody.status}`)
-        return (
-          statusBody.result || {
-            ok: false,
-            taskId: req.taskId,
-            errors: [`Task ${statusBody.status}`],
-          }
-        )
-      }
-      if (statusBody.status === 'running') {
-        if (typeof statusBody.progressPercent === 'number') {
-          opts?.onProgress?.(
-            statusBody.progressPercent,
-            statusBody.lastMessage || 'Runtime running...'
-          )
-        } else if (!hasReportedRunning) {
-          opts?.onProgress?.(0, 'Task started on runtime node')
-          hasReportedRunning = true
-        }
-      }
-      await new Promise((r) => setTimeout(r, pollIntervalMs))
-    }
 
-    // Timeout exceeded — attempt cancellation and return error
-    try {
-      await post(`/tasks/${req.taskId}/cancel`, {})
-    } catch {}
-    return {
-      ok: false,
-      taskId: req.taskId,
-      errors: [`Task timed out after ${maxWaitMs}ms`],
+      const pollIntervalMs = 3000
+      const maxWaitMs = req.timeoutMs + 30_000
+      const started = Date.now()
+      let hasReportedRunning = false
+
+      while (Date.now() - started < maxWaitMs) {
+        throwIfAnalysisAborted(signal)
+        const statusRes = await get(`/tasks/${req.taskId}`, { signal })
+        throwIfAnalysisAborted(signal)
+        const statusBody = JSON.parse(statusRes.body) as RuntimeTaskSnapshot & {
+          ok?: boolean
+          result?: RuntimeExecuteResponse
+          error?: string
+        }
+        if (!statusBody.ok) {
+          await requestRuntimeTaskCancellation(req.taskId, 'runtime_error')
+          remoteTaskMayExist = false
+          return {
+            ok: false,
+            taskId: req.taskId,
+            errors: [statusBody.error || 'Task status query failed'],
+          }
+        }
+        if (statusBody.status === 'completed') {
+          remoteTaskMayExist = false
+          opts?.onProgress?.(1, statusBody.lastMessage || 'Runtime execution completed')
+          return (
+            statusBody.result || {
+              ok: false,
+              taskId: req.taskId,
+              errors: ['Task finished without a result'],
+            }
+          )
+        }
+        if (statusBody.status === 'failed' || statusBody.status === 'cancelled') {
+          remoteTaskMayExist = false
+          opts?.onProgress?.(1, statusBody.lastMessage || `Runtime execution ${statusBody.status}`)
+          return (
+            statusBody.result || {
+              ok: false,
+              taskId: req.taskId,
+              errors: [`Task ${statusBody.status}`],
+            }
+          )
+        }
+        if (statusBody.status === 'running') {
+          if (typeof statusBody.progressPercent === 'number') {
+            opts?.onProgress?.(
+              statusBody.progressPercent,
+              statusBody.lastMessage || 'Runtime running...'
+            )
+          } else if (!hasReportedRunning) {
+            opts?.onProgress?.(0, 'Task started on runtime node')
+            hasReportedRunning = true
+          }
+        }
+        await waitForRuntimePoll(pollIntervalMs, signal)
+      }
+
+      await requestRuntimeTaskCancellation(req.taskId, 'timeout')
+      remoteTaskMayExist = false
+      return {
+        ok: false,
+        taskId: req.taskId,
+        errors: [`Task timed out after ${maxWaitMs}ms`],
+      }
+    } catch (error) {
+      if (signal?.aborted) {
+        if (remoteTaskMayExist) {
+          await requestRuntimeTaskCancellation(req.taskId, 'abort')
+        }
+        throwIfAnalysisAborted(signal)
+      }
+      if (remoteTaskMayExist) {
+        await requestRuntimeTaskCancellation(req.taskId, 'runtime_error')
+        remoteTaskMayExist = false
+      }
+      throw error
     }
   }
 
@@ -460,6 +577,8 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     inboxHostDir: string,
     options: RuntimeUploadOptions = {}
   ): Promise<void> {
+    const signal = options.signal
+    throwIfAnalysisAborted(signal)
     const sidecars = options.sidecars || []
     const primaryFilename =
       options.preserveFilename === false
@@ -468,13 +587,16 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     if (isLocalhost(endpoint)) {
       const destDir = path.join(inboxHostDir, taskId)
       await fs.promises.mkdir(destDir, { recursive: true })
+      throwIfAnalysisAborted(signal)
       const destPath = path.join(
         destDir,
         sanitizeRuntimeUploadName(primaryFilename, `${taskId}.sample`)
       )
       await fs.promises.copyFile(localSamplePath, destPath)
+      throwIfAnalysisAborted(signal)
       const legacyPath = path.join(inboxHostDir, `${taskId}.sample`)
       await fs.promises.copyFile(localSamplePath, legacyPath)
+      throwIfAnalysisAborted(signal)
       const manifestFiles: Array<{
         name: string
         role: 'primary' | 'sidecar'
@@ -489,12 +611,14 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
         },
       ]
       for (const sidecar of sidecars) {
+        throwIfAnalysisAborted(signal)
         const name = sanitizeRuntimeUploadName(
           sidecar.name || path.basename(sidecar.path),
           'sidecar.bin'
         )
         const sidecarDest = path.join(destDir, name)
         await fs.promises.copyFile(sidecar.path, sidecarDest)
+        throwIfAnalysisAborted(signal)
         manifestFiles.push({
           name,
           role: 'sidecar',
@@ -516,14 +640,17 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
         ),
         'utf8'
       )
+      throwIfAnalysisAborted(signal)
       return
     }
-    await uploadRuntimeFile(taskId, localSamplePath, primaryFilename, 'primary')
+    await uploadRuntimeFile(taskId, localSamplePath, primaryFilename, 'primary', signal)
+    throwIfAnalysisAborted(signal)
     if (sidecars.length === 0) {
       return
     }
 
-    const runtimeHealth = await health()
+    const runtimeHealth = await health(signal)
+    throwIfAnalysisAborted(signal)
     if (runtimeHealth?.features?.sidecarUpload !== true) {
       logger.warn(
         { taskId, endpoint, sidecarCount: sidecars.length },
@@ -533,12 +660,15 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     }
 
     for (const sidecar of sidecars) {
+      throwIfAnalysisAborted(signal)
       await uploadRuntimeFile(
         taskId,
         sidecar.path,
         sidecar.name || path.basename(sidecar.path),
-        'sidecar'
+        'sidecar',
+        signal
       )
+      throwIfAnalysisAborted(signal)
     }
   }
 
@@ -546,8 +676,10 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     taskId: string,
     localPath: string,
     filename: string,
-    role: 'primary' | 'sidecar'
+    role: 'primary' | 'sidecar',
+    signal?: AbortSignal
   ): Promise<void> {
+    throwIfAnalysisAborted(signal)
     const url = new URL('/upload', endpoint)
     url.searchParams.set('taskId', taskId)
     url.searchParams.set(
@@ -573,44 +705,69 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
             ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
           },
           timeout: 120_000,
+          signal,
         },
         (res) => {
           const chunks: Buffer[] = []
           res.on('data', (c) => chunks.push(c))
+          res.on('error', rejectOnce)
           res.on('end', () => {
             const body = Buffer.concat(chunks).toString('utf-8')
             if (res.statusCode === 200) {
-              resolve()
+              resolveOnce()
             } else {
-              reject(new Error(`Upload failed: HTTP ${res.statusCode}, ${body}`))
+              rejectOnce(new Error(`Upload failed: HTTP ${res.statusCode}, ${body}`))
             }
           })
         }
       )
-      req.on('error', reject)
+      let settled = false
+      const onAbort = () => stream.destroy()
+      const cleanup = () => signal?.removeEventListener('abort', onAbort)
+      const resolveOnce = () => {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve()
+      }
+      const rejectOnce = (error: unknown) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        stream.destroy()
+        reject(normalizeRuntimeError(error))
+      }
+      req.on('error', rejectOnce)
+      stream.on('error', rejectOnce)
       req.on('timeout', () => {
-        req.destroy()
-        reject(new Error('Upload timeout'))
+        req.destroy(new Error('Upload timeout'))
       })
+      signal?.addEventListener('abort', onAbort, { once: true })
       stream.pipe(req)
     })
+    throwIfAnalysisAborted(signal)
   }
 
   async function downloadArtifacts(
     taskId: string,
     outboxHostDir: string,
-    artifactNames: string[]
+    artifactNames: string[],
+    options: RuntimeDownloadOptions = {}
   ): Promise<string[]> {
+    const signal = options.signal
+    throwIfAnalysisAborted(signal)
     if (!Array.isArray(artifactNames)) {
       throw new Error('Invalid runtime artifact names: expected an array of basenames')
     }
     const validatedTaskId = validateRuntimePathSegment(taskId, 'task ID')
     const validatedArtifactNames: string[] = []
     for (const name of artifactNames as unknown[]) {
+      throwIfAnalysisAborted(signal)
       validatedArtifactNames.push(validateRuntimePathSegment(name, 'artifact name'))
     }
 
     if (isLocalhost(endpoint)) {
+      throwIfAnalysisAborted(signal)
       const downloaded: string[] = []
       const taskOutboxDir = path.join(outboxHostDir, validatedTaskId)
       assertPathWithinDirectory(outboxHostDir, taskOutboxDir)
@@ -623,6 +780,7 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
         }
         throw error
       }
+      throwIfAnalysisAborted(signal)
       if (!taskOutboxStat.isDirectory() || taskOutboxStat.isSymbolicLink()) {
         throw new Error('Runtime task outbox must be a real directory, not a symbolic link')
       }
@@ -631,9 +789,11 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
         fs.promises.realpath(outboxHostDir),
         fs.promises.realpath(taskOutboxDir),
       ])
+      throwIfAnalysisAborted(signal)
       assertPathWithinDirectory(outboxRealPath, taskOutboxRealPath)
 
       for (const name of validatedArtifactNames) {
+        throwIfAnalysisAborted(signal)
         const src = path.join(taskOutboxDir, name)
         assertPathWithinDirectory(taskOutboxDir, src)
         let sourceStat: fs.Stats
@@ -645,10 +805,12 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
           }
           throw error
         }
+        throwIfAnalysisAborted(signal)
         if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) {
           throw new Error('Runtime artifact must be a real file, not a symbolic link')
         }
         const sourceRealPath = await fs.promises.realpath(src)
+        throwIfAnalysisAborted(signal)
         assertPathWithinDirectory(taskOutboxRealPath, sourceRealPath)
         downloaded.push(sourceRealPath)
       }
@@ -656,6 +818,7 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     }
     const downloaded: string[] = []
     const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'rikune-runtime-'))
+    throwIfAnalysisAborted(signal)
     const downloadTargets = validatedArtifactNames.map((name) => {
       const destPath = path.join(tempDir, `${validatedTaskId}_${name}`)
       assertPathWithinDirectory(tempDir, destPath)
@@ -669,49 +832,70 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
       }
     })
     for (const { name, url, destPath } of downloadTargets) {
+      throwIfAnalysisAborted(signal)
       try {
-        await downloadFile(url, destPath)
+        await downloadFile(url, destPath, signal)
+        throwIfAnalysisAborted(signal)
         downloaded.push(destPath)
       } catch (err) {
+        if (signal?.aborted) throwIfAnalysisAborted(signal)
         logger.warn({ taskId, name, err }, 'Failed to download artifact from runtime')
       }
     }
     return downloaded
   }
 
-  async function downloadFile(url: URL, destPath: string): Promise<void> {
+  async function downloadFile(url: URL, destPath: string, signal?: AbortSignal): Promise<void> {
+    throwIfAnalysisAborted(signal)
     const file = fs.createWriteStream(destPath)
-    await new Promise<void>((resolve, reject) => {
-      const transport = url.protocol === 'https:' ? https : http
-      const req = transport.get(
-        {
-          hostname: getRequestHostname(url),
-          port: url.port || (url.protocol === 'https:' ? 443 : 80),
-          path: url.pathname + url.search,
-          agent: url.protocol === 'https:' ? httpsAgent : httpAgent,
-          lookup: trustedLookup,
-          headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-          timeout: 60_000,
-        },
-        (res) => {
-          if (res.statusCode !== 200) {
-            res.resume()
-            reject(new Error(`Download failed: HTTP ${res.statusCode}`))
-            return
-          }
-          res.pipe(file)
-          file.on('finish', () => {
-            file.close()
-            resolve()
-          })
+    try {
+      await new Promise<void>((resolve, reject) => {
+        let settled = false
+        const resolveOnce = () => {
+          if (settled) return
+          settled = true
+          resolve()
         }
-      )
-      req.on('error', reject)
-      req.on('timeout', () => {
-        req.destroy()
-        reject(new Error('Download timeout'))
+        const rejectOnce = (error: unknown) => {
+          if (settled) return
+          settled = true
+          reject(normalizeRuntimeError(error))
+        }
+        const transport = url.protocol === 'https:' ? https : http
+        const req = transport.get(
+          {
+            hostname: getRequestHostname(url),
+            port: url.port || (url.protocol === 'https:' ? 443 : 80),
+            path: url.pathname + url.search,
+            agent: url.protocol === 'https:' ? httpsAgent : httpAgent,
+            lookup: trustedLookup,
+            headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+            timeout: 60_000,
+            signal,
+          },
+          (res) => {
+            if (res.statusCode !== 200) {
+              res.resume()
+              rejectOnce(new Error(`Download failed: HTTP ${res.statusCode}`))
+              return
+            }
+            res.on('error', rejectOnce)
+            res.pipe(file)
+            file.on('finish', resolveOnce)
+          }
+        )
+        file.on('error', rejectOnce)
+        req.on('error', rejectOnce)
+        req.on('timeout', () => {
+          req.destroy(new Error('Download timeout'))
+        })
       })
-    })
+      throwIfAnalysisAborted(signal)
+    } catch (error) {
+      file.destroy()
+      await fs.promises.rm(destPath, { force: true }).catch(() => {})
+      throw error
+    }
   }
 
   async function close(): Promise<void> {
@@ -719,8 +903,11 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     httpsAgent.destroy()
   }
 
-  function get(path: string): Promise<{ statusCode: number; body: string }> {
-    return request('GET', path)
+  function get(
+    path: string,
+    options: { signal?: AbortSignal; timeoutMs?: number } = {}
+  ): Promise<{ statusCode: number; body: string }> {
+    return request('GET', path, undefined, options)
   }
 
   function subscribeEvents(options: RuntimeEventStreamOptions): RuntimeEventSubscription {
@@ -860,15 +1047,21 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
     }
   }
 
-  function post(path: string, body: unknown): Promise<{ statusCode: number; body: string }> {
-    return request('POST', path, body)
+  function post(
+    path: string,
+    body: unknown,
+    options: { signal?: AbortSignal; timeoutMs?: number } = {}
+  ): Promise<{ statusCode: number; body: string }> {
+    return request('POST', path, body, options)
   }
 
   function request(
     method: string,
     path: string,
-    body?: unknown
+    body?: unknown,
+    options: { signal?: AbortSignal; timeoutMs?: number } = {}
   ): Promise<{ statusCode: number; body: string }> {
+    throwIfAnalysisAborted(options.signal)
     return new Promise((resolve, reject) => {
       const url = new URL(path, endpoint)
       const headers: Record<string, string> = {
@@ -895,7 +1088,8 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
           lookup: trustedLookup,
           method,
           headers,
-          timeout: 30000,
+          timeout: options.timeoutMs ?? 30_000,
+          signal: options.signal,
         },
         (res) => {
           const chunks: Buffer[] = []
@@ -911,8 +1105,7 @@ export function createRuntimeClient(options: RuntimeClientOptions) {
 
       req.on('error', reject)
       req.on('timeout', () => {
-        req.destroy()
-        reject(new Error('Request timeout'))
+        req.destroy(new Error('Request timeout'))
       })
 
       if (payload) {

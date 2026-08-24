@@ -1,3 +1,4 @@
+import { DATABASE_FIXTURE_CAPABILITY } from "../../src/database.js"
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals'
 import fs from 'fs/promises'
 import os from 'os'
@@ -23,7 +24,7 @@ describe('summary digest artifact integrity', () => {
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'rikune-summary-artifact-'))
     workspaceManager = new WorkspaceManager(path.join(tempRoot, 'workspaces'))
     database = new DatabaseManager(path.join(tempRoot, 'rikune.db'))
-    database.insertSample({
+    database.insertSampleFixture(DATABASE_FIXTURE_CAPABILITY, {
       id: SAMPLE_ID,
       sha256: SHA256,
       md5: '8'.repeat(32),

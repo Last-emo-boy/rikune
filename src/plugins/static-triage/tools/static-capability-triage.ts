@@ -21,6 +21,7 @@ import {
   callStaticWorker,
   type StaticWorkerResponse,
 } from '../../../tools/static-worker-client.js'
+import { throwIfAnalysisAborted } from '../../../analysis/analysis-cancellation.js'
 
 const TOOL_NAME = 'static.capability.triage'
 const TOOL_VERSION = '0.2.0'
@@ -523,7 +524,8 @@ export function createStaticCapabilityTriageHandler(
 ) {
   const callWorker = dependencies.callWorker || callStaticWorker
 
-  return async (args: ToolArgs): Promise<WorkerResult> => {
+  return async (args: ToolArgs, abortSignal?: AbortSignal): Promise<WorkerResult> => {
+    throwIfAnalysisAborted(abortSignal)
     const startTime = Date.now()
 
     try {
@@ -551,7 +553,9 @@ export function createStaticCapabilityTriageHandler(
       const workerResponse = await callWorker(workerRequest, {
         database,
         family: 'static_python.preview',
+        abortSignal,
       })
+      throwIfAnalysisAborted(abortSignal)
       if (!workerResponse.ok || !workerResponse.data || typeof workerResponse.data !== 'object') {
         return {
           ok: false,
@@ -747,6 +751,7 @@ export function createStaticCapabilityTriageHandler(
         },
       }
     } catch (error) {
+      throwIfAnalysisAborted(abortSignal)
       return {
         ok: false,
         errors: [error instanceof Error ? error.message : String(error)],

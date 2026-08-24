@@ -261,6 +261,16 @@ export interface ToolDefinition {
   runtime?: ToolRuntimeContract
   /** Bounded backend worker contract for optional worker-backed tools. */
   workerBackend?: BackendWorkerContract
+  /**
+   * Internal, exact sample-reference extraction contract used by the
+   * cross-process operation gate. This metadata is not exposed by tools/list.
+   */
+  sampleReferences?: import('./sample/sample-operation-gate.js').SampleReferenceSpec
+  /**
+   * Shared is the normal host wrapper. exclusive-managed is reserved for a
+   * handler that establishes and fences its own exclusive lifecycle lease.
+   */
+  sampleLeaseMode?: 'shared' | 'exclusive-managed'
 }
 
 /**
@@ -481,6 +491,8 @@ export enum JobPriority {
 export type JobStatusType =
   | 'queued'
   | 'running'
+  | 'retry_wait'
+  | 'cancelling'
   | 'completed'
   | 'failed'
   | 'cancelled'

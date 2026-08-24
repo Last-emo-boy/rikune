@@ -14,6 +14,16 @@ import { createRuntimeRecovery } from '../../../src/runtime-client/recovery.js'
 
 const activeServers = new Set<ReturnType<typeof createServer>>()
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 async function startRuntimeServer(
   handler: (req: IncomingMessage, res: ServerResponse) => void,
   host = '127.0.0.1'
@@ -1008,6 +1018,165 @@ describe('runtime-client artifact downloads', () => {
     } finally {
       mkdtempSpy.mockRestore()
       writeSpy.mockRestore()
+    }
+  })
+
+  test('aborting an accepted execute request tears down HTTP and confirms remote cancellation', async () => {
+    const executeAccepted = deferred<void>()
+    const cancelObserved = deferred<void>()
+    let cancelRequests = 0
+    const { endpoint } = await startRuntimeServer((req, res) => {
+      if (req.method === 'POST' && req.url === '/execute') {
+        executeAccepted.resolve()
+        // Model the race where the runtime accepted the task but its 202 response
+        // never reached the analyzer.
+        return
+      }
+      if (req.method === 'POST' && req.url === '/tasks/task-abort/cancel') {
+        cancelRequests += 1
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: true, taskId: 'task-abort', wasRunning: true }))
+        cancelObserved.resolve()
+        return
+      }
+      res.writeHead(404, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: false }))
+    }, '127.0.0.2')
+    const client = createRuntimeClient({ endpoint })
+    const controller = new AbortController()
+
+    const executing = client.execute(
+      {
+        taskId: 'task-abort',
+        sampleId: 'sample-abort',
+        tool: 'sandbox.execute',
+        args: {},
+        timeoutMs: 120_000,
+      },
+      { signal: controller.signal }
+    )
+    await executeAccepted.promise
+    controller.abort(new Error('cancel requested'))
+
+    await expect(executing).rejects.toMatchObject({ name: 'AbortError' })
+    await cancelObserved.promise
+    expect(cancelRequests).toBe(1)
+  })
+
+  test.each(['invalid_json', 'connection_reset'] as const)(
+    'cancels the remote task before surfacing a poll %s failure',
+    async (failureMode) => {
+      const events: string[] = []
+      const { endpoint } = await startRuntimeServer((req, res) => {
+        if (req.method === 'POST' && req.url === '/execute') {
+          events.push('execute')
+          res.writeHead(202, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, taskId: 'task-poll-error', status: 'queued' }))
+          return
+        }
+        if (req.method === 'GET' && req.url === '/tasks/task-poll-error') {
+          events.push('poll')
+          if (failureMode === 'invalid_json') {
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end('{')
+          } else {
+            res.destroy(new Error('forced connection reset'))
+          }
+          return
+        }
+        if (req.method === 'POST' && req.url === '/tasks/task-poll-error/cancel') {
+          events.push('cancel')
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, taskId: 'task-poll-error', wasRunning: true }))
+          return
+        }
+        res.writeHead(404)
+        res.end()
+      }, '127.0.0.2')
+      const client = createRuntimeClient({ endpoint })
+
+      try {
+        await expect(
+          client.execute({
+            taskId: 'task-poll-error',
+            sampleId: 'sample-poll-error',
+            tool: 'sandbox.execute',
+            args: {},
+            timeoutMs: 120_000,
+          })
+        ).rejects.toBeDefined()
+        expect(events).toEqual(['execute', 'poll', 'cancel'])
+      } finally {
+        await client.close()
+      }
+    }
+  )
+
+  test('aborting a hanging upload destroys the upload request and file stream', async () => {
+    const uploadObserved = deferred<void>()
+    const runtimeServer = await startRuntimeServer((req, _res) => {
+      if (req.method === 'POST' && req.url?.startsWith('/upload?')) {
+        uploadObserved.resolve()
+        req.resume()
+      }
+    }, '127.0.0.2')
+    const tempRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'rikune-upload-abort-'))
+    const samplePath = path.join(tempRoot, 'sample.bin')
+    await fs.promises.writeFile(samplePath, Buffer.alloc(256 * 1024, 0x41))
+    const client = createRuntimeClient({ endpoint: runtimeServer.endpoint })
+    const controller = new AbortController()
+    const readSpy = jest.spyOn(fs, 'createReadStream')
+
+    try {
+      const uploading = client.uploadSample('task-upload', samplePath, '/unused', {
+        signal: controller.signal,
+      })
+      await uploadObserved.promise
+      controller.abort(new Error('cancel upload'))
+
+      await expect(uploading).rejects.toMatchObject({ name: 'AbortError' })
+      expect(readSpy.mock.results[0]?.value?.destroyed).toBe(true)
+    } finally {
+      readSpy.mockRestore()
+      await client.close()
+      runtimeServer.server.closeAllConnections?.()
+      await fs.promises.rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  test('aborting a hanging download destroys the response and removes the partial file', async () => {
+    const downloadObserved = deferred<void>()
+    const requestClosed = deferred<void>()
+    const { endpoint } = await startRuntimeServer((req, res) => {
+      if (req.method === 'GET' && req.url === '/download/task-download/report.bin') {
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream' })
+        res.write(Buffer.alloc(32 * 1024, 0x42))
+        downloadObserved.resolve()
+        req.once('close', () => requestClosed.resolve())
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    }, '127.0.0.2')
+    const client = createRuntimeClient({ endpoint })
+    const controller = new AbortController()
+    const writeSpy = jest.spyOn(fs, 'createWriteStream')
+
+    try {
+      const downloading = client.downloadArtifacts('task-download', '/unused', ['report.bin'], {
+        signal: controller.signal,
+      })
+      await downloadObserved.promise
+      controller.abort(new Error('cancel download'))
+
+      await expect(downloading).rejects.toMatchObject({ name: 'AbortError' })
+      await requestClosed.promise
+      const partialPath = writeSpy.mock.results[0]?.value?.path
+      expect(typeof partialPath).toBe('string')
+      expect(fs.existsSync(partialPath as string)).toBe(false)
+    } finally {
+      writeSpy.mockRestore()
+      await client.close()
     }
   })
 })
