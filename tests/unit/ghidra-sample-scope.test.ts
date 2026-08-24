@@ -2,7 +2,18 @@ import { afterEach, beforeEach, describe, expect, test } from '@jest/globals'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { migrateLegacyGhidraSampleDirectories } from '../../src/ghidra/ghidra-config.js'
+import { config, type Config } from '../../src/config.js'
+import {
+  getActiveGhidraLogRoot,
+  getActiveGhidraProjectRoot,
+  getConfiguredGhidraLogRoot,
+  getConfiguredGhidraProjectRoot,
+  getSampleScopedGhidraLogRoot,
+  getSampleScopedGhidraProjectRoot,
+  ghidraConfig,
+  migrateLegacyGhidraSampleDirectories,
+  prepareGhidraRuntimeDirectories,
+} from '../../src/ghidra/ghidra-config.js'
 
 const SHA = 'abcd' + '1'.repeat(60)
 
@@ -43,6 +54,48 @@ describe('Ghidra canonical sample-scoped storage', () => {
       expect(fs.existsSync(outside)).toBe(true)
     } finally {
       fs.rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  test('uses the project and log roots installed from the active config', () => {
+    const projectRoot = path.join(root, 'active-projects')
+    const logRoot = path.join(root, 'active-logs')
+    const activeConfig: Config = {
+      ...config,
+      workers: {
+        ...config.workers,
+        ghidra: {
+          ...config.workers.ghidra,
+          projectRoot,
+          logRoot,
+        },
+      },
+    }
+    const originalGhidraConfig = { ...ghidraConfig }
+
+    try {
+      prepareGhidraRuntimeDirectories(activeConfig)
+
+      expect(getActiveGhidraProjectRoot()).toBe(path.resolve(projectRoot))
+      expect(getActiveGhidraLogRoot()).toBe(path.resolve(logRoot))
+      expect(getSampleScopedGhidraProjectRoot(`sha256:${SHA}`)).toBe(path.join(projectRoot, SHA))
+      expect(getSampleScopedGhidraLogRoot(`sha256:${SHA}`)).toBe(path.join(logRoot, SHA))
+    } finally {
+      Object.assign(ghidraConfig, originalGhidraConfig)
+    }
+  })
+
+  test('falls back to configured roots before active roots are installed', () => {
+    const originalGhidraConfig = { ...ghidraConfig }
+
+    try {
+      ghidraConfig.projectRoot = ''
+      ghidraConfig.logRoot = ''
+
+      expect(getActiveGhidraProjectRoot()).toBe(getConfiguredGhidraProjectRoot())
+      expect(getActiveGhidraLogRoot()).toBe(getConfiguredGhidraLogRoot())
+    } finally {
+      Object.assign(ghidraConfig, originalGhidraConfig)
     }
   })
 })

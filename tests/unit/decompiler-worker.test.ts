@@ -763,13 +763,22 @@ describe('DecompilerWorker', () => {
         installDir: ghidraConfig.installDir,
         analyzeHeadlessPath: ghidraConfig.analyzeHeadlessPath,
         scriptsDir: ghidraConfig.scriptsDir,
+        projectRoot: ghidraConfig.projectRoot,
+        logRoot: ghidraConfig.logRoot,
         version: ghidraConfig.version,
         isValid: ghidraConfig.isValid,
       }
 
+      const projectRoot = path.join(testWorkspaceRoot, 'ghidra-projects')
+      const logRoot = path.join(testWorkspaceRoot, 'ghidra-logs')
+      fs.mkdirSync(projectRoot, { recursive: true })
+      fs.mkdirSync(logRoot, { recursive: true })
+
       ghidraConfig.installDir = 'C:\\ghidra'
       ghidraConfig.analyzeHeadlessPath = 'C:\\ghidra\\support\\analyzeHeadless.bat'
       ghidraConfig.scriptsDir = path.join(process.cwd(), 'src', 'plugins', 'ghidra', 'scripts')
+      ghidraConfig.projectRoot = projectRoot
+      ghidraConfig.logRoot = logRoot
       ghidraConfig.isValid = true
 
       try {
@@ -851,6 +860,8 @@ describe('DecompilerWorker', () => {
         ghidraConfig.installDir = originalConfig.installDir
         ghidraConfig.analyzeHeadlessPath = originalConfig.analyzeHeadlessPath
         ghidraConfig.scriptsDir = originalConfig.scriptsDir
+        ghidraConfig.projectRoot = originalConfig.projectRoot
+        ghidraConfig.logRoot = originalConfig.logRoot
         ghidraConfig.version = originalConfig.version
         ghidraConfig.isValid = originalConfig.isValid
       }

@@ -333,6 +333,7 @@ describe('static profile release contract', () => {
     const lock = loadStaticProfileLock(lockPath)
     const markerPath = path.join(testDir, '.rikune-static-profile')
     fs.writeFileSync(markerPath, 'static\n', { mode: 0o444 })
+    expect(fs.statSync(markerPath).mode & 0o777).toBe(0o444)
     const previous = {
       profile: process.env.RIKUNE_DOCKER_PROFILE,
       plugins: process.env.PLUGINS,
@@ -378,7 +379,10 @@ describe('static profile release contract', () => {
       )
 
       process.env.RIKUNE_DOCKER_PROFILE = 'static'
+      fs.chmodSync(markerPath, 0o644)
       fs.writeFileSync(markerPath, 'hybrid\n')
+      fs.chmodSync(markerPath, 0o444)
+      expect(fs.statSync(markerPath).mode & 0o777).toBe(0o444)
       expect(() => isStaticDockerProfile(markerPath)).toThrow(/marker has invalid content/i)
     } finally {
       for (const [key, value] of [

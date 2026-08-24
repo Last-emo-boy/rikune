@@ -277,6 +277,21 @@ export function getConfiguredGhidraLogRoot(activeConfig: Config = config): strin
   return path.resolve(configured || getDefaultGhidraLogRoot())
 }
 
+/**
+ * Resolve the roots installed by prepareGhidraRuntimeDirectories(). The global
+ * instance is initialized with the configured defaults, so direct library use
+ * remains safe before explicit server bootstrap.
+ */
+export function getActiveGhidraProjectRoot(): string {
+  const active = ghidraConfig.projectRoot?.trim()
+  return path.resolve(active || getConfiguredGhidraProjectRoot())
+}
+
+export function getActiveGhidraLogRoot(): string {
+  const active = ghidraConfig.logRoot?.trim()
+  return path.resolve(active || getConfiguredGhidraLogRoot())
+}
+
 function sampleSha256(sampleId: string): string {
   const sha256 = sampleId.startsWith('sha256:') ? sampleId.slice('sha256:'.length) : sampleId
   if (!/^[a-f0-9]{64}$/.test(sha256)) {
@@ -391,14 +406,11 @@ export function migrateLegacyGhidraSampleDirectories(root: string): number {
 }
 
 export function getSampleScopedGhidraProjectRoot(sampleId: string): string {
-  return migrateLegacySampleScopedDirectory(
-    getConfiguredGhidraProjectRoot(),
-    sampleSha256(sampleId)
-  )
+  return migrateLegacySampleScopedDirectory(getActiveGhidraProjectRoot(), sampleSha256(sampleId))
 }
 
 export function getSampleScopedGhidraLogRoot(sampleId: string): string {
-  return migrateLegacySampleScopedDirectory(getConfiguredGhidraLogRoot(), sampleSha256(sampleId))
+  return migrateLegacySampleScopedDirectory(getActiveGhidraLogRoot(), sampleSha256(sampleId))
 }
 
 function looksLikeAnalyzeHeadlessHelp(stdout: string, stderr: string): boolean {
@@ -849,8 +861,8 @@ export function checkGhidraHealth(timeoutMs: number = 8000): GhidraHealthStatus 
   const installDir = ghidraConfig.installDir || detectGhidraInstallation() || ''
   const analyzeHeadlessPath = installDir ? getAnalyzeHeadlessPath(installDir) : ''
   const scriptsDir = ghidraConfig.scriptsDir || ensureScriptsDirectory()
-  const projectRoot = ghidraConfig.projectRoot || getConfiguredGhidraProjectRoot()
-  const logRoot = ghidraConfig.logRoot || getConfiguredGhidraLogRoot()
+  const projectRoot = getActiveGhidraProjectRoot()
+  const logRoot = getActiveGhidraLogRoot()
 
   const installDirExists = Boolean(installDir && fs.existsSync(installDir))
   const analyzeHeadlessExists = Boolean(analyzeHeadlessPath && fs.existsSync(analyzeHeadlessPath))

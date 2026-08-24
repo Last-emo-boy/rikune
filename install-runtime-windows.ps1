@@ -111,6 +111,29 @@ function Exit-WithError {
     exit 1
 }
 
+function Get-ProcessEnvironmentEntrySnapshot {
+    param([string]$Name)
+
+    $entry = Get-Item -LiteralPath "Env:$Name" -ErrorAction SilentlyContinue
+    return [pscustomobject]@{
+        Exists = $null -ne $entry
+        Value = if ($null -eq $entry) { $null } else { [string]$entry.Value }
+    }
+}
+
+function Restore-ProcessEnvironmentEntry {
+    param(
+        [string]$Name,
+        [object]$Snapshot
+    )
+
+    if ($Snapshot.Exists) {
+        [Environment]::SetEnvironmentVariable($Name, [string]$Snapshot.Value, "Process")
+    } else {
+        Remove-Item -LiteralPath "Env:$Name" -ErrorAction SilentlyContinue
+    }
+}
+
 function Assert-SafeRuntimeEnvValue {
     param(
         [string]$Name,
@@ -386,7 +409,7 @@ function Get-RuntimePrivateEnvSnapshot {
         [string]$WriterPath
     )
 
-    $previousValue = [Environment]::GetEnvironmentVariable("RIKUNE_STAGE_DOCKER_ENV_PATH", "Process")
+    $previousEntry = Get-ProcessEnvironmentEntrySnapshot -Name "RIKUNE_STAGE_DOCKER_ENV_PATH"
     try {
         [Environment]::SetEnvironmentVariable("RIKUNE_STAGE_DOCKER_ENV_PATH", $Path, "Process")
         $snapshotOutput = & $NodePath $WriterPath 2>$null
@@ -402,7 +425,7 @@ function Get-RuntimePrivateEnvSnapshot {
         }
         return $snapshot
     } finally {
-        [Environment]::SetEnvironmentVariable("RIKUNE_STAGE_DOCKER_ENV_PATH", $previousValue, "Process")
+        Restore-ProcessEnvironmentEntry -Name "RIKUNE_STAGE_DOCKER_ENV_PATH" -Snapshot $previousEntry
     }
 }
 
@@ -416,7 +439,7 @@ function Invoke-RuntimePrivateEnvSnapshotOperation {
         [string]$FailureMessage
     )
 
-    $previousValue = [Environment]::GetEnvironmentVariable($EnvironmentName, "Process")
+    $previousEntry = Get-ProcessEnvironmentEntrySnapshot -Name $EnvironmentName
     try {
         [Environment]::SetEnvironmentVariable($EnvironmentName, $Path, "Process")
         $operationOutput = $Snapshot | & $NodePath $WriterPath 2>$null
@@ -428,7 +451,7 @@ function Invoke-RuntimePrivateEnvSnapshotOperation {
             throw "Secure Windows runtime env snapshot operation produced unexpected output"
         }
     } finally {
-        [Environment]::SetEnvironmentVariable($EnvironmentName, $previousValue, "Process")
+        Restore-ProcessEnvironmentEntry -Name $EnvironmentName -Snapshot $previousEntry
     }
 }
 
@@ -705,7 +728,7 @@ $privateEnvControlNames = @(
     "STAGED_LOCAL_ENV_BASE64"
 )
 foreach ($name in ($secretEnvironmentAliases + $privateEnvControlNames)) {
-    [Environment]::SetEnvironmentVariable($name, $null, "Process")
+    Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
 }
 $stdinApiKey = $null
 

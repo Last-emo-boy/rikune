@@ -122,17 +122,40 @@ function Write-Step {
     Write-Host "-----------------------------------------" -ForegroundColor $ColorPrimary
 }
 
+function Get-ProcessEnvironmentEntrySnapshot {
+    param([string]$Name)
+
+    $entry = Get-Item -LiteralPath "Env:$Name" -ErrorAction SilentlyContinue
+    return [pscustomobject]@{
+        Exists = $null -ne $entry
+        Value = if ($null -eq $entry) { $null } else { [string]$entry.Value }
+    }
+}
+
+function Restore-ProcessEnvironmentEntry {
+    param(
+        [string]$Name,
+        [object]$Snapshot
+    )
+
+    if ($Snapshot.Exists) {
+        [Environment]::SetEnvironmentVariable($Name, [string]$Snapshot.Value, "Process")
+    } else {
+        Remove-Item -LiteralPath "Env:$Name" -ErrorAction SilentlyContinue
+    }
+}
+
 function Get-LocalPrivateEnvSnapshot {
     param([string]$Path, [string]$Writer)
 
-    $previousValue = [Environment]::GetEnvironmentVariable("RIKUNE_STAGE_LOCAL_ENV_PATH", "Process")
+    $previousEntry = Get-ProcessEnvironmentEntrySnapshot -Name "RIKUNE_STAGE_LOCAL_ENV_PATH"
     try {
         [Environment]::SetEnvironmentVariable("RIKUNE_STAGE_LOCAL_ENV_PATH", $Path, "Process")
         $snapshotOutput = & node $Writer
         if ($LASTEXITCODE -ne 0) { throw "Secure local environment staging failed" }
         return [string](@($snapshotOutput) -join '')
     } finally {
-        [Environment]::SetEnvironmentVariable("RIKUNE_STAGE_LOCAL_ENV_PATH", $previousValue, "Process")
+        Restore-ProcessEnvironmentEntry -Name "RIKUNE_STAGE_LOCAL_ENV_PATH" -Snapshot $previousEntry
     }
 }
 
@@ -145,13 +168,13 @@ function Invoke-LocalPrivateEnvSnapshotOperation {
         [string]$FailureMessage
     )
 
-    $previousValue = [Environment]::GetEnvironmentVariable($EnvironmentName, "Process")
+    $previousEntry = Get-ProcessEnvironmentEntrySnapshot -Name $EnvironmentName
     try {
         [Environment]::SetEnvironmentVariable($EnvironmentName, $Path, "Process")
         $Snapshot | & node $Writer
         if ($LASTEXITCODE -ne 0) { throw $FailureMessage }
     } finally {
-        [Environment]::SetEnvironmentVariable($EnvironmentName, $previousValue, "Process")
+        Restore-ProcessEnvironmentEntry -Name $EnvironmentName -Snapshot $previousEntry
     }
 }
 
@@ -626,7 +649,7 @@ $managedWriterEnvironment = @{
 }
 $previousWriterEnvironment = @{}
 foreach ($name in $managedWriterEnvironment.Keys) {
-    $previousWriterEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
+    $previousWriterEnvironment[$name] = Get-ProcessEnvironmentEntrySnapshot -Name $name
     [Environment]::SetEnvironmentVariable($name, [string]$managedWriterEnvironment[$name], "Process")
 }
 try {
@@ -634,7 +657,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Secure local environment generation failed" }
 } finally {
     foreach ($name in $managedWriterEnvironment.Keys) {
-        [Environment]::SetEnvironmentVariable($name, $previousWriterEnvironment[$name], "Process")
+        Restore-ProcessEnvironmentEntry -Name $name -Snapshot $previousWriterEnvironment[$name]
     }
     $explicitAnalyzerApiKey = $null
 }
@@ -745,7 +768,9 @@ $healthEnv = @{
     LOG_LEVEL = "warn"
     RIKUNE_HEALTH_CHECK = "1"
 }
+$previousHealthEnvironment = @{}
 foreach ($kv in $healthEnv.GetEnumerator()) {
+    $previousHealthEnvironment[$kv.Key] = Get-ProcessEnvironmentEntrySnapshot -Name $kv.Key
     [Environment]::SetEnvironmentVariable($kv.Key, $kv.Value, "Process")
 }
 
@@ -763,6 +788,10 @@ try {
 } catch {
     Write-Warning-Message "Health check could not run: $($_.Exception.Message)"
     Write-Info "This is OK — the server will check deps at startup."
+} finally {
+    foreach ($name in $healthEnv.Keys) {
+        Restore-ProcessEnvironmentEntry -Name $name -Snapshot $previousHealthEnvironment[$name]
+    }
 }
 
 # =============================================================================

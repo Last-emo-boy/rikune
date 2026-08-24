@@ -19,8 +19,8 @@ import {
   createGhidraProject,
   buildProcessInvocation,
   type ProcessInvocation,
-  getConfiguredGhidraLogRoot,
-  getConfiguredGhidraProjectRoot,
+  getActiveGhidraLogRoot,
+  getActiveGhidraProjectRoot,
   getSampleScopedGhidraProjectRoot,
   getSampleScopedGhidraLogRoot,
 } from '../ghidra/ghidra-config.js'
@@ -2341,8 +2341,8 @@ export class DecompilerWorker {
             checked_at: new Date().toISOString(),
           },
           ghidra_execution: {
-            project_root: getConfiguredGhidraProjectRoot(),
-            log_root: getConfiguredGhidraLogRoot(),
+            project_root: getActiveGhidraProjectRoot(),
+            log_root: getActiveGhidraLogRoot(),
             command_log_paths: commandLogPaths,
             runtime_log_paths: runtimeLogPaths,
             progress_stages: progressStages,
@@ -2417,8 +2417,8 @@ export class DecompilerWorker {
           error: errorMessage,
           ghidra_diagnostics: diagnostics,
           ghidra_execution: {
-            project_root: getConfiguredGhidraProjectRoot(),
-            log_root: getConfiguredGhidraLogRoot(),
+            project_root: getActiveGhidraProjectRoot(),
+            log_root: getActiveGhidraLogRoot(),
             command_log_paths: diagnostics?.log_path ? [diagnostics.log_path] : [],
             runtime_log_paths: diagnostics?.runtime_log_path ? [diagnostics.runtime_log_path] : [],
             progress_stages: progressStages,

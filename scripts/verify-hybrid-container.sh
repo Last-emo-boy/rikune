@@ -109,7 +109,7 @@ for _attempt in $(seq 1 30); do
   if ! docker inspect "$container_name" --format '{{.State.Running}}' | grep -qx true; then
     break
   fi
-  if docker logs "$container_name" 2>&1 | grep -Fq 'Starting Container Command'; then
+  if docker logs "$container_name" 2>&1 | grep -F 'Starting Container Command' >/dev/null; then
     started=true
     break
   fi

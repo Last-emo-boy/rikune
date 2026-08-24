@@ -30,6 +30,43 @@ function Assert-Throws {
     if (-not $threw) { throw $Message }
 }
 
+function Get-ProcessEnvironmentEntrySnapshot {
+    param([string]$Name)
+
+    $entry = Get-Item -LiteralPath "Env:$Name" -ErrorAction SilentlyContinue
+    return [pscustomobject]@{
+        Exists = $null -ne $entry
+        Value = if ($null -eq $entry) { $null } else { [string]$entry.Value }
+    }
+}
+
+function Restore-ProcessEnvironmentEntry {
+    param(
+        [string]$Name,
+        [object]$Snapshot
+    )
+
+    if ($Snapshot.Exists) {
+        [Environment]::SetEnvironmentVariable($Name, [string]$Snapshot.Value, "Process")
+    } else {
+        Remove-Item -LiteralPath "Env:$Name" -ErrorAction SilentlyContinue
+    }
+}
+
+function Assert-ProcessEnvironmentEntryMatchesSnapshot {
+    param(
+        [string]$Name,
+        [object]$Snapshot,
+        [string]$Message
+    )
+
+    $current = Get-ProcessEnvironmentEntrySnapshot -Name $Name
+    Assert-Contract (
+        $current.Exists -eq $Snapshot.Exists -and
+        (-not $Snapshot.Exists -or $current.Value -ceq $Snapshot.Value)
+    ) $Message
+}
+
 function Get-FunctionAst {
     param(
         [System.Management.Automation.Language.ScriptBlockAst]$Ast,
@@ -87,6 +124,46 @@ foreach ($installerPath in $installerPaths) {
     $installerAsts[$name] = $ast
 }
 
+function Assert-NoNullEnvironmentDeletion {
+    param(
+        [System.Management.Automation.Language.ScriptBlockAst]$Ast,
+        [string]$Owner
+    )
+
+    $nullDeletionCalls = @(
+        $Ast.FindAll(
+            {
+                param($node)
+                if ($node -isnot [System.Management.Automation.Language.InvokeMemberExpressionAst]) {
+                    return $false
+                }
+                if ($node.Member.Extent.Text -ine "SetEnvironmentVariable") {
+                    return $false
+                }
+                $arguments = @($node.Arguments)
+                return $arguments.Count -ge 2 -and $arguments[1].Extent.Text.Trim() -ceq '$null'
+            },
+            $true
+        )
+    )
+    Assert-Contract (
+        $nullDeletionCalls.Count -eq 0
+    ) "$Owner must delete absent process environment entries through Remove-Item Env:, never SetEnvironmentVariable(..., `$null, ...)"
+}
+
+foreach ($installerName in $installerAsts.Keys) {
+    Assert-NoNullEnvironmentDeletion -Ast $installerAsts[$installerName] -Owner $installerName
+}
+$verificationTokens = $null
+$verificationParseErrors = $null
+$verificationAst = [System.Management.Automation.Language.Parser]::ParseFile(
+    $PSCommandPath,
+    [ref]$verificationTokens,
+    [ref]$verificationParseErrors
+)
+Assert-Contract (@($verificationParseErrors).Count -eq 0) "PowerShell verifier must parse before checking environment deletion contracts"
+Assert-NoNullEnvironmentDeletion -Ast $verificationAst -Owner "scripts/verify-powershell-installers.ps1"
+
 $dockerAst = $installerAsts["install-docker.ps1"]
 $dockerSource = $dockerAst.Extent.Text
 $localInstallerAst = $installerAsts["install-local.ps1"]
@@ -95,8 +172,32 @@ $runtimeAst = $installerAsts["install-runtime-windows.ps1"]
 $runtimeSource = $runtimeAst.Extent.Text
 $rikuneAst = $installerAsts["rikune.ps1"]
 
+foreach ($installerContract in @(
+    @{ Name = "install-docker.ps1"; Ast = $dockerAst },
+    @{ Name = "install-local.ps1"; Ast = $localInstallerAst },
+    @{ Name = "install-runtime-windows.ps1"; Ast = $runtimeAst },
+    @{ Name = "rikune.ps1"; Ast = $rikuneAst }
+)) {
+    $snapshotSource = (Get-FunctionAst `
+        -Ast $installerContract.Ast `
+        -Name "Get-ProcessEnvironmentEntrySnapshot" `
+        -Owner $installerContract.Name).Extent.Text
+    $restoreSource = (Get-FunctionAst `
+        -Ast $installerContract.Ast `
+        -Name "Restore-ProcessEnvironmentEntry" `
+        -Owner $installerContract.Name).Extent.Text
+    Assert-Contract (
+        $snapshotSource.Contains('Get-Item -LiteralPath "Env:$Name"') -and
+        $snapshotSource.Contains('Exists = $null -ne $entry') -and
+        $restoreSource.Contains('if ($Snapshot.Exists)') -and
+        $restoreSource.Contains('Remove-Item -LiteralPath "Env:$Name"')
+    ) "$($installerContract.Name) must preserve both process environment entry presence and its exact value"
+}
+
 # Import only isolated helpers from installer ASTs. This avoids executing installer top-level effects.
 $runtimeHelperNames = @(
+    "Get-ProcessEnvironmentEntrySnapshot",
+    "Restore-ProcessEnvironmentEntry",
     "Assert-SafeRuntimeEnvValue",
     "New-CryptographicApiKey",
     "Resolve-RuntimeApiKey",
@@ -122,6 +223,8 @@ foreach ($helperName in $runtimeHelperNames) {
 
 $rikuneHelperNames = @(
     "Get-PowerShellExe",
+    "Get-ProcessEnvironmentEntrySnapshot",
+    "Restore-ProcessEnvironmentEntry",
     "Invoke-ChildPowerShell",
     "Assert-SecureRuntimeEndpoint",
     "Install-Runtime",
@@ -131,7 +234,13 @@ $rikuneHelperAsts = @{}
 foreach ($helperName in $rikuneHelperNames) {
     $helperAst = Get-FunctionAst -Ast $rikuneAst -Name $helperName -Owner "rikune.ps1"
     $rikuneHelperAsts[$helperName] = $helperAst
-    if ($helperName -in @("Get-PowerShellExe", "Invoke-ChildPowerShell", "Assert-SecureRuntimeEndpoint")) {
+    if ($helperName -in @(
+        "Get-PowerShellExe",
+        "Get-ProcessEnvironmentEntrySnapshot",
+        "Restore-ProcessEnvironmentEntry",
+        "Invoke-ChildPowerShell",
+        "Assert-SecureRuntimeEndpoint"
+    )) {
         . ([scriptblock]::Create($helperAst.Extent.Text))
     }
 }
@@ -146,7 +255,7 @@ $childFixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) "rikune-child-en
 New-Item -ItemType Directory -Path $childFixtureRoot -Force | Out-Null
 $childFixturePath = Join-Path $childFixtureRoot "verify-child-env.ps1"
 $childEnvironmentName = "RIKUNE_VERIFIER_CHILD_SECRET"
-$previousChildEnvironment = [Environment]::GetEnvironmentVariable($childEnvironmentName, "Process")
+$previousChildEnvironment = Get-ProcessEnvironmentEntrySnapshot -Name $childEnvironmentName
 try {
     @"
 if (`$env:$childEnvironmentName -ne "child-only-secret") { exit 41 }
@@ -159,9 +268,46 @@ exit 0
     Assert-Contract (
         [Environment]::GetEnvironmentVariable($childEnvironmentName, "Process") -eq "parent-original"
     ) "Invoke-ChildPowerShell must restore the parent process environment after child success"
+
+    Remove-Item -LiteralPath "Env:$childEnvironmentName" -ErrorAction SilentlyContinue
+    Assert-Contract (
+        -not (Get-ProcessEnvironmentEntrySnapshot -Name $childEnvironmentName).Exists
+    ) "Absent child relay fixture must start without an environment entry"
+    Invoke-ChildPowerShell `
+        -Arguments @("-NoLogo", "-NoProfile", "-File", $childFixturePath) `
+        -Environment @{ $childEnvironmentName = "child-only-secret" }
+    Assert-Contract (
+        -not (Get-ProcessEnvironmentEntrySnapshot -Name $childEnvironmentName).Exists
+    ) "Invoke-ChildPowerShell must restore a previously absent parent entry as absent"
+
+    $supportsEmptyProcessEnvironmentEntries = (
+        $PSVersionTable.PSVersion.Major -gt 7 -or
+        ($PSVersionTable.PSVersion.Major -eq 7 -and $PSVersionTable.PSVersion.Minor -ge 5)
+    )
+    if ($supportsEmptyProcessEnvironmentEntries) {
+        [Environment]::SetEnvironmentVariable($childEnvironmentName, "", "Process")
+        $emptyEntry = Get-ProcessEnvironmentEntrySnapshot -Name $childEnvironmentName
+        Assert-Contract (
+            $emptyEntry.Exists -and $emptyEntry.Value -ceq ""
+        ) "PowerShell 7.5+ child relay fixture must preserve an existing empty entry"
+        Invoke-ChildPowerShell `
+            -Arguments @("-NoLogo", "-NoProfile", "-File", $childFixturePath) `
+            -Environment @{ $childEnvironmentName = "child-only-secret" }
+        $restoredEmptyEntry = Get-ProcessEnvironmentEntrySnapshot -Name $childEnvironmentName
+        Assert-Contract (
+            $restoredEmptyEntry.Exists -and $restoredEmptyEntry.Value -ceq ""
+        ) "Invoke-ChildPowerShell must distinguish an existing empty entry from an absent entry"
+    }
 } finally {
-    [Environment]::SetEnvironmentVariable($childEnvironmentName, $previousChildEnvironment, "Process")
-    Remove-Item -LiteralPath $childFixtureRoot -Recurse -Force -ErrorAction SilentlyContinue
+    try {
+        Restore-ProcessEnvironmentEntry -Name $childEnvironmentName -Snapshot $previousChildEnvironment
+        Assert-ProcessEnvironmentEntryMatchesSnapshot `
+            -Name $childEnvironmentName `
+            -Snapshot $previousChildEnvironment `
+            -Message "PowerShell verifier must restore its original child relay environment entry exactly"
+    } finally {
+        Remove-Item -LiteralPath $childFixtureRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Write-Warn {
@@ -295,7 +441,7 @@ foreach ($requiredFragment in @(
     '$capturedHostApiKey',
     '$capturedRuntimeApiKey',
     'foreach ($name in ($secretEnvironmentAliases + $privateEnvControlNames))',
-    '[Environment]::SetEnvironmentVariable($name, $null, "Process")',
+    'Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue',
     'Host Agent and Runtime Node API keys must be distinct',
     'Resolve-RuntimeWorkspaceRoot',
     'Resolve-PinnedPm2Command'
@@ -318,10 +464,10 @@ Assert-Contract (
 $invokeChildSource = $rikuneHelperAsts["Invoke-ChildPowerShell"].Extent.Text
 foreach ($requiredFragment in @(
     '[hashtable]$Environment',
-    'GetEnvironmentVariable($name, "Process")',
+    'Get-ProcessEnvironmentEntrySnapshot -Name $name',
     'SetEnvironmentVariable($name, [string]$Environment[$name], "Process")',
     'finally',
-    'SetEnvironmentVariable($name, $previousEnvironment[$name], "Process")'
+    'Restore-ProcessEnvironmentEntry -Name $name -Snapshot $previousEnvironment[$name]'
 )) {
     Assert-Contract ($invokeChildSource.Contains($requiredFragment)) "Invoke-ChildPowerShell is missing the child environment restoration contract '$requiredFragment'"
 }
@@ -449,6 +595,9 @@ foreach ($requiredFragment in @(
     '$privateEnvTransactionCommitted = $true',
     'RIKUNE_NATIVE_EXIT_CODE',
     'exit $privateEnvFailureExitCode',
+    '$previousEnvironment[$name] = Get-ProcessEnvironmentEntrySnapshot -Name $name',
+    'Restore-ProcessEnvironmentEntry -Name $name -Snapshot $previousEnvironment[$name]',
+    'Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue',
     '$nodeMinor -lt 9',
     'need 22.9+',
     'finally'
@@ -480,6 +629,9 @@ foreach ($requiredFragment in @(
     'RIKUNE_NATIVE_EXIT_CODE',
     'exit $privateEnvFailureExitCode',
     'Write-SecureRuntimeEnvFile -Path $envFile -Content $envContent -RequireAbsent',
+    '$previousEntry = Get-ProcessEnvironmentEntrySnapshot -Name $EnvironmentName',
+    'Restore-ProcessEnvironmentEntry -Name $EnvironmentName -Snapshot $previousEntry',
+    'Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue',
     '$nodeMinor -lt 9',
     'need 22.9+',
     'finally'
@@ -510,6 +662,8 @@ foreach ($requiredFragment in @(
     'RIKUNE_LOCAL_ENV_SNAPSHOT_STDIN',
     '$privateEnvTransactionActive = $true',
     '$privateEnvTransactionCommitted = $true',
+    '$previousWriterEnvironment[$name] = Get-ProcessEnvironmentEntrySnapshot -Name $name',
+    'Restore-ProcessEnvironmentEntry -Name $name -Snapshot $previousWriterEnvironment[$name]',
     '$nodeMinor -lt 9',
     'need 22.9+',
     'finally'
@@ -876,8 +1030,13 @@ if ($IsWindows) {
         $runtimeTransactionPreviousControls = @{}
         $runtimeTransactionSnapshot = $null
         foreach ($name in $privateEnvInternalControls) {
-            $runtimeTransactionPreviousControls[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
-            [Environment]::SetEnvironmentVariable($name, $null, "Process")
+            $runtimeTransactionPreviousControls[$name] = Get-ProcessEnvironmentEntrySnapshot -Name $name
+            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+        }
+        foreach ($name in $privateEnvInternalControls) {
+            Assert-Contract (
+                -not (Get-ProcessEnvironmentEntrySnapshot -Name $name).Exists
+            ) "Windows runtime transaction must truly remove inherited private env control '$name'"
         }
         try {
             $runtimeTransactionSnapshot = Get-RuntimePrivateEnvSnapshot `
@@ -921,11 +1080,15 @@ if ($IsWindows) {
         } finally {
             $runtimeTransactionSnapshot = $null
             foreach ($name in $privateEnvInternalControls) {
-                [Environment]::SetEnvironmentVariable(
-                    $name,
-                    $runtimeTransactionPreviousControls[$name],
-                    "Process"
-                )
+                Restore-ProcessEnvironmentEntry `
+                    -Name $name `
+                    -Snapshot $runtimeTransactionPreviousControls[$name]
+            }
+            foreach ($name in $privateEnvInternalControls) {
+                Assert-ProcessEnvironmentEntryMatchesSnapshot `
+                    -Name $name `
+                    -Snapshot $runtimeTransactionPreviousControls[$name] `
+                    -Message "Windows runtime transaction must restore private env control '$name' exactly"
             }
         }
 
@@ -990,8 +1153,17 @@ if ($IsWindows) {
         Add-LegacyEveryoneAce -Path $targetPath
 
         foreach ($name in $managedEnvironment.Keys) {
-            $previousEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
-            [Environment]::SetEnvironmentVariable($name, $managedEnvironment[$name], "Process")
+            $previousEnvironment[$name] = Get-ProcessEnvironmentEntrySnapshot -Name $name
+            if ($null -eq $managedEnvironment[$name]) {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            } else {
+                [Environment]::SetEnvironmentVariable($name, [string]$managedEnvironment[$name], "Process")
+            }
+        }
+        foreach ($name in @($managedEnvironment.Keys | Where-Object { $null -eq $managedEnvironment[$_] })) {
+            Assert-Contract (
+                -not (Get-ProcessEnvironmentEntrySnapshot -Name $name).Exists
+            ) "Node writer fixture must truly remove optional environment entry '$name'"
         }
         try {
             & $nodeCommand $nodeWriter
@@ -1005,7 +1177,13 @@ if ($IsWindows) {
             if ($LASTEXITCODE -ne 0) { throw "Node secure Docker env writer failed with exit code $LASTEXITCODE" }
         } finally {
             foreach ($name in $managedEnvironment.Keys) {
-                [Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name], "Process")
+                Restore-ProcessEnvironmentEntry -Name $name -Snapshot $previousEnvironment[$name]
+            }
+            foreach ($name in $managedEnvironment.Keys) {
+                Assert-ProcessEnvironmentEntryMatchesSnapshot `
+                    -Name $name `
+                    -Snapshot $previousEnvironment[$name] `
+                    -Message "Node writer fixture must restore environment entry '$name' exactly"
             }
         }
 
@@ -1025,26 +1203,38 @@ if ($IsWindows) {
         )
         $snapshotPreviousEnvironment = @{}
         foreach ($name in $snapshotEnvironmentNames) {
-            $snapshotPreviousEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
+            $snapshotPreviousEnvironment[$name] = Get-ProcessEnvironmentEntrySnapshot -Name $name
         }
         try {
             [Environment]::SetEnvironmentVariable("RIKUNE_STAGE_DOCKER_ENV_PATH", $targetPath, "Process")
             $privateSnapshot = [string](@(& $nodeCommand $nodeWriter) -join '')
             if ($LASTEXITCODE -ne 0) { throw "Node private env snapshot capture failed with exit code $LASTEXITCODE" }
-            [Environment]::SetEnvironmentVariable("RIKUNE_STAGE_DOCKER_ENV_PATH", $null, "Process")
+            Remove-Item -LiteralPath "Env:RIKUNE_STAGE_DOCKER_ENV_PATH" -ErrorAction SilentlyContinue
+            Assert-Contract (
+                -not (Get-ProcessEnvironmentEntrySnapshot -Name "RIKUNE_STAGE_DOCKER_ENV_PATH").Exists
+            ) "Node snapshot fixture must truly remove the stage selector"
 
             [Environment]::SetEnvironmentVariable("RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH", $targetPath, "Process")
             $privateSnapshot | & $nodeCommand $nodeWriter
             if ($LASTEXITCODE -ne 0) { throw "Node private env snapshot removal failed with exit code $LASTEXITCODE" }
             Assert-Contract (-not (Test-Path -LiteralPath $targetPath)) "Snapshot removal must remove the exact protected source"
-            [Environment]::SetEnvironmentVariable("RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH", $null, "Process")
+            Remove-Item -LiteralPath "Env:RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH" -ErrorAction SilentlyContinue
+            Assert-Contract (
+                -not (Get-ProcessEnvironmentEntrySnapshot -Name "RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH").Exists
+            ) "Node snapshot fixture must truly remove the removal selector"
 
             [Environment]::SetEnvironmentVariable("RIKUNE_RESTORE_PRIVATE_ENV_PATH", $targetPath, "Process")
             $privateSnapshot | & $nodeCommand $nodeWriter
             if ($LASTEXITCODE -ne 0) { throw "Node private env snapshot restoration failed with exit code $LASTEXITCODE" }
         } finally {
             foreach ($name in $snapshotEnvironmentNames) {
-                [Environment]::SetEnvironmentVariable($name, $snapshotPreviousEnvironment[$name], "Process")
+                Restore-ProcessEnvironmentEntry -Name $name -Snapshot $snapshotPreviousEnvironment[$name]
+            }
+            foreach ($name in $snapshotEnvironmentNames) {
+                Assert-ProcessEnvironmentEntryMatchesSnapshot `
+                    -Name $name `
+                    -Snapshot $snapshotPreviousEnvironment[$name] `
+                    -Message "Node snapshot fixture must restore selector '$name' exactly"
             }
             $privateSnapshot = $null
         }
@@ -1064,7 +1254,7 @@ if ($IsWindows) {
     } finally {
         foreach ($name in $managedEnvironment.Keys) {
             if ($previousEnvironment.ContainsKey($name)) {
-                [Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name], "Process")
+                Restore-ProcessEnvironmentEntry -Name $name -Snapshot $previousEnvironment[$name]
             }
         }
         Remove-Item -LiteralPath $aclTestRoot -Recurse -Force -ErrorAction SilentlyContinue

@@ -175,9 +175,7 @@ describe('docker generator backend install reports', () => {
       expect(fullDockerfile).toContain(
         'COPY scripts/validate-docker-full-stack.sh /usr/local/bin/validate-docker-full-stack.sh'
       )
-      expect(fullDockerfile).toContain(
-        'chmod 0555 /usr/local/bin/validate-docker-full-stack.sh'
-      )
+      expect(fullDockerfile).toContain('chmod 0555 /usr/local/bin/validate-docker-full-stack.sh')
       expect(staticDockerfile).not.toContain('validate-docker-full-stack.sh')
       expect(hybridDockerfile).not.toContain('validate-docker-full-stack.sh')
       expect(staticCompose).toContain('dockerfile: docker/Dockerfile.analyzer')
@@ -188,6 +186,20 @@ describe('docker generator backend install reports', () => {
     } finally {
       rmSync(outputDir, { recursive: true, force: true })
     }
+  })
+
+  test('fully consumes Hybrid startup logs before deciding marker readiness', () => {
+    const verifier = readFileSync(
+      join(process.cwd(), 'scripts', 'verify-hybrid-container.sh'),
+      'utf8'
+    )
+
+    expect(verifier).toContain(
+      `docker logs "$container_name" 2>&1 | grep -F 'Starting Container Command' >/dev/null`
+    )
+    expect(verifier).not.toContain(
+      `docker logs "$container_name" 2>&1 | grep -Fq 'Starting Container Command'`
+    )
   })
 
   test('derives every static Compose backend binding from the exact lock', () => {

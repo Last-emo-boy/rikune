@@ -120,6 +120,29 @@ function Write-Error-Message {
     Write-Host $Text -ForegroundColor $ColorError
 }
 
+function Get-ProcessEnvironmentEntrySnapshot {
+    param([string]$Name)
+
+    $entry = Get-Item -LiteralPath "Env:$Name" -ErrorAction SilentlyContinue
+    return [pscustomobject]@{
+        Exists = $null -ne $entry
+        Value = if ($null -eq $entry) { $null } else { [string]$entry.Value }
+    }
+}
+
+function Restore-ProcessEnvironmentEntry {
+    param(
+        [string]$Name,
+        [object]$Snapshot
+    )
+
+    if ($Snapshot.Exists) {
+        [Environment]::SetEnvironmentVariable($Name, [string]$Snapshot.Value, "Process")
+    } else {
+        Remove-Item -LiteralPath "Env:$Name" -ErrorAction SilentlyContinue
+    }
+}
+
 function Require-Command {
     param(
         [string]$Name,
@@ -304,7 +327,7 @@ function Write-EnvFile {
     }
     $previousEnvironment = @{}
     foreach ($name in $managedEnvironment.Keys) {
-        $previousEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
+        $previousEnvironment[$name] = Get-ProcessEnvironmentEntrySnapshot -Name $name
         [Environment]::SetEnvironmentVariable($name, [string]$managedEnvironment[$name], "Process")
     }
     try {
@@ -315,7 +338,7 @@ function Write-EnvFile {
         }
     } finally {
         foreach ($name in $managedEnvironment.Keys) {
-            [Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name], "Process")
+            Restore-ProcessEnvironmentEntry -Name $name -Snapshot $previousEnvironment[$name]
         }
     }
 
@@ -334,7 +357,7 @@ function Get-PrivateEnvSnapshot {
 
     $writer = Join-Path $ProjectRoot "scripts/write-docker-runtime-env.mjs"
     if (-not (Test-Path $writer)) { throw "Docker runtime env writer not found: $writer" }
-    $previousValue = [Environment]::GetEnvironmentVariable("RIKUNE_STAGE_DOCKER_ENV_PATH", "Process")
+    $previousEntry = Get-ProcessEnvironmentEntrySnapshot -Name "RIKUNE_STAGE_DOCKER_ENV_PATH"
     try {
         [Environment]::SetEnvironmentVariable("RIKUNE_STAGE_DOCKER_ENV_PATH", $Path, "Process")
         $snapshotOutput = & node $writer
@@ -344,7 +367,7 @@ function Get-PrivateEnvSnapshot {
         }
         return [string](@($snapshotOutput) -join '')
     } finally {
-        [Environment]::SetEnvironmentVariable("RIKUNE_STAGE_DOCKER_ENV_PATH", $previousValue, "Process")
+        Restore-ProcessEnvironmentEntry -Name "RIKUNE_STAGE_DOCKER_ENV_PATH" -Snapshot $previousEntry
     }
 }
 
@@ -358,7 +381,7 @@ function Invoke-PrivateEnvSnapshotOperation {
 
     $writer = Join-Path $ProjectRoot "scripts/write-docker-runtime-env.mjs"
     if (-not (Test-Path $writer)) { throw "Docker runtime env writer not found: $writer" }
-    $previousValue = [Environment]::GetEnvironmentVariable($EnvironmentName, "Process")
+    $previousEntry = Get-ProcessEnvironmentEntrySnapshot -Name $EnvironmentName
     try {
         [Environment]::SetEnvironmentVariable($EnvironmentName, $Path, "Process")
         $Snapshot | & node $writer
@@ -367,7 +390,7 @@ function Invoke-PrivateEnvSnapshotOperation {
             throw (New-NativeInstallerFailure -Message $FailureMessage -ExitCode $nativeExitCode)
         }
     } finally {
-        [Environment]::SetEnvironmentVariable($EnvironmentName, $previousValue, "Process")
+        Restore-ProcessEnvironmentEntry -Name $EnvironmentName -Snapshot $previousEntry
     }
 }
 
@@ -534,7 +557,7 @@ $AnalyzerApiKey = if (-not [string]::IsNullOrWhiteSpace($env:RIKUNE_API_KEY)) {
     New-SecureApiKey
 }
 foreach ($name in ($secretEnvironmentAliases + $privateEnvControlNames)) {
-    [Environment]::SetEnvironmentVariable($name, $null, "Process")
+    Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
 }
 Assert-NoSecretEnvironment -Names $secretEnvironmentAliases
 Assert-StrongRuntimeApiKey -Name "Analyzer API key" -Value $AnalyzerApiKey

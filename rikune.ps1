@@ -100,6 +100,29 @@ function Write-Info {
     Write-Host "  $Text"
 }
 
+function Get-ProcessEnvironmentEntrySnapshot {
+    param([string]$Name)
+
+    $entry = Get-Item -LiteralPath "Env:$Name" -ErrorAction SilentlyContinue
+    return [pscustomobject]@{
+        Exists = $null -ne $entry
+        Value = if ($null -eq $entry) { $null } else { [string]$entry.Value }
+    }
+}
+
+function Restore-ProcessEnvironmentEntry {
+    param(
+        [string]$Name,
+        [object]$Snapshot
+    )
+
+    if ($Snapshot.Exists) {
+        [Environment]::SetEnvironmentVariable($Name, [string]$Snapshot.Value, "Process")
+    } else {
+        Remove-Item -LiteralPath "Env:$Name" -ErrorAction SilentlyContinue
+    }
+}
+
 function Get-ProfileConfig {
     param([string]$ProfileName)
     return $script:Profiles[$ProfileName]
@@ -191,7 +214,7 @@ function Invoke-ChildPowerShell {
     $ps = Get-PowerShellExe
     $previousEnvironment = @{}
     foreach ($name in $Environment.Keys) {
-        $previousEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
+        $previousEnvironment[$name] = Get-ProcessEnvironmentEntrySnapshot -Name $name
         [Environment]::SetEnvironmentVariable($name, [string]$Environment[$name], "Process")
     }
     $exitCode = 1
@@ -200,7 +223,7 @@ function Invoke-ChildPowerShell {
         $exitCode = $LASTEXITCODE
     } finally {
         foreach ($name in $Environment.Keys) {
-            [Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name], "Process")
+            Restore-ProcessEnvironmentEntry -Name $name -Snapshot $previousEnvironment[$name]
         }
     }
     if ($exitCode -ne 0) {
