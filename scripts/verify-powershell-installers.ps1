@@ -363,7 +363,9 @@ $nativeDiagnosticCases = @(
     @{ Snapshot = "snapshot-secret-eacces"; Category = "unlink-eacces"; ExitCode = 75; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false },
     @{ Snapshot = "snapshot-secret-acl"; Category = "acl-verify"; ExitCode = 76; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false },
     @{ Snapshot = "snapshot-secret-acl-detail"; Category = "acl-snapshot-match-owner"; ExitCode = 77; Phase = "verifier-rollback-remove"; UseRemoveWrapper = $true },
-    @{ Snapshot = "snapshot-secret-acl-pre-unlink"; Category = "acl-pre-unlink-rule"; ExitCode = 78; Phase = "verifier-commit-remove"; UseRemoveWrapper = $true }
+    @{ Snapshot = "snapshot-secret-acl-pre-unlink"; Category = "acl-pre-unlink-rule"; ExitCode = 78; Phase = "verifier-commit-remove"; UseRemoveWrapper = $true },
+    @{ Snapshot = "snapshot-secret-acl-operation"; Category = "acl-snapshot-match-acl-read"; ExitCode = 80; Phase = "verifier-rollback-remove"; UseRemoveWrapper = $true },
+    @{ Snapshot = "snapshot-secret-acl-child-exit"; Category = "acl-snapshot-match-child-exit"; ExitCode = 81; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false }
 )
 New-Item -ItemType Directory -Path $nativeDiagnosticRoot -Force | Out-Null
 try {
@@ -380,8 +382,10 @@ process.stdin.on('end', () => {
     'snapshot-secret-acl': [76, `Error: Unable to verify Windows ACL on '${mode}-Error: EPERM: operation not permitted, unlink-child-secret-marker'\n`],
     'snapshot-secret-acl-detail': [77, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-owner: Unable to verify Windows ACL\nError: ignored '${mode}-EPERM-unlink-child-secret-marker'\n`],
     'snapshot-secret-acl-pre-unlink': [78, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-pre-unlink-rule: Unable to verify Windows ACL\nError: ignored '${mode}-EACCES-unlink-child-secret-marker'\n`],
+    'snapshot-secret-acl-operation': [80, `node.exe : Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-acl-read: Unable to verify Windows ACL\nError: ignored '${mode}-child-secret-marker'\n`],
+    'snapshot-secret-acl-child-exit': [81, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-exit: Unable to verify Windows ACL\nError: ignored '${mode}-child-secret-marker'\n`],
   }
-  const selected = cases[mode] ?? [79, `Error: unclassified ${mode}-child-secret-marker\n`]
+  const selected = cases[mode] ?? [82, `Error: unclassified ${mode}-child-secret-marker\n`]
   process.stderr.write(selected[1])
   process.exit(selected[0])
 })

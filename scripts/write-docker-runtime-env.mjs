@@ -113,6 +113,16 @@ const WINDOWS_PRIVATE_FILE_ACL_FAILURE_REASONS = new Set([
   'owner',
   'entry-count',
   'rule',
+  'attributes-read',
+  'identity-read',
+  'descriptor-build',
+  'rule-build',
+  'acl-write',
+  'acl-read',
+  'owner-read',
+  'rules-read',
+  'rule-inspect',
+  'marker-write',
 ])
 const WINDOWS_PRIVATE_FILE_ACL_FAILURE_PHASES = new Set([
   'capture',
@@ -132,7 +142,11 @@ function Fail-PrivateFileAcl {
 }
 if ([string]::IsNullOrWhiteSpace($targetPath)) { Fail-PrivateFileAcl 'missing-target' }
 
-$attributes = [System.IO.File]::GetAttributes($targetPath)
+try {
+    $attributes = [System.IO.File]::GetAttributes($targetPath)
+} catch {
+    Fail-PrivateFileAcl 'attributes-read'
+}
 if (($attributes -band [System.IO.FileAttributes]::Directory) -ne 0) {
     Fail-PrivateFileAcl 'not-file'
 }
@@ -140,39 +154,79 @@ if (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
     Fail-PrivateFileAcl 'reparse'
 }
 
-$currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+try {
+    $currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+    $currentSidValue = $currentSid.Value
+} catch {
+    Fail-PrivateFileAcl 'identity-read'
+}
 if ($null -eq $currentSid) { Fail-PrivateFileAcl 'sid' }
 if ($mode -eq 'set') {
-    $security = New-Object System.Security.AccessControl.FileSecurity
-    $security.SetOwner($currentSid)
-    $security.SetAccessRuleProtection($true, $false)
-    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-        $currentSid,
-        [System.Security.AccessControl.FileSystemRights]::FullControl,
-        [System.Security.AccessControl.AccessControlType]::Allow
-    )
-    $security.SetAccessRule($rule)
-    [System.IO.File]::SetAccessControl($targetPath, $security)
+    try {
+        $security = New-Object System.Security.AccessControl.FileSecurity
+        $security.SetOwner($currentSid)
+        $security.SetAccessRuleProtection($true, $false)
+    } catch {
+        Fail-PrivateFileAcl 'descriptor-build'
+    }
+    try {
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+            $currentSid,
+            [System.Security.AccessControl.FileSystemRights]::FullControl,
+            [System.Security.AccessControl.AccessControlType]::Allow
+        )
+        $security.SetAccessRule($rule)
+    } catch {
+        Fail-PrivateFileAcl 'rule-build'
+    }
+    try {
+        [System.IO.File]::SetAccessControl($targetPath, $security)
+    } catch {
+        Fail-PrivateFileAcl 'acl-write'
+    }
 } elseif ($mode -ne 'verify') {
     Fail-PrivateFileAcl 'invalid-operation'
 }
 
-$acl = [System.IO.File]::GetAccessControl($targetPath)
-if (-not $acl.AreAccessRulesProtected) { Fail-PrivateFileAcl 'inheritance' }
-$ownerSid = $acl.GetOwner([System.Security.Principal.SecurityIdentifier])
-if ($ownerSid.Value -ne $currentSid.Value) { Fail-PrivateFileAcl 'owner' }
-$rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
+try {
+    $acl = [System.IO.File]::GetAccessControl($targetPath)
+    $accessRulesProtected = $acl.AreAccessRulesProtected
+} catch {
+    Fail-PrivateFileAcl 'acl-read'
+}
+if (-not $accessRulesProtected) { Fail-PrivateFileAcl 'inheritance' }
+try {
+    $ownerSid = $acl.GetOwner([System.Security.Principal.SecurityIdentifier])
+    $ownerSidValue = $ownerSid.Value
+} catch {
+    Fail-PrivateFileAcl 'owner-read'
+}
+if ($ownerSidValue -ne $currentSidValue) { Fail-PrivateFileAcl 'owner' }
+try {
+    $rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
+} catch {
+    Fail-PrivateFileAcl 'rules-read'
+}
 if ($rules.Count -ne 1) { Fail-PrivateFileAcl 'entry-count' }
-$actual = $rules[0]
-if (
-    $actual.IsInherited -or
-    $actual.IdentityReference.Value -ne $currentSid.Value -or
-    $actual.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow -or
-    $actual.FileSystemRights -ne [System.Security.AccessControl.FileSystemRights]::FullControl -or
-    $actual.InheritanceFlags -ne [System.Security.AccessControl.InheritanceFlags]::None -or
-    $actual.PropagationFlags -ne [System.Security.AccessControl.PropagationFlags]::None
-) { Fail-PrivateFileAcl 'rule' }
-[Console]::Out.Write('${WINDOWS_PRIVATE_FILE_ACL_MARKER}')
+try {
+    $actual = $rules[0]
+    $ruleMismatch = (
+        $actual.IsInherited -or
+        $actual.IdentityReference.Value -ne $currentSidValue -or
+        $actual.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow -or
+        $actual.FileSystemRights -ne [System.Security.AccessControl.FileSystemRights]::FullControl -or
+        $actual.InheritanceFlags -ne [System.Security.AccessControl.InheritanceFlags]::None -or
+        $actual.PropagationFlags -ne [System.Security.AccessControl.PropagationFlags]::None
+    )
+} catch {
+    Fail-PrivateFileAcl 'rule-inspect'
+}
+if ($ruleMismatch) { Fail-PrivateFileAcl 'rule' }
+try {
+    [Console]::Out.Write('${WINDOWS_PRIVATE_FILE_ACL_MARKER}')
+} catch {
+    Fail-PrivateFileAcl 'marker-write'
+}
 `
 
 function normalizeWindowsAclFailurePhase(value) {

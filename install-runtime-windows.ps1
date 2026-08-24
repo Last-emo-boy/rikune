@@ -464,7 +464,7 @@ function Invoke-RuntimePrivateEnvSnapshotOperation {
             $nativeFailureText = [string](@($operationOutput) -join "`n")
             $nativeFailureCategory = "unclassified"
             if (
-                $nativeFailureText -match '(?im)^\s*(?:node(?:\.exe)?\s*:\s*)?Error:\s+RIKUNE_PRIVATE_ENV_FAILURE=(acl-(?:snapshot-match|pre-unlink)-(?:spawn|child-exit|marker|missing-target|not-file|reparse|sid|invalid-operation|inheritance|owner|entry-count|rule)):\s+Unable to verify Windows ACL[ \t]*\r?$'
+                $nativeFailureText -match '(?im)^\s*(?:node(?:\.exe)?\s*:\s*)?Error:\s+RIKUNE_PRIVATE_ENV_FAILURE=(acl-(?:snapshot-match|pre-unlink)-(?:spawn|child-exit|marker|missing-target|not-file|reparse|sid|invalid-operation|inheritance|owner|entry-count|rule|attributes-read|identity-read|descriptor-build|rule-build|acl-write|acl-read|owner-read|rules-read|rule-inspect|marker-write)):\s+Unable to verify Windows ACL[ \t]*\r?$'
             ) {
                 $nativeFailureCategory = [string]$Matches[1]
             } elseif (

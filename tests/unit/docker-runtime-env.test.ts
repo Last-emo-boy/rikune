@@ -230,6 +230,20 @@ describe('Docker runtime env writer', () => {
       "[Console]::Error.Write('RIKUNE_PRIVATE_FILE_ACL_FAILURE=' + $Reason)"
     )
     expect(aclScript).toContain('exit 86')
+    for (const reason of [
+      'attributes-read',
+      'identity-read',
+      'descriptor-build',
+      'rule-build',
+      'acl-write',
+      'acl-read',
+      'owner-read',
+      'rules-read',
+      'rule-inspect',
+      'marker-write',
+    ]) {
+      expect(aclScript).toContain(`Fail-PrivateFileAcl '${reason}'`)
+    }
 
     expect(() =>
       invokeWindowsFileAcl('C:\\secure\\.env', 'verify', {
@@ -244,6 +258,27 @@ describe('Docker runtime env writer', () => {
     const target = 'C:\\secure\\child-secret-marker.env'
     const environment = { SystemRoot: 'C:\\Windows' }
     const powershell = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
+    const fixedReasons = [
+      'missing-target',
+      'not-file',
+      'reparse',
+      'sid',
+      'invalid-operation',
+      'inheritance',
+      'owner',
+      'entry-count',
+      'rule',
+      'attributes-read',
+      'identity-read',
+      'descriptor-build',
+      'rule-build',
+      'acl-write',
+      'acl-read',
+      'owner-read',
+      'rules-read',
+      'rule-inspect',
+      'marker-write',
+    ]
     const cases = [
       {
         phase: 'snapshot-match',
@@ -255,15 +290,15 @@ describe('Docker runtime env writer', () => {
           stderr: '',
         },
       },
-      {
+      ...fixedReasons.map((reason) => ({
         phase: 'pre-unlink',
-        category: 'acl-pre-unlink-owner',
+        category: `acl-pre-unlink-${reason}`,
         result: {
           status: 86,
           stdout: '',
-          stderr: 'RIKUNE_PRIVATE_FILE_ACL_FAILURE=owner',
+          stderr: `RIKUNE_PRIVATE_FILE_ACL_FAILURE=${reason}`,
         },
-      },
+      })),
       {
         phase: 'snapshot-match',
         category: 'acl-snapshot-match-child-exit',
