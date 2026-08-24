@@ -369,7 +369,7 @@ $nativeDiagnosticCases = @(
     @{ Snapshot = "snapshot-secret-acl-status-one"; Category = "acl-snapshot-match-child-status-one"; ExitCode = 82; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false },
     @{ Snapshot = "snapshot-secret-acl-assertion-exit"; Category = "acl-snapshot-match-child-assertion-exit"; ExitCode = 83; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false },
     @{ Snapshot = "snapshot-secret-acl-signal"; Category = "acl-snapshot-match-child-signal"; ExitCode = 84; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false },
-    @{ Snapshot = "snapshot-secret-acl-other"; Category = "acl-snapshot-match-child-other"; ExitCode = 85; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false },
+    @{ Snapshot = "snapshot-secret-acl-other"; Category = "acl-snapshot-match-child-other"; ExitCode = 85; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false; ChildStatus = "0x00000009" },
     @{ Snapshot = "snapshot-secret-acl-assertion-protocol"; Category = "acl-snapshot-match-assertion-protocol"; ExitCode = 86; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false }
 )
 New-Item -ItemType Directory -Path $nativeDiagnosticRoot -Force | Out-Null
@@ -392,7 +392,7 @@ process.stdin.on('end', () => {
     'snapshot-secret-acl-status-one': [82, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-status-one: Unable to verify Windows ACL\nError: ignored '${mode}-child-secret-marker'\n`],
     'snapshot-secret-acl-assertion-exit': [83, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-assertion-exit: Unable to verify Windows ACL\nError: ignored '${mode}-child-secret-marker'\n`],
     'snapshot-secret-acl-signal': [84, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-signal: Unable to verify Windows ACL\nError: ignored '${mode}-child-secret-marker'\n`],
-    'snapshot-secret-acl-other': [85, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-other: Unable to verify Windows ACL\nError: ignored '${mode}-child-secret-marker'\n`],
+    'snapshot-secret-acl-other': [85, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-child-other: Unable to verify Windows ACL (child-status=0x00000009)\nError: ignored '${mode}-child-secret-marker'\n`],
     'snapshot-secret-acl-assertion-protocol': [86, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-assertion-protocol: Unable to verify Windows ACL\nError: ignored '${mode}-child-secret-marker'\n`],
   }
   const selected = cases[mode] ?? [87, `Error: unclassified ${mode}-child-secret-marker\n`]
@@ -436,10 +436,12 @@ process.stdin.on('end', () => {
         Assert-Contract (
             [string]$nativeDiagnosticFailure.Data["RIKUNE_NATIVE_FAILURE_PHASE"] -eq $nativeDiagnosticCase.Phase
         ) "Native diagnostic fixture must preserve only the fixed failure phase"
+        $nativeDiagnosticMetadata = "phase=$($nativeDiagnosticCase.Phase); category=$($nativeDiagnosticCase.Category); exit=$($nativeDiagnosticCase.ExitCode)"
+        if ($nativeDiagnosticCase.ContainsKey("ChildStatus")) {
+            $nativeDiagnosticMetadata += "; child-status=$($nativeDiagnosticCase.ChildStatus)"
+        }
         Assert-Contract (
-            $nativeDiagnosticFailure.Message.Contains(
-                "phase=$($nativeDiagnosticCase.Phase); category=$($nativeDiagnosticCase.Category); exit=$($nativeDiagnosticCase.ExitCode)"
-            )
+            $nativeDiagnosticFailure.Message.Contains("$nativeDiagnosticMetadata)")
         ) "Native diagnostic fixture must expose only fixed metadata in its message"
         Assert-Contract (
             -not $nativeDiagnosticFailure.Message.Contains($nativeDiagnosticCase.Snapshot) -and
@@ -793,8 +795,10 @@ foreach ($requiredFragment in @(
     'RIKUNE_PRIVATE_ENV_FAILURE=',
     '$operationOutput = $Snapshot | & $NodePath $WriterPath 2>&1',
     '$nativeFailureCategory = "unclassified"',
+    '$nativeAclChildStatus = $null',
     '$PSNativeCommandUseErrorActionPreference = $false',
     'category=$nativeFailureCategory; exit=$nativeExitCode',
+    'child-status=$nativeAclChildStatus',
     'exit $privateEnvFailureExitCode',
     'Write-SecureRuntimeEnvFile -Path $envFile -Content $envContent -RequireAbsent',
     '$previousEntry = Get-ProcessEnvironmentEntrySnapshot -Name $EnvironmentName',

@@ -261,10 +261,21 @@ function windowsAclChildFailureReason(result) {
   return 'child-other'
 }
 
-function windowsAclFailure(mode, phase, reason) {
+function normalizeWindowsAclChildStatus(value) {
+  if (!Number.isInteger(value) || value < -0x80000000 || value > 0xffffffff) return null
+  return `0x${(value >>> 0).toString(16).toUpperCase().padStart(8, '0')}`
+}
+
+function windowsAclFailure(mode, phase, reason, childStatus) {
   const action = mode === 'set' ? 'restrict' : 'verify'
   const category = `acl-${normalizeWindowsAclFailurePhase(phase)}-${reason}`
-  return new Error(`RIKUNE_PRIVATE_ENV_FAILURE=${category}: Unable to ${action} Windows ACL`)
+  const normalizedChildStatus =
+    reason === 'child-other' ? normalizeWindowsAclChildStatus(childStatus) : null
+  const childStatusSuffix =
+    normalizedChildStatus === null ? '' : ` (child-status=${normalizedChildStatus})`
+  return new Error(
+    `RIKUNE_PRIVATE_ENV_FAILURE=${category}: Unable to ${action} Windows ACL${childStatusSuffix}`
+  )
 }
 
 function readWindowsEnvironmentValue(environment, name) {
@@ -352,7 +363,12 @@ export function invokeWindowsFileAcl(filePath, mode, options = {}) {
     throw windowsAclFailure(mode, options.failurePhase, 'spawn')
   }
   if (result.status !== 0) {
-    throw windowsAclFailure(mode, options.failurePhase, windowsAclChildFailureReason(result))
+    throw windowsAclFailure(
+      mode,
+      options.failurePhase,
+      windowsAclChildFailureReason(result),
+      result.status
+    )
   }
   if (String(result.stdout || '').trim() !== WINDOWS_PRIVATE_FILE_ACL_MARKER) {
     throw windowsAclFailure(mode, options.failurePhase, 'marker')

@@ -357,8 +357,38 @@ describe('Docker runtime env writer', () => {
       {
         phase: 'snapshot-match',
         category: 'acl-snapshot-match-child-other',
+        childStatus: '0x00000009',
         result: {
           status: 9,
+          stdout: '',
+          stderr: 'child-secret-marker',
+        },
+      },
+      {
+        phase: 'pre-unlink',
+        category: 'acl-pre-unlink-child-other',
+        childStatus: '0xC0000005',
+        result: {
+          status: -1073741819,
+          stdout: '',
+          stderr: 'child-secret-marker',
+        },
+      },
+      ...[-65536, 0xffff0000].map((status) => ({
+        phase: 'snapshot-match',
+        category: 'acl-snapshot-match-child-other',
+        childStatus: '0xFFFF0000',
+        result: {
+          status,
+          stdout: '',
+          stderr: 'child-secret-marker',
+        },
+      })),
+      {
+        phase: 'snapshot-match',
+        category: 'acl-snapshot-match-child-other',
+        result: {
+          status: 0x100000000,
           stdout: '',
           stderr: 'child-secret-marker',
         },
@@ -384,8 +414,10 @@ describe('Docker runtime env writer', () => {
       }
       expect(failure).toBeInstanceOf(Error)
       const message = (failure as Error).message
+      const childStatusSuffix =
+        'childStatus' in testCase ? ` (child-status=${testCase.childStatus})` : ''
       expect(message).toBe(
-        `RIKUNE_PRIVATE_ENV_FAILURE=${testCase.category}: Unable to verify Windows ACL`
+        `RIKUNE_PRIVATE_ENV_FAILURE=${testCase.category}: Unable to verify Windows ACL${childStatusSuffix}`
       )
       expect(message).not.toContain('child-secret-marker')
       expect(message).not.toContain('RIKUNE_PRIVATE_FILE_ACL_FAILURE')

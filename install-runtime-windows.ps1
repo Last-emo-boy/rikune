@@ -455,6 +455,7 @@ function Invoke-RuntimePrivateEnvSnapshotOperation {
     $previousEntry = Get-ProcessEnvironmentEntrySnapshot -Name $EnvironmentName
     $operationOutput = $null
     $nativeFailureText = $null
+    $nativeAclChildStatus = $null
     $PSNativeCommandUseErrorActionPreference = $false
     try {
         [Environment]::SetEnvironmentVariable($EnvironmentName, $Path, "Process")
@@ -464,6 +465,11 @@ function Invoke-RuntimePrivateEnvSnapshotOperation {
             $nativeFailureText = [string](@($operationOutput) -join "`n")
             $nativeFailureCategory = "unclassified"
             if (
+                $nativeFailureText -match '(?im)^\s*(?:node(?:\.exe)?\s*:\s*)?Error:\s+RIKUNE_PRIVATE_ENV_FAILURE=(acl-(?:snapshot-match|pre-unlink)-child-other):\s+Unable to verify Windows ACL \(child-status=(0x[0-9A-F]{8})\)[ \t]*\r?$'
+            ) {
+                $nativeFailureCategory = [string]$Matches[1]
+                $nativeAclChildStatus = "0x$(([string]$Matches[2]).Substring(2).ToUpperInvariant())"
+            } elseif (
                 $nativeFailureText -match '(?im)^\s*(?:node(?:\.exe)?\s*:\s*)?Error:\s+RIKUNE_PRIVATE_ENV_FAILURE=(acl-(?:snapshot-match|pre-unlink)-(?:spawn|child-exit|child-assertion-exit|child-status-one|child-signal|child-other|assertion-protocol|marker|missing-target|not-file|reparse|sid|invalid-operation|inheritance|owner|entry-count|rule|attributes-read|identity-read|descriptor-build|rule-build|acl-write|acl-read|owner-read|rules-read|rule-inspect|marker-write)):\s+Unable to verify Windows ACL[ \t]*\r?$'
             ) {
                 $nativeFailureCategory = [string]$Matches[1]
@@ -496,7 +502,12 @@ function Invoke-RuntimePrivateEnvSnapshotOperation {
             ) {
                 $nativeFailureCategory = "selector-invalid"
             }
-            $safeFailureMessage = "$FailureMessage (phase=$FailurePhase; category=$nativeFailureCategory; exit=$nativeExitCode)"
+            $nativeFailureDetail = if ($null -eq $nativeAclChildStatus) {
+                ""
+            } else {
+                "; child-status=$nativeAclChildStatus"
+            }
+            $safeFailureMessage = "$FailureMessage (phase=$FailurePhase; category=$nativeFailureCategory; exit=$nativeExitCode$nativeFailureDetail)"
             throw (New-NativeInstallerFailure `
                 -Message $safeFailureMessage `
                 -ExitCode $nativeExitCode `
@@ -509,6 +520,7 @@ function Invoke-RuntimePrivateEnvSnapshotOperation {
     } finally {
         $operationOutput = $null
         $nativeFailureText = $null
+        $nativeAclChildStatus = $null
         Restore-ProcessEnvironmentEntry -Name $EnvironmentName -Snapshot $previousEntry
     }
 }
