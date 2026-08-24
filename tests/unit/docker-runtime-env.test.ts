@@ -9,6 +9,7 @@ import {
   encodePrivateEnvSnapshot,
   invokeWindowsFileAcl,
   parseDockerRuntimeEnv,
+  PRIVATE_ENV_INTERNAL_CONTROL_NAMES,
   privateEnvSnapshotContent,
   removePrivateEnvForSnapshot,
   restorePrivateEnvSnapshot,
@@ -16,6 +17,19 @@ import {
 } from '../../scripts/write-docker-runtime-env.mjs'
 
 const temporaryDirectories: string[] = []
+const INSTALLER_FORBIDDEN_ENV_NAMES = [
+  ...PRIVATE_ENV_INTERNAL_CONTROL_NAMES,
+  'RIKUNE_API_KEY',
+  'RIKUNE_ANALYZER_API_KEY',
+  'RUNTIME_HOST_AGENT_ENDPOINT',
+  'RUNTIME_HOST_AGENT_API_KEY',
+  'HOST_AGENT_API_KEY',
+  'HOST_AGENT_RUNTIME_API_KEY',
+  'RUNTIME_API_KEY',
+  'RIKUNE_HOST_AGENT_API_KEY',
+  'RIKUNE_RUNTIME_API_KEY',
+  'RIKUNE_RUNTIME_NODE_API_KEY',
+].join(',')
 
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) {
@@ -45,6 +59,19 @@ function writeExecutable(filePath: string, content: string): void {
   fs.chmodSync(filePath, 0o755)
 }
 
+function poisonPrivateEnvControls(
+  environment: NodeJS.ProcessEnv,
+  targetPath: string
+): NodeJS.ProcessEnv {
+  for (const name of PRIVATE_ENV_INTERNAL_CONTROL_NAMES) {
+    environment[name] = name.endsWith('_PATH') ? targetPath : `poison-${name.toLowerCase()}`
+  }
+  environment.RIKUNE_DOCKER_ENV_SNAPSHOT_STDIN = '1'
+  environment.RIKUNE_LOCAL_ENV_SNAPSHOT_STDIN = '1'
+  environment.RUNTIME_HOST_AGENT_ENDPOINT = 'https://poison.invalid'
+  return environment
+}
+
 function createDockerInstallerFixture(): { root: string; bin: string; target: string } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rikune-docker-installer-'))
   temporaryDirectories.push(root)
@@ -57,12 +84,20 @@ function createDockerInstallerFixture(): { root: string; bin: string; target: st
     path.join(process.cwd(), 'scripts', 'write-docker-runtime-env.mjs'),
     path.join(scripts, 'write-docker-runtime-env.mjs')
   )
+  fs.writeFileSync(path.join(scripts, 'generate-docker.mjs'), '#!/usr/bin/env node\n')
   fs.chmodSync(path.join(root, 'rikune.sh'), 0o755)
   writeExecutable(
     path.join(bin, 'npm'),
     `#!/usr/bin/env bash
 if [ "\${1:-}" = "--version" ]; then printf '10.0.0\\n'; exit 0; fi
-if [ "\${1:-}" = "ci" ]; then exit "\${RIKUNE_TEST_NPM_EXIT:-41}"; fi
+if [ "\${1:-}" = "ci" ]; then
+  if [ -n "\${RIKUNE_TEST_EXPECT_ABSENT:-}" ] && [ -e "\${RIKUNE_TEST_EXPECT_ABSENT}" ]; then exit 97; fi
+  IFS=, read -r -a forbidden_names <<< "\${RIKUNE_TEST_FORBIDDEN_ENV_NAMES:-}"
+  for forbidden_name in "\${forbidden_names[@]}"; do
+    if [ -n "$forbidden_name" ] && [ -n "\${!forbidden_name+x}" ]; then exit 96; fi
+  done
+  exit "\${RIKUNE_TEST_NPM_EXIT:-0}"
+fi
 exit 0
 `
   )
@@ -79,6 +114,54 @@ exit 0
 }
 
 describe('Docker runtime env writer', () => {
+  test('requires exactly one CLI operation selector and never applies selector precedence', () => {
+    if (process.platform === 'win32') return
+    const target = createTarget()
+    const fakeSecret = 'selector-secret-'.repeat(3)
+    fs.writeFileSync(target, `RIKUNE_API_KEY=${fakeSecret}\n`, { mode: 0o600 })
+    fs.chmodSync(target, 0o600)
+    const writerPath = path.join(process.cwd(), 'scripts', 'write-docker-runtime-env.mjs')
+    const cleanEnvironment: NodeJS.ProcessEnv = { ...process.env }
+    for (const name of PRIVATE_ENV_INTERNAL_CONTROL_NAMES) delete cleanEnvironment[name]
+
+    const missing = spawnSync(process.execPath, [writerPath], {
+      env: cleanEnvironment,
+      encoding: 'utf8',
+    })
+    expect(missing.status).not.toBe(0)
+    expect(missing.stdout).toBe('')
+    expect(missing.stderr).toContain('Exactly one private environment operation selector')
+
+    const poisoned = spawnSync(process.execPath, [writerPath], {
+      env: {
+        ...cleanEnvironment,
+        RIKUNE_VERIFY_PRIVATE_ENV_PATH: target,
+        RIKUNE_STAGE_DOCKER_ENV_PATH: target,
+      },
+      encoding: 'utf8',
+    })
+    expect(poisoned.status).not.toBe(0)
+    expect(poisoned.stdout).toBe('')
+    expect(poisoned.stderr).toContain(
+      'Exactly one private environment operation selector is required; received 2'
+    )
+    expect(`${poisoned.stdout}${poisoned.stderr}`).not.toContain(fakeSecret)
+    expect(fs.existsSync(target)).toBe(true)
+
+    const poisonedModifier = spawnSync(process.execPath, [writerPath], {
+      env: {
+        ...cleanEnvironment,
+        RIKUNE_STAGE_DOCKER_ENV_PATH: target,
+        RIKUNE_DOCKER_ENV_SNAPSHOT_STDIN: '1',
+      },
+      encoding: 'utf8',
+    })
+    expect(poisonedModifier.status).not.toBe(0)
+    expect(poisonedModifier.stdout).toBe('')
+    expect(poisonedModifier.stderr).toContain('controls are not valid')
+    expect(`${poisonedModifier.stdout}${poisonedModifier.stderr}`).not.toContain(fakeSecret)
+  })
+
   test('launches the Windows ACL helper with only trusted executable search paths', () => {
     let invocation:
       | { command: string; args: string[]; options: { env: Record<string, string> } }
@@ -323,19 +406,21 @@ describe('Docker runtime env writer', () => {
     )
     fs.writeFileSync(fixture.target, originalBytes, { mode: 0o600 })
     fs.chmodSync(fixture.target, 0o600)
-    const environment: NodeJS.ProcessEnv = {
-      ...process.env,
-      PATH: `${fixture.bin}${path.delimiter}${process.env.PATH ?? ''}`,
-      RIKUNE_TEST_NPM_EXIT: '41',
-    }
-    for (const name of [
-      'RIKUNE_API_KEY',
-      'RIKUNE_ANALYZER_API_KEY',
-      'RUNTIME_HOST_AGENT_API_KEY',
-      'RUNTIME_API_KEY',
-    ]) {
-      delete environment[name]
-    }
+    const snapshotText = encodePrivateEnvSnapshot(
+      capturePrivateEnvSnapshot({ targetPath: fixture.target, platform: 'linux' })
+    )
+    const explicitKey = 'ef'.repeat(32)
+    const environment = poisonPrivateEnvControls(
+      {
+        ...process.env,
+        PATH: `${fixture.bin}${path.delimiter}${process.env.PATH ?? ''}`,
+        RIKUNE_API_KEY: explicitKey,
+        RIKUNE_TEST_NPM_EXIT: '41',
+        RIKUNE_TEST_EXPECT_ABSENT: fixture.target,
+        RIKUNE_TEST_FORBIDDEN_ENV_NAMES: INSTALLER_FORBIDDEN_ENV_NAMES,
+      },
+      fixture.target
+    )
     const result = spawnSync(
       'bash',
       [
@@ -355,7 +440,10 @@ describe('Docker runtime env writer', () => {
     )
 
     expect(result.status).toBe(41)
-    expect(`${result.stdout}${result.stderr}`).not.toContain('bd'.repeat(32))
+    const output = `${result.stdout}${result.stderr}`
+    expect(output).not.toContain('bd'.repeat(32))
+    expect(output).not.toContain(explicitKey)
+    expect(output).not.toContain(snapshotText)
     expect(fs.readFileSync(fixture.target).equals(originalBytes)).toBe(true)
     expect(fs.statSync(fixture.target).mode & 0o777).toBe(0o600)
   })
@@ -363,19 +451,20 @@ describe('Docker runtime env writer', () => {
   test('real rikune.sh dependency failure leaves a previously absent env absent', () => {
     if (process.platform === 'win32') return
     const fixture = createDockerInstallerFixture()
-    const environment: NodeJS.ProcessEnv = {
-      ...process.env,
-      PATH: `${fixture.bin}${path.delimiter}${process.env.PATH ?? ''}`,
-      RIKUNE_TEST_NPM_EXIT: '42',
-    }
-    for (const name of [
-      'RIKUNE_API_KEY',
-      'RIKUNE_ANALYZER_API_KEY',
-      'RUNTIME_HOST_AGENT_API_KEY',
-      'RUNTIME_API_KEY',
-    ]) {
-      delete environment[name]
-    }
+    const environment = poisonPrivateEnvControls(
+      {
+        ...process.env,
+        PATH: `${fixture.bin}${path.delimiter}${process.env.PATH ?? ''}`,
+        RIKUNE_TEST_NPM_EXIT: '42',
+        RIKUNE_TEST_EXPECT_ABSENT: fixture.target,
+        RIKUNE_TEST_FORBIDDEN_ENV_NAMES: INSTALLER_FORBIDDEN_ENV_NAMES,
+      },
+      fixture.target
+    )
+    delete environment.RIKUNE_API_KEY
+    delete environment.RIKUNE_ANALYZER_API_KEY
+    delete environment.RUNTIME_HOST_AGENT_API_KEY
+    delete environment.RUNTIME_API_KEY
 
     const result = spawnSync(
       'bash',
@@ -397,6 +486,62 @@ describe('Docker runtime env writer', () => {
 
     expect(result.status).toBe(42)
     expect(fs.existsSync(fixture.target)).toBe(false)
+  })
+
+  test('real rikune.sh scrubs poisoned parent controls and completes the final private write', () => {
+    if (process.platform === 'win32') return
+    const fixture = createDockerInstallerFixture()
+    const originalBytes = Buffer.from(
+      `# poisoned parent success\r\nCUSTOM_SETTING=preserved\r\nRIKUNE_API_KEY=${'ab'.repeat(32)}\r\n`,
+      'utf8'
+    )
+    fs.writeFileSync(fixture.target, originalBytes, { mode: 0o600 })
+    fs.chmodSync(fixture.target, 0o600)
+    const snapshotText = encodePrivateEnvSnapshot(
+      capturePrivateEnvSnapshot({ targetPath: fixture.target, platform: 'linux' })
+    )
+    const explicitKey = 'cd'.repeat(32)
+    const environment = poisonPrivateEnvControls(
+      {
+        ...process.env,
+        PATH: `${fixture.bin}${path.delimiter}${process.env.PATH ?? ''}`,
+        RIKUNE_API_KEY: explicitKey,
+        RIKUNE_TEST_EXPECT_ABSENT: fixture.target,
+        RIKUNE_TEST_FORBIDDEN_ENV_NAMES: INSTALLER_FORBIDDEN_ENV_NAMES,
+      },
+      fixture.target
+    )
+
+    const result = spawnSync(
+      'bash',
+      [
+        path.join(fixture.root, 'rikune.sh'),
+        'install',
+        '--profile',
+        'static',
+        '--data-root',
+        path.join(fixture.root, 'data'),
+        '--skip-build',
+        '--skip-start',
+      ],
+      {
+        cwd: fixture.root,
+        env: environment,
+        encoding: 'utf8',
+        timeout: 15_000,
+      }
+    )
+
+    expect(result.status).toBe(0)
+    const output = `${result.stdout}${result.stderr}`
+    expect(output).not.toContain('ab'.repeat(32))
+    expect(output).not.toContain(explicitKey)
+    expect(output).not.toContain(snapshotText)
+    expect(fs.existsSync(fixture.target)).toBe(true)
+    expect(fs.statSync(fixture.target).mode & 0o777).toBe(0o600)
+    const values = parseDockerRuntimeEnv(fs.readFileSync(fixture.target, 'utf8'))
+    expect(values.RIKUNE_API_KEY).toBe(explicitKey)
+    expect(values.CUSTOM_SETTING).toBe('preserved')
   })
 
   test('replaces an empty existing key and carries hybrid credentials without logging', () => {
@@ -528,10 +673,19 @@ describe('Docker runtime env writer', () => {
     expect(powershellInstaller).toContain('$privateEnvTransactionCommitted = $true')
     expect(powershellInstaller).toContain('RIKUNE_NATIVE_EXIT_CODE')
     expect(powershellInstaller).toContain('exit $privateEnvFailureExitCode')
+    for (const name of PRIVATE_ENV_INTERNAL_CONTROL_NAMES) {
+      expect(shellInstaller).toContain(name)
+      expect(powershellInstaller).toContain(`"${name}"`)
+    }
+    const powershellScrubIndex = powershellInstaller.indexOf(
+      'foreach ($name in ($secretEnvironmentAliases + $privateEnvControlNames))'
+    )
     const dependencyIndex = powershellInstaller.indexOf('& npm ci --include=dev')
     const buildIndex = powershellInstaller.indexOf('& npm run build')
     const envWriteIndex = powershellInstaller.lastIndexOf('Write-EnvFile `')
     expect(dependencyIndex).toBeGreaterThanOrEqual(0)
+    expect(powershellScrubIndex).toBeGreaterThanOrEqual(0)
+    expect(dependencyIndex).toBeGreaterThan(powershellScrubIndex)
     expect(buildIndex).toBeGreaterThan(dependencyIndex)
     expect(envWriteIndex).toBeGreaterThan(buildIndex)
     const commitIndex = powershellInstaller.lastIndexOf('$privateEnvTransactionCommitted = $true')
@@ -555,6 +709,9 @@ describe('Docker runtime env writer', () => {
     expect(shellInstaller).toContain('RIKUNE_RESTORE_PRIVATE_ENV_PATH=')
     expect(shellInstaller).toContain('RIKUNE_DOCKER_ENV_SNAPSHOT_STDIN=1')
     expect(shellInstaller).toContain('[ "$original_status" -ne 0 ] || original_status=1')
+    const shellScrubIndex = shellInstaller.indexOf('unset RIKUNE_VERIFY_PRIVATE_ENV_PATH')
+    expect(shellScrubIndex).toBeGreaterThanOrEqual(0)
+    expect(shellInstaller.indexOf('npm ci --include=dev')).toBeGreaterThan(shellScrubIndex)
     const shellWriterIndex = shellInstaller.indexOf(
       'node "$PROJECT_ROOT/scripts/write-docker-runtime-env.mjs"'
     )
@@ -596,8 +753,10 @@ describe('Docker runtime env writer', () => {
     expect(runtimeInstaller).not.toContain('$env:HOST_AGENT_API_KEY = "$apiKey"')
     expect(runtimeInstaller).not.toContain('$env:HOST_AGENT_RUNTIME_API_KEY = "$apiKey"')
 
-    expect(powershellWrapper).toContain('RIKUNE_HOST_AGENT_API_KEY = $HostAgentApiKey')
-    expect(powershellWrapper).toContain('RIKUNE_RUNTIME_NODE_API_KEY = $RuntimeApiKey')
+    expect(powershellWrapper).toContain(
+      'RIKUNE_HOST_AGENT_API_KEY = $env:RUNTIME_HOST_AGENT_API_KEY'
+    )
+    expect(powershellWrapper).toContain('RIKUNE_RUNTIME_NODE_API_KEY = $env:RUNTIME_API_KEY')
     expect(powershellWrapper).toContain('RUNTIME_HOST_AGENT_API_KEY = $hostKey')
     expect(powershellWrapper).toContain('if ($AllowInsecureRuntimeHttp)')
     expect(powershellWrapper).not.toMatch(/\$args\s*\+=\s*@\("-ApiKey"/u)
@@ -633,6 +792,12 @@ describe('Docker runtime env writer', () => {
     expect(hybridInstaller).toContain('RIKUNE_RESTORE_PRIVATE_ENV_PATH=')
     expect(hybridInstaller).toContain('RIKUNE_DOCKER_ENV_SNAPSHOT_STDIN=1')
     expect(hybridInstaller).toContain('[ "$original_status" -ne 0 ] || original_status=1')
+    for (const name of PRIVATE_ENV_INTERNAL_CONTROL_NAMES) {
+      expect(hybridInstaller).toContain(name)
+    }
+    const hybridScrubIndex = hybridInstaller.indexOf('unset RIKUNE_VERIFY_PRIVATE_ENV_PATH')
+    expect(hybridScrubIndex).toBeGreaterThanOrEqual(0)
+    expect(hybridInstaller.indexOf('npm ci --include=dev')).toBeGreaterThan(hybridScrubIndex)
     const hybridWriterIndex = hybridInstaller.indexOf('RIKUNE_DOCKER_ENV_SNAPSHOT_STDIN=1')
     const hybridCommitIndex = hybridInstaller.lastIndexOf('commit_private_env_transaction')
     const hybridChmodIndex = hybridInstaller.indexOf('chmod 600 "$ENV_FILE"')

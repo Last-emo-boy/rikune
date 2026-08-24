@@ -6,6 +6,52 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+export const PRIVATE_ENV_INTERNAL_CONTROL_NAMES = Object.freeze([
+  'RIKUNE_VERIFY_PRIVATE_ENV_PATH',
+  'RIKUNE_STAGE_DOCKER_ENV_PATH',
+  'RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH',
+  'RIKUNE_RESTORE_PRIVATE_ENV_PATH',
+  'RIKUNE_REMOVE_PRIVATE_ENV_PATH',
+  'RIKUNE_DOCKER_ENV_SNAPSHOT_STDIN',
+  'RIKUNE_DOCKER_ENV_PATH',
+  'RIKUNE_DOCKER_ENV_DATA_ROOT',
+  'RIKUNE_DOCKER_ENV_PROFILE',
+  'RIKUNE_BUILD_HTTP_PROXY',
+  'RIKUNE_BUILD_HTTPS_PROXY',
+  'RIKUNE_BUILD_NO_PROXY',
+  'RIKUNE_ALLOW_INSECURE_RUNTIME_HTTP',
+  'RIKUNE_STAGE_LOCAL_ENV_PATH',
+  'RIKUNE_LOCAL_ENV_SNAPSHOT_STDIN',
+  'RIKUNE_LOCAL_EXISTING_ENV_BASE64',
+  'RIKUNE_LOCAL_ENV_PATH',
+  'RIKUNE_LOCAL_ENV_FORCE_KEYS',
+  'RIKUNE_PRIVATE_ENV_PATH',
+  'RIKUNE_PRIVATE_ENV_ACL_MODE',
+  'STAGED_LOCAL_ENV_BASE64',
+])
+
+export function selectExactlyOnePrivateEnvOperation(environment, operationSelectors) {
+  const selected = Object.entries(operationSelectors).filter(([, selector]) =>
+    Object.hasOwn(environment, selector)
+  )
+  if (selected.length !== 1) {
+    throw new Error(
+      `Exactly one private environment operation selector is required; received ${selected.length}`
+    )
+  }
+  return selected[0][0]
+}
+
+function assertPrivateEnvControlsAllowed(environment, operation, allowedOperation, controls) {
+  if (operation === allowedOperation) return
+  const unexpected = controls.filter((name) => Object.hasOwn(environment, name))
+  if (unexpected.length > 0) {
+    throw new Error(
+      `Private environment controls are not valid for the selected ${operation} operation: ${unexpected.join(', ')}`
+    )
+  }
+}
+
 function assertEnvValue(name, value) {
   const normalized = String(value ?? '')
   if (/[\r\n\0]/u.test(normalized)) {
@@ -771,48 +817,77 @@ async function readStandardInput() {
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : ''
 if (invokedPath === fileURLToPath(import.meta.url)) {
-  if (process.env.RIKUNE_VERIFY_PRIVATE_ENV_PATH) {
-    assertProtectedExistingFile({ targetPath: process.env.RIKUNE_VERIFY_PRIVATE_ENV_PATH })
-  } else if (process.env.RIKUNE_STAGE_DOCKER_ENV_PATH) {
-    const snapshot = capturePrivateEnvSnapshot({
-      targetPath: process.env.RIKUNE_STAGE_DOCKER_ENV_PATH,
-    })
-    process.stdout.write(encodePrivateEnvSnapshot(snapshot))
-  } else if (process.env.RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH) {
-    const snapshot = decodePrivateEnvSnapshot(await readStandardInput())
-    removePrivateEnvForSnapshot({
-      targetPath: process.env.RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH,
-      snapshot,
-    })
-  } else if (process.env.RIKUNE_RESTORE_PRIVATE_ENV_PATH) {
-    const snapshot = decodePrivateEnvSnapshot(await readStandardInput())
-    restorePrivateEnvSnapshot({
-      targetPath: process.env.RIKUNE_RESTORE_PRIVATE_ENV_PATH,
-      snapshot,
-    })
-  } else if (process.env.RIKUNE_REMOVE_PRIVATE_ENV_PATH) {
-    removeProtectedExistingFile({ targetPath: process.env.RIKUNE_REMOVE_PRIVATE_ENV_PATH })
-  } else {
-    const snapshot = process.env.RIKUNE_DOCKER_ENV_SNAPSHOT_STDIN
-      ? decodePrivateEnvSnapshot(await readStandardInput())
-      : undefined
-    if (snapshot) assertSnapshotTarget(snapshot, process.env.RIKUNE_DOCKER_ENV_PATH)
-    writeDockerRuntimeEnv({
-      targetPath: process.env.RIKUNE_DOCKER_ENV_PATH,
-      dataRoot: process.env.RIKUNE_DOCKER_ENV_DATA_ROOT,
-      profile: process.env.RIKUNE_DOCKER_ENV_PROFILE,
-      buildHttpProxy: process.env.RIKUNE_BUILD_HTTP_PROXY,
-      buildHttpsProxy: process.env.RIKUNE_BUILD_HTTPS_PROXY,
-      buildNoProxy: process.env.RIKUNE_BUILD_NO_PROXY,
-      analyzerApiKey: process.env.RIKUNE_API_KEY || process.env.RIKUNE_ANALYZER_API_KEY,
-      hostAgentEndpoint: process.env.RUNTIME_HOST_AGENT_ENDPOINT,
-      hostAgentApiKey: process.env.RUNTIME_HOST_AGENT_API_KEY,
-      runtimeApiKey: process.env.RUNTIME_API_KEY,
-      allowInsecureRuntimeHttp: /^(1|true|yes|on)$/iu.test(
-        process.env.RIKUNE_ALLOW_INSECURE_RUNTIME_HTTP || ''
-      ),
-      existingContent: snapshot ? privateEnvSnapshotContent(snapshot) : undefined,
-      requireAbsent: snapshot !== undefined,
-    })
+  const operation = selectExactlyOnePrivateEnvOperation(process.env, {
+    verify: 'RIKUNE_VERIFY_PRIVATE_ENV_PATH',
+    stageDocker: 'RIKUNE_STAGE_DOCKER_ENV_PATH',
+    removeSnapshot: 'RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH',
+    restoreSnapshot: 'RIKUNE_RESTORE_PRIVATE_ENV_PATH',
+    removeLegacy: 'RIKUNE_REMOVE_PRIVATE_ENV_PATH',
+    writeDocker: 'RIKUNE_DOCKER_ENV_PATH',
+  })
+  assertPrivateEnvControlsAllowed(process.env, operation, 'writeDocker', [
+    'RIKUNE_DOCKER_ENV_SNAPSHOT_STDIN',
+    'RIKUNE_DOCKER_ENV_DATA_ROOT',
+    'RIKUNE_DOCKER_ENV_PROFILE',
+    'RIKUNE_BUILD_HTTP_PROXY',
+    'RIKUNE_BUILD_HTTPS_PROXY',
+    'RIKUNE_BUILD_NO_PROXY',
+    'RIKUNE_ALLOW_INSECURE_RUNTIME_HTTP',
+  ])
+
+  switch (operation) {
+    case 'verify':
+      assertProtectedExistingFile({ targetPath: process.env.RIKUNE_VERIFY_PRIVATE_ENV_PATH })
+      break
+    case 'stageDocker': {
+      const snapshot = capturePrivateEnvSnapshot({
+        targetPath: process.env.RIKUNE_STAGE_DOCKER_ENV_PATH,
+      })
+      process.stdout.write(encodePrivateEnvSnapshot(snapshot))
+      break
+    }
+    case 'removeSnapshot': {
+      const snapshot = decodePrivateEnvSnapshot(await readStandardInput())
+      removePrivateEnvForSnapshot({
+        targetPath: process.env.RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH,
+        snapshot,
+      })
+      break
+    }
+    case 'restoreSnapshot': {
+      const snapshot = decodePrivateEnvSnapshot(await readStandardInput())
+      restorePrivateEnvSnapshot({
+        targetPath: process.env.RIKUNE_RESTORE_PRIVATE_ENV_PATH,
+        snapshot,
+      })
+      break
+    }
+    case 'removeLegacy':
+      removeProtectedExistingFile({ targetPath: process.env.RIKUNE_REMOVE_PRIVATE_ENV_PATH })
+      break
+    case 'writeDocker': {
+      const snapshot = process.env.RIKUNE_DOCKER_ENV_SNAPSHOT_STDIN
+        ? decodePrivateEnvSnapshot(await readStandardInput())
+        : undefined
+      if (snapshot) assertSnapshotTarget(snapshot, process.env.RIKUNE_DOCKER_ENV_PATH)
+      writeDockerRuntimeEnv({
+        targetPath: process.env.RIKUNE_DOCKER_ENV_PATH,
+        dataRoot: process.env.RIKUNE_DOCKER_ENV_DATA_ROOT,
+        profile: process.env.RIKUNE_DOCKER_ENV_PROFILE,
+        buildHttpProxy: process.env.RIKUNE_BUILD_HTTP_PROXY,
+        buildHttpsProxy: process.env.RIKUNE_BUILD_HTTPS_PROXY,
+        buildNoProxy: process.env.RIKUNE_BUILD_NO_PROXY,
+        analyzerApiKey: process.env.RIKUNE_API_KEY || process.env.RIKUNE_ANALYZER_API_KEY,
+        hostAgentEndpoint: process.env.RUNTIME_HOST_AGENT_ENDPOINT,
+        hostAgentApiKey: process.env.RUNTIME_HOST_AGENT_API_KEY,
+        runtimeApiKey: process.env.RUNTIME_API_KEY,
+        allowInsecureRuntimeHttp: /^(1|true|yes|on)$/iu.test(
+          process.env.RIKUNE_ALLOW_INSECURE_RUNTIME_HTTP || ''
+        ),
+        existingContent: snapshot ? privateEnvSnapshotContent(snapshot) : undefined,
+        requireAbsent: snapshot !== undefined,
+      })
+      break
+    }
   }
 }

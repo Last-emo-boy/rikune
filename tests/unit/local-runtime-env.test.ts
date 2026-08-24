@@ -10,11 +10,27 @@ import {
   writeLocalRuntimeEnv,
 } from '../../scripts/write-local-runtime-env.mjs'
 import {
+  capturePrivateEnvSnapshot,
+  encodePrivateEnvSnapshot,
+  PRIVATE_ENV_INTERNAL_CONTROL_NAMES,
   privateEnvSnapshotContent,
   removePrivateEnvForSnapshot,
 } from '../../scripts/write-docker-runtime-env.mjs'
 
 const temporaryDirectories: string[] = []
+const INSTALLER_FORBIDDEN_ENV_NAMES = [
+  ...PRIVATE_ENV_INTERNAL_CONTROL_NAMES,
+  'RIKUNE_API_KEY',
+  'RIKUNE_ANALYZER_API_KEY',
+  'RUNTIME_HOST_AGENT_ENDPOINT',
+  'RUNTIME_HOST_AGENT_API_KEY',
+  'HOST_AGENT_API_KEY',
+  'HOST_AGENT_RUNTIME_API_KEY',
+  'RUNTIME_API_KEY',
+  'RIKUNE_HOST_AGENT_API_KEY',
+  'RIKUNE_RUNTIME_API_KEY',
+  'RIKUNE_RUNTIME_NODE_API_KEY',
+].join(',')
 const template = `# generated
 NODE_ROLE=analyzer
 RUNTIME_MODE=disabled
@@ -39,6 +55,19 @@ function writeExecutable(filePath: string, content: string): void {
   fs.chmodSync(filePath, 0o755)
 }
 
+function poisonPrivateEnvControls(
+  environment: NodeJS.ProcessEnv,
+  targetPath: string
+): NodeJS.ProcessEnv {
+  for (const name of PRIVATE_ENV_INTERNAL_CONTROL_NAMES) {
+    environment[name] = name.endsWith('_PATH') ? targetPath : `poison-${name.toLowerCase()}`
+  }
+  environment.RIKUNE_DOCKER_ENV_SNAPSHOT_STDIN = '1'
+  environment.RIKUNE_LOCAL_ENV_SNAPSHOT_STDIN = '1'
+  environment.RUNTIME_HOST_AGENT_ENDPOINT = 'https://poison.invalid'
+  return environment
+}
+
 function createLocalInstallerFixture(): { root: string; bin: string; target: string } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rikune-local-installer-'))
   temporaryDirectories.push(root)
@@ -60,7 +89,14 @@ function createLocalInstallerFixture(): { root: string; bin: string; target: str
     path.join(bin, 'npm'),
     `#!/usr/bin/env bash
 if [ "\${1:-}" = "--version" ]; then printf '10.0.0\\n'; exit 0; fi
-if [ "\${1:-}" = "ci" ]; then exit "\${RIKUNE_TEST_NPM_EXIT:-37}"; fi
+if [ "\${1:-}" = "ci" ]; then
+  if [ -n "\${RIKUNE_TEST_EXPECT_ABSENT:-}" ] && [ -e "\${RIKUNE_TEST_EXPECT_ABSENT}" ]; then exit 97; fi
+  IFS=, read -r -a forbidden_names <<< "\${RIKUNE_TEST_FORBIDDEN_ENV_NAMES:-}"
+  for forbidden_name in "\${forbidden_names[@]}"; do
+    if [ -n "$forbidden_name" ] && [ -n "\${!forbidden_name+x}" ]; then exit 96; fi
+  done
+  exit "\${RIKUNE_TEST_NPM_EXIT:-37}"
+fi
 exit 0
 `
   )
@@ -75,6 +111,53 @@ exit 0
 }
 
 describe('secure local runtime env writer', () => {
+  test('requires exactly one local CLI operation selector without precedence', () => {
+    if (process.platform === 'win32') return
+    const targetPath = createTarget()
+    const fakeSecret = 'local-selector-secret-'.repeat(2)
+    fs.writeFileSync(targetPath, `API_KEY=${fakeSecret}\n`, { mode: 0o600 })
+    fs.chmodSync(targetPath, 0o600)
+    const writerPath = path.join(process.cwd(), 'scripts', 'write-local-runtime-env.mjs')
+    const cleanEnvironment: NodeJS.ProcessEnv = { ...process.env }
+    for (const name of PRIVATE_ENV_INTERNAL_CONTROL_NAMES) delete cleanEnvironment[name]
+
+    const missing = spawnSync(process.execPath, [writerPath], {
+      env: cleanEnvironment,
+      encoding: 'utf8',
+    })
+    expect(missing.status).not.toBe(0)
+    expect(missing.stdout).toBe('')
+    expect(missing.stderr).toContain('Exactly one private environment operation selector')
+
+    const poisoned = spawnSync(process.execPath, [writerPath], {
+      env: {
+        ...cleanEnvironment,
+        RIKUNE_STAGE_LOCAL_ENV_PATH: targetPath,
+        RIKUNE_LOCAL_ENV_PATH: targetPath,
+      },
+      input: template,
+      encoding: 'utf8',
+    })
+    expect(poisoned.status).not.toBe(0)
+    expect(poisoned.stdout).toBe('')
+    expect(poisoned.stderr).toContain('received 2')
+    expect(`${poisoned.stdout}${poisoned.stderr}`).not.toContain(fakeSecret)
+    expect(fs.existsSync(targetPath)).toBe(true)
+
+    const poisonedModifier = spawnSync(process.execPath, [writerPath], {
+      env: {
+        ...cleanEnvironment,
+        RIKUNE_STAGE_LOCAL_ENV_PATH: targetPath,
+        RIKUNE_LOCAL_ENV_SNAPSHOT_STDIN: '1',
+      },
+      encoding: 'utf8',
+    })
+    expect(poisonedModifier.status).not.toBe(0)
+    expect(poisonedModifier.stdout).toBe('')
+    expect(poisonedModifier.stderr).toContain('write controls require the write operation')
+    expect(`${poisonedModifier.stdout}${poisonedModifier.stderr}`).not.toContain(fakeSecret)
+  })
+
   test('generates a strong API key and creates the file with private POSIX mode', () => {
     const targetPath = createTarget()
     const result = writeLocalRuntimeEnv({
@@ -162,19 +245,23 @@ describe('secure local runtime env writer', () => {
         fs.writeFileSync(fixture.target, originalBytes, { mode: 0o600 })
         fs.chmodSync(fixture.target, 0o600)
       }
-      const environment: NodeJS.ProcessEnv = {
-        ...process.env,
-        PATH: `${fixture.bin}${path.delimiter}${process.env.PATH ?? ''}`,
-        RIKUNE_TEST_NPM_EXIT: String(exitCode),
-      }
-      for (const name of [
-        'RIKUNE_API_KEY',
-        'RIKUNE_ANALYZER_API_KEY',
-        'WSL_DISTRO_NAME',
-        'WSL_INTEROP',
-      ]) {
-        delete environment[name]
-      }
+      const snapshotText = encodePrivateEnvSnapshot(
+        capturePrivateEnvSnapshot({ targetPath: fixture.target, platform: 'linux' })
+      )
+      const explicitKey = 'de'.repeat(32)
+      const environment = poisonPrivateEnvControls(
+        {
+          ...process.env,
+          PATH: `${fixture.bin}${path.delimiter}${process.env.PATH ?? ''}`,
+          RIKUNE_API_KEY: explicitKey,
+          RIKUNE_TEST_NPM_EXIT: String(exitCode),
+          RIKUNE_TEST_EXPECT_ABSENT: fixture.target,
+          RIKUNE_TEST_FORBIDDEN_ENV_NAMES: INSTALLER_FORBIDDEN_ENV_NAMES,
+        },
+        fixture.target
+      )
+      delete environment.WSL_DISTRO_NAME
+      delete environment.WSL_INTEROP
       const result = spawnSync('bash', [path.join(fixture.root, 'install-local.sh')], {
         cwd: fixture.root,
         env: environment,
@@ -184,7 +271,10 @@ describe('secure local runtime env writer', () => {
       })
 
       expect(result.status).toBe(exitCode)
-      expect(`${result.stdout}${result.stderr}`).not.toContain('ac'.repeat(32))
+      const output = `${result.stdout}${result.stderr}`
+      expect(output).not.toContain('ac'.repeat(32))
+      expect(output).not.toContain(explicitKey)
+      expect(output).not.toContain(snapshotText)
       if (withOriginal) {
         expect(fs.readFileSync(fixture.target).equals(originalBytes)).toBe(true)
         expect(fs.statSync(fixture.target).mode & 0o777).toBe(0o600)
@@ -260,6 +350,16 @@ describe('secure local runtime env writer', () => {
     expect(shell).toContain('RIKUNE_RESTORE_PRIVATE_ENV_PATH=')
     expect(shell).toContain("trap 'rollback_private_env_transaction")
     expect(shell).toContain('[ "$original_status" -ne 0 ] || original_status=1')
+    for (const name of PRIVATE_ENV_INTERNAL_CONTROL_NAMES) {
+      expect(shell).toContain(name)
+      expect(powershell).toContain(`"${name}"`)
+    }
+    const shellScrubIndex = shell.indexOf('unset RIKUNE_API_KEY RIKUNE_ANALYZER_API_KEY')
+    const powershellScrubIndex = powershell.indexOf(
+      ') | ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }'
+    )
+    expect(shell.indexOf('npm ci --include=dev')).toBeGreaterThan(shellScrubIndex)
+    expect(powershell.indexOf('npm ci --include=dev')).toBeGreaterThan(powershellScrubIndex)
     expect(shell.lastIndexOf('\ncommit_private_env_transaction\n')).toBeGreaterThan(
       shell.indexOf('RIKUNE_LOCAL_ENV_SNAPSHOT_STDIN=1')
     )

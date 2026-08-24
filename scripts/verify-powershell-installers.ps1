@@ -410,6 +410,34 @@ Assert-Contract (
     $runtimeSource.Contains('Assert-SecureRuntimeEndpoint -Endpoint $HyperVRuntimeEndpoint -AllowInsecure:$AllowInsecureRuntimeHttp')
 ) "install-runtime-windows.ps1 must enforce the relayed insecure-HTTP opt-in on the Hyper-V Runtime endpoint"
 
+$privateEnvInternalControls = @(
+    'RIKUNE_VERIFY_PRIVATE_ENV_PATH',
+    'RIKUNE_STAGE_DOCKER_ENV_PATH',
+    'RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH',
+    'RIKUNE_RESTORE_PRIVATE_ENV_PATH',
+    'RIKUNE_REMOVE_PRIVATE_ENV_PATH',
+    'RIKUNE_DOCKER_ENV_SNAPSHOT_STDIN',
+    'RIKUNE_DOCKER_ENV_PATH',
+    'RIKUNE_DOCKER_ENV_DATA_ROOT',
+    'RIKUNE_DOCKER_ENV_PROFILE',
+    'RIKUNE_BUILD_HTTP_PROXY',
+    'RIKUNE_BUILD_HTTPS_PROXY',
+    'RIKUNE_BUILD_NO_PROXY',
+    'RIKUNE_ALLOW_INSECURE_RUNTIME_HTTP',
+    'RIKUNE_STAGE_LOCAL_ENV_PATH',
+    'RIKUNE_LOCAL_ENV_SNAPSHOT_STDIN',
+    'RIKUNE_LOCAL_EXISTING_ENV_BASE64',
+    'RIKUNE_LOCAL_ENV_PATH',
+    'RIKUNE_LOCAL_ENV_FORCE_KEYS',
+    'RIKUNE_PRIVATE_ENV_PATH',
+    'RIKUNE_PRIVATE_ENV_ACL_MODE',
+    'STAGED_LOCAL_ENV_BASE64'
+)
+foreach ($controlName in $privateEnvInternalControls) {
+    Assert-Contract ($dockerSource.Contains('"' + $controlName + '"')) "Docker installer must scrub inherited private env control '$controlName'"
+    Assert-Contract ($localInstallerSource.Contains('"' + $controlName + '"')) "Local PowerShell installer must scrub inherited private env control '$controlName'"
+}
+
 foreach ($requiredFragment in @(
     'RIKUNE_STAGE_DOCKER_ENV_PATH',
     'RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH',
@@ -426,12 +454,15 @@ foreach ($requiredFragment in @(
     Assert-Contract ($dockerSource.Contains($requiredFragment)) "Docker installer is missing the private env transaction fragment '$requiredFragment'"
 }
 $dockerStageIndex = $dockerSource.IndexOf('Get-PrivateEnvSnapshot -Path $envFile')
+$dockerScrubIndex = $dockerSource.IndexOf('foreach ($name in ($secretEnvironmentAliases + $privateEnvControlNames))')
 $dockerDependencyIndex = $dockerSource.IndexOf('& npm ci --include=dev')
 $dockerWriterIndex = $dockerSource.LastIndexOf('Write-EnvFile `')
 $dockerCommitIndex = $dockerSource.LastIndexOf('$privateEnvTransactionCommitted = $true')
 $dockerComposeIndex = $dockerSource.IndexOf('Write-Step "Docker Compose"')
 Assert-Contract (
     $dockerStageIndex -ge 0 -and
+    $dockerScrubIndex -ge 0 -and
+    $dockerStageIndex -gt $dockerScrubIndex -and
     $dockerDependencyIndex -gt $dockerStageIndex -and
     $dockerWriterIndex -gt $dockerDependencyIndex -and
     $dockerCommitIndex -gt $dockerWriterIndex -and
@@ -452,11 +483,14 @@ foreach ($requiredFragment in @(
     Assert-Contract ($localInstallerSource.Contains($requiredFragment)) "Local PowerShell installer is missing the private env transaction fragment '$requiredFragment'"
 }
 $localStageIndex = $localInstallerSource.IndexOf('Get-LocalPrivateEnvSnapshot -Path $envFile')
+$localScrubIndex = $localInstallerSource.IndexOf(') | ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }')
 $localDependencyIndex = $localInstallerSource.IndexOf('npm ci --include=dev')
 $localWriterIndex = $localInstallerSource.IndexOf('RIKUNE_LOCAL_ENV_SNAPSHOT_STDIN = "1"')
 $localCommitIndex = $localInstallerSource.LastIndexOf('$privateEnvTransactionCommitted = $true')
 Assert-Contract (
     $localStageIndex -ge 0 -and
+    $localScrubIndex -ge 0 -and
+    $localStageIndex -gt $localScrubIndex -and
     $localDependencyIndex -gt $localStageIndex -and
     $localWriterIndex -gt $localDependencyIndex -and
     $localCommitIndex -gt $localWriterIndex

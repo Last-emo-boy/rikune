@@ -11,6 +11,7 @@ import {
   privateEnvSnapshotContent,
   readPrivateUtf8File,
   resolveAnalyzerApiKey,
+  selectExactlyOnePrivateEnvOperation,
   writePrivateUtf8File,
 } from './write-docker-runtime-env.mjs'
 
@@ -186,7 +187,20 @@ async function readStandardInput() {
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : ''
 if (invokedPath === fileURLToPath(import.meta.url)) {
-  if (Object.hasOwn(process.env, 'RIKUNE_STAGE_LOCAL_ENV_PATH')) {
+  const operation = selectExactlyOnePrivateEnvOperation(process.env, {
+    stageLocal: 'RIKUNE_STAGE_LOCAL_ENV_PATH',
+    writeLocal: 'RIKUNE_LOCAL_ENV_PATH',
+  })
+  if (
+    operation !== 'writeLocal' &&
+    ['RIKUNE_LOCAL_ENV_SNAPSHOT_STDIN', 'RIKUNE_LOCAL_EXISTING_ENV_BASE64'].some((name) =>
+      Object.hasOwn(process.env, name)
+    )
+  ) {
+    throw new Error('Local private environment write controls require the write operation')
+  }
+
+  if (operation === 'stageLocal') {
     const snapshot = stageLocalRuntimeEnv({
       targetPath: process.env.RIKUNE_STAGE_LOCAL_ENV_PATH,
     })

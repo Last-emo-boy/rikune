@@ -640,6 +640,30 @@ $secretEnvironmentAliases = @(
     "RIKUNE_RUNTIME_API_KEY",
     "RIKUNE_RUNTIME_NODE_API_KEY"
 )
+$privateEnvControlNames = @(
+    "RIKUNE_VERIFY_PRIVATE_ENV_PATH",
+    "RIKUNE_STAGE_DOCKER_ENV_PATH",
+    "RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH",
+    "RIKUNE_RESTORE_PRIVATE_ENV_PATH",
+    "RIKUNE_REMOVE_PRIVATE_ENV_PATH",
+    "RIKUNE_DOCKER_ENV_SNAPSHOT_STDIN",
+    "RIKUNE_DOCKER_ENV_PATH",
+    "RIKUNE_DOCKER_ENV_DATA_ROOT",
+    "RIKUNE_DOCKER_ENV_PROFILE",
+    "RIKUNE_BUILD_HTTP_PROXY",
+    "RIKUNE_BUILD_HTTPS_PROXY",
+    "RIKUNE_BUILD_NO_PROXY",
+    "RIKUNE_ALLOW_INSECURE_RUNTIME_HTTP",
+    "RIKUNE_STAGE_LOCAL_ENV_PATH",
+    "RIKUNE_LOCAL_ENV_SNAPSHOT_STDIN",
+    "RIKUNE_LOCAL_EXISTING_ENV_BASE64",
+    "RIKUNE_LOCAL_ENV_PATH",
+    "RIKUNE_LOCAL_ENV_FORCE_KEYS",
+    "RIKUNE_PRIVATE_ENV_PATH",
+    "RIKUNE_PRIVATE_ENV_ACL_MODE",
+    "STAGED_LOCAL_ENV_BASE64",
+    "RUNTIME_HOST_AGENT_ENDPOINT"
+)
 if ([string]::IsNullOrWhiteSpace($HostAgentEndpoint)) {
     $HostAgentEndpoint = $env:RUNTIME_HOST_AGENT_ENDPOINT
 }
@@ -659,10 +683,9 @@ $AnalyzerApiKey = if (-not [string]::IsNullOrWhiteSpace($env:RIKUNE_API_KEY)) {
 } else {
     New-SecureApiKey
 }
-foreach ($name in $secretEnvironmentAliases) {
+foreach ($name in ($secretEnvironmentAliases + $privateEnvControlNames)) {
     [Environment]::SetEnvironmentVariable($name, $null, "Process")
 }
-[Environment]::SetEnvironmentVariable("RIKUNE_REMOVE_PRIVATE_ENV_PATH", $null, "Process")
 Assert-NoSecretEnvironment -Names $secretEnvironmentAliases
 Assert-StrongRuntimeApiKey -Name "Analyzer API key" -Value $AnalyzerApiKey
 
