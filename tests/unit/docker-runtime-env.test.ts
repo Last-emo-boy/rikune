@@ -226,6 +226,10 @@ describe('Docker runtime env writer', () => {
     const aclScript = Buffer.from(invocation!.args[encodedIndex + 1], 'base64').toString('utf16le')
     expect(aclScript.trimStart().startsWith('$env:PSModulePath = $env:SystemRoot')).toBe(true)
     expect(aclScript.indexOf('$env:PSModulePath =')).toBeLessThan(aclScript.indexOf('New-Object'))
+    expect(aclScript).toContain(
+      "[Console]::Error.Write('RIKUNE_PRIVATE_FILE_ACL_FAILURE=' + $Reason)"
+    )
+    expect(aclScript).toContain('exit 86')
 
     expect(() =>
       invokeWindowsFileAcl('C:\\secure\\.env', 'verify', {
@@ -234,6 +238,95 @@ describe('Docker runtime env writer', () => {
         spawn: () => ({ status: 0, stdout: 'RIKUNE_PRIVATE_FILE_ACL_V1', stderr: '' }),
       })
     ).toThrow('SystemRoot and windir')
+  })
+
+  test('classifies Windows ACL helper failures without exposing child output', () => {
+    const target = 'C:\\secure\\child-secret-marker.env'
+    const environment = { SystemRoot: 'C:\\Windows' }
+    const powershell = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
+    const cases = [
+      {
+        phase: 'snapshot-match',
+        category: 'acl-snapshot-match-spawn',
+        result: {
+          error: new Error('child-secret-marker spawn failure'),
+          status: null,
+          stdout: '',
+          stderr: '',
+        },
+      },
+      {
+        phase: 'pre-unlink',
+        category: 'acl-pre-unlink-owner',
+        result: {
+          status: 86,
+          stdout: '',
+          stderr: 'RIKUNE_PRIVATE_FILE_ACL_FAILURE=owner',
+        },
+      },
+      {
+        phase: 'snapshot-match',
+        category: 'acl-snapshot-match-child-exit',
+        result: {
+          status: 1,
+          stdout: 'child-secret-marker',
+          stderr: `implicit failure for ${target}`,
+        },
+      },
+      {
+        phase: 'snapshot-match',
+        category: 'acl-snapshot-match-child-exit',
+        result: {
+          status: 1,
+          stdout: '',
+          stderr: 'RIKUNE_PRIVATE_FILE_ACL_FAILURE=owner',
+        },
+      },
+      {
+        phase: 'pre-unlink',
+        category: 'acl-pre-unlink-child-exit',
+        result: {
+          status: 86,
+          stdout: '',
+          stderr: 'RIKUNE_PRIVATE_FILE_ACL_FAILURE=future-reason',
+        },
+      },
+      {
+        phase: 'pre-unlink',
+        category: 'acl-pre-unlink-child-exit',
+        result: {
+          status: 86,
+          stdout: 'child-secret-marker',
+          stderr: 'RIKUNE_PRIVATE_FILE_ACL_FAILURE=owner',
+        },
+      },
+      {
+        phase: 'attacker-phase',
+        category: 'acl-unscoped-marker',
+        result: { status: 0, stdout: 'wrong-child-secret-marker', stderr: '' },
+      },
+    ]
+
+    for (const testCase of cases) {
+      let failure: unknown
+      try {
+        invokeWindowsFileAcl(target, 'verify', {
+          environment,
+          powershell,
+          failurePhase: testCase.phase,
+          spawn: () => testCase.result,
+        })
+      } catch (error) {
+        failure = error
+      }
+      expect(failure).toBeInstanceOf(Error)
+      const message = (failure as Error).message
+      expect(message).toBe(
+        `RIKUNE_PRIVATE_ENV_FAILURE=${testCase.category}: Unable to verify Windows ACL`
+      )
+      expect(message).not.toContain('child-secret-marker')
+      expect(message).not.toContain('RIKUNE_PRIVATE_FILE_ACL_FAILURE')
+    }
   })
 
   test('generates one strong analyzer key and writes both server and client settings', () => {
@@ -297,8 +390,12 @@ describe('Docker runtime env writer', () => {
     )
     fs.writeFileSync(target, originalBytes)
     const verified: string[] = []
+    const verificationPhases: string[] = []
     const restricted: string[] = []
-    const verifyWindowsAcl = (filePath: string) => verified.push(filePath)
+    const verifyWindowsAcl = (filePath: string, options?: { failurePhase?: string }) => {
+      verified.push(filePath)
+      verificationPhases.push(options?.failurePhase ?? 'unscoped')
+    }
     const restrictWindowsAcl = (filePath: string) => restricted.push(filePath)
     const snapshot = capturePrivateEnvSnapshot({
       targetPath: target,
@@ -323,7 +420,42 @@ describe('Docker runtime env writer', () => {
     expect(fs.readFileSync(target).equals(originalBytes)).toBe(true)
     expect(restricted.some((filePath) => filePath === target)).toBe(true)
     expect(verified.filter((filePath) => filePath === target).length).toBeGreaterThanOrEqual(2)
+    expect(verificationPhases.slice(0, 3)).toEqual(['capture', 'snapshot-match', 'pre-unlink'])
   })
+
+  test.each([
+    { failCall: 1, expectedPhases: ['snapshot-match'] },
+    { failCall: 2, expectedPhases: ['snapshot-match', 'pre-unlink'] },
+  ])(
+    'keeps the Windows snapshot intact when ACL verification call $failCall fails',
+    ({ failCall, expectedPhases }) => {
+      const target = createTarget()
+      const originalBytes = Buffer.from('CUSTOM_SETTING=windows-acl-phase\r\n', 'utf8')
+      fs.writeFileSync(target, originalBytes)
+      const snapshot = capturePrivateEnvSnapshot({
+        targetPath: target,
+        platform: 'win32',
+        verifyWindowsAcl: () => undefined,
+      })
+      const observedPhases: string[] = []
+      let calls = 0
+
+      expect(() =>
+        removePrivateEnvForSnapshot({
+          targetPath: target,
+          snapshot,
+          platform: 'win32',
+          verifyWindowsAcl: (_filePath: string, options?: { failurePhase?: string }) => {
+            calls += 1
+            observedPhases.push(options?.failurePhase ?? 'unscoped')
+            if (calls === failCall) throw new Error(`fixed-${options?.failurePhase}`)
+          },
+        })
+      ).toThrow(`fixed-${expectedPhases.at(-1)}`)
+      expect(observedPhases).toEqual(expectedPhases)
+      expect(fs.readFileSync(target).equals(originalBytes)).toBe(true)
+    }
+  )
 
   test('keeps the no-original state absent when a transaction fails before the writer commits', () => {
     if (process.platform === 'win32') return
@@ -759,6 +891,7 @@ describe('Docker runtime env writer', () => {
     expect(runtimeInstaller).toContain('RIKUNE_REMOVE_PRIVATE_ENV_SNAPSHOT_PATH')
     expect(runtimeInstaller).toContain('RIKUNE_RESTORE_PRIVATE_ENV_PATH')
     expect(runtimeInstaller).toContain('RIKUNE_NATIVE_FAILURE_CATEGORY')
+    expect(runtimeInstaller).toContain('RIKUNE_PRIVATE_ENV_FAILURE=')
     expect(runtimeInstaller).toContain(
       '$operationOutput = $Snapshot | & $NodePath $WriterPath 2>&1'
     )

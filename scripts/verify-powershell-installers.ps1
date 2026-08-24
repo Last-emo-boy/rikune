@@ -361,7 +361,9 @@ $nativeDiagnosticCases = @(
     @{ Snapshot = "snapshot-secret-eperm"; Category = "unlink-eperm"; ExitCode = 73; Phase = "verifier-rollback-remove"; UseRemoveWrapper = $true },
     @{ Snapshot = "snapshot-secret-ebusy"; Category = "unlink-ebusy"; ExitCode = 74; Phase = "verifier-commit-remove"; UseRemoveWrapper = $true },
     @{ Snapshot = "snapshot-secret-eacces"; Category = "unlink-eacces"; ExitCode = 75; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false },
-    @{ Snapshot = "snapshot-secret-acl"; Category = "acl-verify"; ExitCode = 76; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false }
+    @{ Snapshot = "snapshot-secret-acl"; Category = "acl-verify"; ExitCode = 76; Phase = "verifier-diagnostic"; UseRemoveWrapper = $false },
+    @{ Snapshot = "snapshot-secret-acl-detail"; Category = "acl-snapshot-match-owner"; ExitCode = 77; Phase = "verifier-rollback-remove"; UseRemoveWrapper = $true },
+    @{ Snapshot = "snapshot-secret-acl-pre-unlink"; Category = "acl-pre-unlink-rule"; ExitCode = 78; Phase = "verifier-commit-remove"; UseRemoveWrapper = $true }
 )
 New-Item -ItemType Directory -Path $nativeDiagnosticRoot -Force | Out-Null
 try {
@@ -376,8 +378,10 @@ process.stdin.on('end', () => {
     'snapshot-secret-ebusy': [74, `Error: EBUSY: resource busy or locked, unlink '${mode}-child-secret-marker'\n`],
     'snapshot-secret-eacces': [75, `Error: EACCES: permission denied, unlink '${mode}-child-secret-marker'\n`],
     'snapshot-secret-acl': [76, `Error: Unable to verify Windows ACL on '${mode}-Error: EPERM: operation not permitted, unlink-child-secret-marker'\n`],
+    'snapshot-secret-acl-detail': [77, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-snapshot-match-owner: Unable to verify Windows ACL\nError: ignored '${mode}-EPERM-unlink-child-secret-marker'\n`],
+    'snapshot-secret-acl-pre-unlink': [78, `Error: RIKUNE_PRIVATE_ENV_FAILURE=acl-pre-unlink-rule: Unable to verify Windows ACL\nError: ignored '${mode}-EACCES-unlink-child-secret-marker'\n`],
   }
-  const selected = cases[mode] ?? [77, `Error: unclassified ${mode}-child-secret-marker\n`]
+  const selected = cases[mode] ?? [79, `Error: unclassified ${mode}-child-secret-marker\n`]
   process.stderr.write(selected[1])
   process.exit(selected[0])
 })
@@ -772,6 +776,7 @@ foreach ($requiredFragment in @(
     '$privateEnvTransactionCommitted = $true',
     'RIKUNE_NATIVE_EXIT_CODE',
     'RIKUNE_NATIVE_FAILURE_CATEGORY',
+    'RIKUNE_PRIVATE_ENV_FAILURE=',
     '$operationOutput = $Snapshot | & $NodePath $WriterPath 2>&1',
     '$nativeFailureCategory = "unclassified"',
     '$PSNativeCommandUseErrorActionPreference = $false',

@@ -101,23 +101,47 @@ function commandFailure(result) {
 }
 
 const WINDOWS_PRIVATE_FILE_ACL_MARKER = 'RIKUNE_PRIVATE_FILE_ACL_V1'
+const WINDOWS_PRIVATE_FILE_ACL_FAILURE_PREFIX = 'RIKUNE_PRIVATE_FILE_ACL_FAILURE='
+const WINDOWS_PRIVATE_FILE_ACL_ASSERTION_EXIT_CODE = 86
+const WINDOWS_PRIVATE_FILE_ACL_FAILURE_REASONS = new Set([
+  'missing-target',
+  'not-file',
+  'reparse',
+  'sid',
+  'invalid-operation',
+  'inheritance',
+  'owner',
+  'entry-count',
+  'rule',
+])
+const WINDOWS_PRIVATE_FILE_ACL_FAILURE_PHASES = new Set([
+  'capture',
+  'snapshot-match',
+  'pre-unlink',
+  'unscoped',
+])
 const WINDOWS_PRIVATE_FILE_ACL_SCRIPT = String.raw`
 $env:PSModulePath = $env:SystemRoot + '\System32\WindowsPowerShell\v1.0\Modules'
 $ErrorActionPreference = 'Stop'
 $targetPath = $env:RIKUNE_PRIVATE_ENV_PATH
 $mode = $env:RIKUNE_PRIVATE_ENV_ACL_MODE
-if ([string]::IsNullOrWhiteSpace($targetPath)) { throw 'Missing private file path' }
+function Fail-PrivateFileAcl {
+    param([string]$Reason)
+    [Console]::Error.Write('${WINDOWS_PRIVATE_FILE_ACL_FAILURE_PREFIX}' + $Reason)
+    exit ${WINDOWS_PRIVATE_FILE_ACL_ASSERTION_EXIT_CODE}
+}
+if ([string]::IsNullOrWhiteSpace($targetPath)) { Fail-PrivateFileAcl 'missing-target' }
 
 $attributes = [System.IO.File]::GetAttributes($targetPath)
 if (($attributes -band [System.IO.FileAttributes]::Directory) -ne 0) {
-    throw 'Private environment path must be a regular file'
+    Fail-PrivateFileAcl 'not-file'
 }
 if (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-    throw 'Private environment file must not be a reparse point'
+    Fail-PrivateFileAcl 'reparse'
 }
 
 $currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-if ($null -eq $currentSid) { throw 'Unable to resolve current Windows SID' }
+if ($null -eq $currentSid) { Fail-PrivateFileAcl 'sid' }
 if ($mode -eq 'set') {
     $security = New-Object System.Security.AccessControl.FileSecurity
     $security.SetOwner($currentSid)
@@ -130,15 +154,15 @@ if ($mode -eq 'set') {
     $security.SetAccessRule($rule)
     [System.IO.File]::SetAccessControl($targetPath, $security)
 } elseif ($mode -ne 'verify') {
-    throw 'Invalid private file ACL operation'
+    Fail-PrivateFileAcl 'invalid-operation'
 }
 
 $acl = [System.IO.File]::GetAccessControl($targetPath)
-if (-not $acl.AreAccessRulesProtected) { throw 'Private file ACL inheritance is enabled' }
+if (-not $acl.AreAccessRulesProtected) { Fail-PrivateFileAcl 'inheritance' }
 $ownerSid = $acl.GetOwner([System.Security.Principal.SecurityIdentifier])
-if ($ownerSid.Value -ne $currentSid.Value) { throw 'Private file has an unexpected owner' }
+if ($ownerSid.Value -ne $currentSid.Value) { Fail-PrivateFileAcl 'owner' }
 $rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
-if ($rules.Count -ne 1) { throw 'Private file must have exactly one ACL entry' }
+if ($rules.Count -ne 1) { Fail-PrivateFileAcl 'entry-count' }
 $actual = $rules[0]
 if (
     $actual.IsInherited -or
@@ -147,9 +171,31 @@ if (
     $actual.FileSystemRights -ne [System.Security.AccessControl.FileSystemRights]::FullControl -or
     $actual.InheritanceFlags -ne [System.Security.AccessControl.InheritanceFlags]::None -or
     $actual.PropagationFlags -ne [System.Security.AccessControl.PropagationFlags]::None
-) { throw 'Private file ACL is not exact current-user FullControl' }
+) { Fail-PrivateFileAcl 'rule' }
 [Console]::Out.Write('${WINDOWS_PRIVATE_FILE_ACL_MARKER}')
 `
+
+function normalizeWindowsAclFailurePhase(value) {
+  const phase = String(value ?? '')
+  return WINDOWS_PRIVATE_FILE_ACL_FAILURE_PHASES.has(phase) ? phase : 'unscoped'
+}
+
+function windowsAclChildFailureReason(result) {
+  if (result.status !== WINDOWS_PRIVATE_FILE_ACL_ASSERTION_EXIT_CODE) return 'child-exit'
+  const output = commandFailure(result)
+  const marker = new RegExp(`^${WINDOWS_PRIVATE_FILE_ACL_FAILURE_PREFIX}([a-z0-9-]+)$`, 'u').exec(
+    output
+  )
+  return marker && WINDOWS_PRIVATE_FILE_ACL_FAILURE_REASONS.has(marker[1])
+    ? marker[1]
+    : 'child-exit'
+}
+
+function windowsAclFailure(mode, phase, reason) {
+  const action = mode === 'set' ? 'restrict' : 'verify'
+  const category = `acl-${normalizeWindowsAclFailurePhase(phase)}-${reason}`
+  return new Error(`RIKUNE_PRIVATE_ENV_FAILURE=${category}: Unable to ${action} Windows ACL`)
+}
 
 function readWindowsEnvironmentValue(environment, name) {
   const matchedName = Object.keys(environment).find(
@@ -232,14 +278,14 @@ export function invokeWindowsFileAcl(filePath, mode, options = {}) {
     ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encodedCommand],
     { encoding: 'utf8', windowsHide: true, env: childEnvironment }
   )
-  if (
-    result.error ||
-    result.status !== 0 ||
-    String(result.stdout || '').trim() !== WINDOWS_PRIVATE_FILE_ACL_MARKER
-  ) {
-    throw new Error(
-      `Unable to ${mode === 'set' ? 'restrict' : 'verify'} Windows ACL on ${filePath}: ${result.error?.message ?? commandFailure(result)}`
-    )
+  if (result.error) {
+    throw windowsAclFailure(mode, options.failurePhase, 'spawn')
+  }
+  if (result.status !== 0) {
+    throw windowsAclFailure(mode, options.failurePhase, windowsAclChildFailureReason(result))
+  }
+  if (String(result.stdout || '').trim() !== WINDOWS_PRIVATE_FILE_ACL_MARKER) {
+    throw windowsAclFailure(mode, options.failurePhase, 'marker')
   }
 }
 
@@ -270,6 +316,7 @@ export function assertProtectedExistingFile({
   platform = process.platform,
   verifyWindowsAcl = verifyWindowsFileAcl,
   maxBytes = 64 * 1024,
+  aclFailurePhase = 'unscoped',
 }) {
   const absoluteTarget = path.resolve(requireEnvValue('targetPath', targetPath))
   const initial = fs.lstatSync(absoluteTarget)
@@ -289,7 +336,7 @@ export function assertProtectedExistingFile({
     )
   }
   if (platform === 'win32') {
-    verifyWindowsAcl(absoluteTarget)
+    verifyWindowsAcl(absoluteTarget, { failurePhase: aclFailurePhase })
   } else {
     if (typeof process.getuid !== 'function' || initial.uid !== process.getuid()) {
       throw new Error(
@@ -308,9 +355,16 @@ export function readPrivateUtf8File({
   platform = process.platform,
   verifyWindowsAcl = verifyWindowsFileAcl,
   maxBytes = 64 * 1024,
+  aclFailurePhase = 'unscoped',
 }) {
   return new TextDecoder('utf-8', { fatal: true }).decode(
-    readPrivateUtf8Bytes({ targetPath, platform, verifyWindowsAcl, maxBytes })
+    readPrivateUtf8Bytes({
+      targetPath,
+      platform,
+      verifyWindowsAcl,
+      maxBytes,
+      aclFailurePhase,
+    })
   )
 }
 
@@ -319,12 +373,14 @@ export function readPrivateUtf8Bytes({
   platform = process.platform,
   verifyWindowsAcl = verifyWindowsFileAcl,
   maxBytes = 64 * 1024,
+  aclFailurePhase = 'unscoped',
 }) {
   const { absoluteTarget, initial } = assertProtectedExistingFile({
     targetPath,
     platform,
     verifyWindowsAcl,
     maxBytes,
+    aclFailurePhase,
   })
   const noFollow = fs.constants.O_NOFOLLOW || 0
   const closeOnExec = fs.constants.O_CLOEXEC || 0
@@ -397,6 +453,7 @@ export function capturePrivateEnvSnapshot({
     targetPath: absoluteTarget,
     platform,
     verifyWindowsAcl,
+    aclFailurePhase: 'capture',
   })
   if (originalBytes.includes(0)) {
     throw new Error(`Private environment target must not contain NUL bytes: ${absoluteTarget}`)
@@ -493,13 +550,20 @@ export function removePrivateEnvForSnapshot({
     }
     return false
   }
-  if (!snapshotMatchesCurrentFile(snapshot, { platform, verifyWindowsAcl })) {
+  if (
+    !snapshotMatchesCurrentFile(snapshot, {
+      platform,
+      verifyWindowsAcl,
+      aclFailurePhase: 'snapshot-match',
+    })
+  ) {
     throw new Error('Private environment target changed after the transaction snapshot')
   }
   return removeProtectedExistingFile({
     targetPath: absoluteTarget,
     platform,
     verifyWindowsAcl,
+    aclFailurePhase: 'pre-unlink',
   })
 }
 
@@ -544,6 +608,7 @@ export function removeProtectedExistingFile({
   targetPath,
   platform = process.platform,
   verifyWindowsAcl = verifyWindowsFileAcl,
+  aclFailurePhase = 'unscoped',
 }) {
   const absoluteTarget = path.resolve(requireEnvValue('targetPath', targetPath))
   if (!pathEntryExists(absoluteTarget)) return false
@@ -551,6 +616,7 @@ export function removeProtectedExistingFile({
     targetPath: absoluteTarget,
     platform,
     verifyWindowsAcl,
+    aclFailurePhase,
   })
   fs.unlinkSync(absoluteTarget)
   if (pathEntryExists(absoluteTarget)) {
