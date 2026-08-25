@@ -649,6 +649,33 @@ describe('Docker runtime env writer', () => {
           "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Threading.Tasks.Task' threw an exception.\r\n",
       },
       {
+        name: 'Utils type initializer exception',
+        expected: 'legacy-en-utils-type-init-shape',
+        canaries: [
+          "The type initializer for 'System.Management.Automation.Utils' threw an exception.",
+        ],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.Automation.Utils' threw an exception.\r\n",
+      },
+      {
+        name: 'PSVersionInfo type initializer exception',
+        expected: 'legacy-en-psversioninfo-type-init-shape',
+        canaries: [
+          "The type initializer for 'System.Management.Automation.PSVersionInfo' threw an exception.",
+        ],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.Automation.PSVersionInfo' threw an exception.\r\n",
+      },
+      {
+        name: 'PSSnapInReader type initializer exception',
+        expected: 'legacy-en-pssnapin-reader-type-init-shape',
+        canaries: [
+          "The type initializer for 'System.Management.Automation.PSSnapInReader' threw an exception.",
+        ],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.Automation.PSSnapInReader' threw an exception.\r\n",
+      },
+      {
         name: 'other Microsoft.PowerShell type initializer uses namespace fallback',
         expected: 'legacy-en-microsoft-powershell-namespace-type-init-shape',
         canaries: [
@@ -694,6 +721,33 @@ describe('Docker runtime env writer', () => {
         ],
         stderr:
           "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.Automation.Tracing.PSetwLog' threw an exception.\r\n",
+      },
+      {
+        name: 'case-variant Utils type falls back to System.Management.Automation namespace',
+        expected: 'legacy-en-sma-namespace-type-init-shape',
+        canaries: [
+          "The type initializer for 'System.Management.Automation.utils' threw an exception.",
+        ],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.Automation.utils' threw an exception.\r\n",
+      },
+      {
+        name: 'case-variant PSVersionInfo type falls back to System.Management.Automation namespace',
+        expected: 'legacy-en-sma-namespace-type-init-shape',
+        canaries: [
+          "The type initializer for 'System.Management.Automation.PSVersionInfO' threw an exception.",
+        ],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.Automation.PSVersionInfO' threw an exception.\r\n",
+      },
+      {
+        name: 'case-variant PSSnapInReader type falls back to System.Management.Automation namespace',
+        expected: 'legacy-en-sma-namespace-type-init-shape',
+        canaries: [
+          "The type initializer for 'System.Management.Automation.PSSnapinReader' threw an exception.",
+        ],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.Automation.PSSnapinReader' threw an exception.\r\n",
       },
       {
         name: 'near-miss System.Management.Automation namespace falls back to System namespace',

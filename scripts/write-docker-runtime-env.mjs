@@ -174,6 +174,18 @@ const WINDOWS_POWERSHELL_LEGACY_ENGLISH_TASK_TYPE_INIT = Buffer.from(
   "The type initializer for 'System.Threading.Tasks.Task' threw an exception.",
   'utf16le'
 )
+const WINDOWS_POWERSHELL_LEGACY_ENGLISH_UTILS_TYPE_INIT = Buffer.from(
+  "The type initializer for 'System.Management.Automation.Utils' threw an exception.",
+  'utf16le'
+)
+const WINDOWS_POWERSHELL_LEGACY_ENGLISH_PS_VERSION_INFO_TYPE_INIT = Buffer.from(
+  "The type initializer for 'System.Management.Automation.PSVersionInfo' threw an exception.",
+  'utf16le'
+)
+const WINDOWS_POWERSHELL_LEGACY_ENGLISH_PS_SNAPIN_READER_TYPE_INIT = Buffer.from(
+  "The type initializer for 'System.Management.Automation.PSSnapInReader' threw an exception.",
+  'utf16le'
+)
 const WINDOWS_POWERSHELL_LEGACY_ENGLISH_TYPE_INIT_PREFIX = Buffer.from(
   "The type initializer for '",
   'utf16le'
@@ -197,6 +209,15 @@ const WINDOWS_POWERSHELL_LEGACY_ENGLISH_EXACT_MANAGED_EXCEPTION_SHAPES = [
     WINDOWS_POWERSHELL_LEGACY_ENGLISH_CONSOLEHOST_TYPE_INIT,
   ],
   ['legacy-en-task-type-init-shape', WINDOWS_POWERSHELL_LEGACY_ENGLISH_TASK_TYPE_INIT],
+  ['legacy-en-utils-type-init-shape', WINDOWS_POWERSHELL_LEGACY_ENGLISH_UTILS_TYPE_INIT],
+  [
+    'legacy-en-psversioninfo-type-init-shape',
+    WINDOWS_POWERSHELL_LEGACY_ENGLISH_PS_VERSION_INFO_TYPE_INIT,
+  ],
+  [
+    'legacy-en-pssnapin-reader-type-init-shape',
+    WINDOWS_POWERSHELL_LEGACY_ENGLISH_PS_SNAPIN_READER_TYPE_INIT,
+  ],
 ]
 const WINDOWS_POWERSHELL_LEGACY_ENGLISH_TYPE_INIT_NAMESPACE_SHAPES = [
   [
