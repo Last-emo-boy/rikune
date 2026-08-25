@@ -9,10 +9,10 @@ function readWorkflow(name: string): any {
   return YAML.parse(fs.readFileSync(path.join(process.cwd(), '.github', 'workflows', name), 'utf8'))
 }
 
-describe('v1.4.0 release DAG', () => {
+describe('v1.4.1 release DAG', () => {
   test('stages npm candidate and requires human 2FA publication before registry verification', () => {
     const workflow = readWorkflow('publish-npm.yml')
-    expect(workflow.on.push.tags).toEqual(['v1.4.0'])
+    expect(workflow.on.push.tags).toEqual(['v1.4.1'])
     expect(Object.keys(workflow.jobs)).toEqual([
       'preflight',
       'hybrid-build-verify',
@@ -279,7 +279,7 @@ describe('v1.4.0 release DAG', () => {
       'docker buildx imagetools inspect "$STATIC_IMAGE:$RELEASE_VERSION"'
     )
     expect(aliasScript).toContain('for alias in 1.4 latest')
-    expect(aliasScript).not.toContain('imagetools create --tag "$STATIC_IMAGE:1.4.0"')
+    expect(aliasScript).not.toContain('imagetools create --tag "$STATIC_IMAGE:1.4.1"')
     expect(registryVerifyScript).toContain('dist-tags.latest')
 
     const runbook = fs.readFileSync(path.join(process.cwd(), 'CONTRIBUTING.md'), 'utf8')
