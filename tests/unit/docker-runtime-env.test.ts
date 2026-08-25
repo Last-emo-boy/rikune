@@ -606,8 +606,8 @@ describe('Docker runtime env writer', () => {
           "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.Automation.Runspaces.InitialSessionState' threw an exception.\r\n",
       },
       {
-        name: 'other managed type initializer uses bounded ASCII fallback',
-        expected: 'legacy-en-bounded-ascii-type-init-shape',
+        name: 'other System.Management.Automation type initializer uses namespace fallback',
+        expected: 'legacy-en-sma-namespace-type-init-shape',
         canaries: [
           "The type initializer for 'System.Management.Automation.Runspaces.OtherState' threw an exception.",
         ],
@@ -633,6 +633,40 @@ describe('Docker runtime env writer', () => {
           "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.Automation.Tracing.EtwActivity' threw an exception.\r\n",
       },
       {
+        name: 'ConsoleHost type initializer exception',
+        expected: 'legacy-en-consolehost-type-init-shape',
+        canaries: [
+          "The type initializer for 'Microsoft.PowerShell.ConsoleHost' threw an exception.",
+        ],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'Microsoft.PowerShell.ConsoleHost' threw an exception.\r\n",
+      },
+      {
+        name: 'Task type initializer exception',
+        expected: 'legacy-en-task-type-init-shape',
+        canaries: ["The type initializer for 'System.Threading.Tasks.Task' threw an exception."],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Threading.Tasks.Task' threw an exception.\r\n",
+      },
+      {
+        name: 'other Microsoft.PowerShell type initializer uses namespace fallback',
+        expected: 'legacy-en-microsoft-powershell-namespace-type-init-shape',
+        canaries: [
+          "The type initializer for 'Microsoft.PowerShell.NativeCultureResolver' threw an exception.",
+        ],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'Microsoft.PowerShell.NativeCultureResolver' threw an exception.\r\n",
+      },
+      {
+        name: 'other System type initializer uses namespace fallback',
+        expected: 'legacy-en-system-namespace-type-init-shape',
+        canaries: [
+          "The type initializer for 'System.Globalization.CultureInfo' threw an exception.",
+        ],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Globalization.CultureInfo' threw an exception.\r\n",
+      },
+      {
         name: 'bounded nested generic type initializer exception',
         expected: 'legacy-en-bounded-ascii-type-init-shape',
         canaries: ["The type initializer for 'Company.Namespace.GenericType`1+Nested'"],
@@ -653,13 +687,64 @@ describe('Docker runtime env writer', () => {
         stderr: `Windows PowerShell terminated with the following error: \r\n The type initializer for '${'A'.repeat(192)}' threw an exception.\r\n`,
       },
       {
-        name: 'case-variant PSEtwLog type falls back to bounded ASCII',
-        expected: 'legacy-en-bounded-ascii-type-init-shape',
+        name: 'case-variant PSEtwLog type falls back to System.Management.Automation namespace',
+        expected: 'legacy-en-sma-namespace-type-init-shape',
         canaries: [
           "The type initializer for 'System.Management.Automation.Tracing.PSetwLog' threw an exception.",
         ],
         stderr:
           "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.Automation.Tracing.PSetwLog' threw an exception.\r\n",
+      },
+      {
+        name: 'near-miss System.Management.Automation namespace falls back to System namespace',
+        expected: 'legacy-en-system-namespace-type-init-shape',
+        canaries: [
+          "The type initializer for 'System.Management.AutomationX.Foo' threw an exception.",
+        ],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.AutomationX.Foo' threw an exception.\r\n",
+      },
+      {
+        name: 'near-miss Microsoft.PowerShell namespace uses bounded ASCII fallback',
+        expected: 'legacy-en-bounded-ascii-type-init-shape',
+        canaries: ["The type initializer for 'Microsoft.PowerShellX.Foo' threw an exception."],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'Microsoft.PowerShellX.Foo' threw an exception.\r\n",
+      },
+      {
+        name: 'Systematic type uses bounded ASCII fallback',
+        expected: 'legacy-en-bounded-ascii-type-init-shape',
+        canaries: ["The type initializer for 'Systematic.Foo' threw an exception."],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'Systematic.Foo' threw an exception.\r\n",
+      },
+      {
+        name: 'nested System type uses bounded ASCII fallback without namespace separator',
+        expected: 'legacy-en-bounded-ascii-type-init-shape',
+        canaries: ["The type initializer for 'System+Nested' threw an exception."],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System+Nested' threw an exception.\r\n",
+      },
+      {
+        name: 'empty System namespace tail uses bounded ASCII fallback',
+        expected: 'legacy-en-bounded-ascii-type-init-shape',
+        canaries: ["The type initializer for 'System.' threw an exception."],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.' threw an exception.\r\n",
+      },
+      {
+        name: 'double-dot System namespace uses bounded ASCII fallback',
+        expected: 'legacy-en-bounded-ascii-type-init-shape',
+        canaries: ["The type initializer for 'System..Foo' threw an exception."],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System..Foo' threw an exception.\r\n",
+      },
+      {
+        name: 'nested System namespace tail uses bounded ASCII fallback',
+        expected: 'legacy-en-bounded-ascii-type-init-shape',
+        canaries: ["The type initializer for 'System.+Foo' threw an exception."],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.+Foo' threw an exception.\r\n",
       },
       {
         name: 'InitialSessionState type initializer with an extra CRLF remains generic',

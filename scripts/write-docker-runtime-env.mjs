@@ -166,6 +166,14 @@ const WINDOWS_POWERSHELL_LEGACY_ENGLISH_ETW_ACTIVITY_TYPE_INIT = Buffer.from(
   "The type initializer for 'System.Management.Automation.Tracing.EtwActivity' threw an exception.",
   'utf16le'
 )
+const WINDOWS_POWERSHELL_LEGACY_ENGLISH_CONSOLEHOST_TYPE_INIT = Buffer.from(
+  "The type initializer for 'Microsoft.PowerShell.ConsoleHost' threw an exception.",
+  'utf16le'
+)
+const WINDOWS_POWERSHELL_LEGACY_ENGLISH_TASK_TYPE_INIT = Buffer.from(
+  "The type initializer for 'System.Threading.Tasks.Task' threw an exception.",
+  'utf16le'
+)
 const WINDOWS_POWERSHELL_LEGACY_ENGLISH_TYPE_INIT_PREFIX = Buffer.from(
   "The type initializer for '",
   'utf16le'
@@ -184,6 +192,22 @@ const WINDOWS_POWERSHELL_LEGACY_ENGLISH_EXACT_MANAGED_EXCEPTION_SHAPES = [
     'legacy-en-etw-activity-type-init-shape',
     WINDOWS_POWERSHELL_LEGACY_ENGLISH_ETW_ACTIVITY_TYPE_INIT,
   ],
+  [
+    'legacy-en-consolehost-type-init-shape',
+    WINDOWS_POWERSHELL_LEGACY_ENGLISH_CONSOLEHOST_TYPE_INIT,
+  ],
+  ['legacy-en-task-type-init-shape', WINDOWS_POWERSHELL_LEGACY_ENGLISH_TASK_TYPE_INIT],
+]
+const WINDOWS_POWERSHELL_LEGACY_ENGLISH_TYPE_INIT_NAMESPACE_SHAPES = [
+  [
+    'legacy-en-sma-namespace-type-init-shape',
+    Buffer.from('System.Management.Automation.', 'utf16le'),
+  ],
+  [
+    'legacy-en-microsoft-powershell-namespace-type-init-shape',
+    Buffer.from('Microsoft.PowerShell.', 'utf16le'),
+  ],
+  ['legacy-en-system-namespace-type-init-shape', Buffer.from('System.', 'utf16le')],
 ]
 const WINDOWS_POWERSHELL_LEGACY_ENGLISH_CONSOLEHOST_STARTUP_PREFIX = Buffer.from(
   'The shell cannot be started. A failure occurred during initialization:\r\n',
@@ -476,17 +500,31 @@ function isWindowsPowerShellWideTypeName(value, start, end) {
   return true
 }
 
-function matchesWindowsPowerShellLegacyEnglishBoundedAsciiTypeInit(value) {
+function windowsPowerShellLegacyEnglishBoundedAsciiTypeInitSlot(value) {
   const contentEnd = windowsPowerShellWideContentEnd(value)
-  if (contentEnd === null) return false
+  if (contentEnd === null) return null
   const descriptionStart = WINDOWS_POWERSHELL_LEGACY_ENGLISH_MANAGED_EXCEPTION_PREFIX.length
   const typeNameStart = descriptionStart + WINDOWS_POWERSHELL_LEGACY_ENGLISH_TYPE_INIT_PREFIX.length
   const suffixStart = contentEnd - WINDOWS_POWERSHELL_LEGACY_ENGLISH_TYPE_INIT_SUFFIX.length
+  if (
+    !bufferMatchesAt(value, WINDOWS_POWERSHELL_LEGACY_ENGLISH_MANAGED_EXCEPTION_PREFIX, 0) ||
+    !bufferMatchesAt(value, WINDOWS_POWERSHELL_LEGACY_ENGLISH_TYPE_INIT_PREFIX, descriptionStart) ||
+    !bufferMatchesAt(value, WINDOWS_POWERSHELL_LEGACY_ENGLISH_TYPE_INIT_SUFFIX, suffixStart) ||
+    !isWindowsPowerShellWideTypeName(value, typeNameStart, suffixStart)
+  ) {
+    return null
+  }
+  return { start: typeNameStart, end: suffixStart }
+}
+
+function isWindowsPowerShellWideNamespaceTailStart(value, start, end) {
+  if (start >= end || value[start + 1] !== 0) return false
+  const character = value[start]
   return (
-    bufferMatchesAt(value, WINDOWS_POWERSHELL_LEGACY_ENGLISH_MANAGED_EXCEPTION_PREFIX, 0) &&
-    bufferMatchesAt(value, WINDOWS_POWERSHELL_LEGACY_ENGLISH_TYPE_INIT_PREFIX, descriptionStart) &&
-    bufferMatchesAt(value, WINDOWS_POWERSHELL_LEGACY_ENGLISH_TYPE_INIT_SUFFIX, suffixStart) &&
-    isWindowsPowerShellWideTypeName(value, typeNameStart, suffixStart)
+    (character >= 0x30 && character <= 0x39) ||
+    (character >= 0x41 && character <= 0x5a) ||
+    (character >= 0x61 && character <= 0x7a) ||
+    character === 0x5f
   )
 }
 
@@ -497,7 +535,20 @@ function classifyWindowsPowerShellLegacyEnglishManagedException(value) {
   ] of WINDOWS_POWERSHELL_LEGACY_ENGLISH_EXACT_MANAGED_EXCEPTION_SHAPES) {
     if (matchesWindowsPowerShellLegacyEnglishExactManagedException(value, description)) return token
   }
-  if (matchesWindowsPowerShellLegacyEnglishBoundedAsciiTypeInit(value)) {
+  const typeNameSlot = windowsPowerShellLegacyEnglishBoundedAsciiTypeInitSlot(value)
+  if (typeNameSlot !== null) {
+    for (const [
+      token,
+      namespacePrefix,
+    ] of WINDOWS_POWERSHELL_LEGACY_ENGLISH_TYPE_INIT_NAMESPACE_SHAPES) {
+      const namespaceTailStart = typeNameSlot.start + namespacePrefix.length
+      if (
+        isWindowsPowerShellWideNamespaceTailStart(value, namespaceTailStart, typeNameSlot.end) &&
+        bufferMatchesAt(value, namespacePrefix, typeNameSlot.start)
+      ) {
+        return token
+      }
+    }
     return 'legacy-en-bounded-ascii-type-init-shape'
   }
   return matchesWindowsPowerShellLegacyEnglishManagedException(value)
