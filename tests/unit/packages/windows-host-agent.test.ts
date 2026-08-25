@@ -680,7 +680,26 @@ describe('Windows Sandbox advertised endpoint and portproxy hardening', () => {
   })
 })
 
-describe('Windows Sandbox key-bearing config hardening', () => {
+const legacyWindowsPowerShellAclIntegrationSkipSetting =
+  process.env.RIKUNE_SKIP_LEGACY_WINDOWS_POWERSHELL_ACL_INTEGRATION
+const skipLegacyWindowsPowerShellAclIntegration =
+  legacyWindowsPowerShellAclIntegrationSkipSetting === 'true'
+if (
+  legacyWindowsPowerShellAclIntegrationSkipSetting !== undefined &&
+  (legacyWindowsPowerShellAclIntegrationSkipSetting !== 'true' ||
+    process.platform !== 'win32' ||
+    process.env.CI !== 'true' ||
+    process.env.GITHUB_ACTIONS !== 'true')
+) {
+  throw new Error(
+    'Legacy Windows PowerShell ACL integration skip may only be set to true by GitHub Actions on Windows'
+  )
+}
+const windowsSandboxKeyBearingConfigDescribe = skipLegacyWindowsPowerShellAclIntegration
+  ? describe.skip
+  : describe
+
+windowsSandboxKeyBearingConfigDescribe('Windows Sandbox key-bearing config hardening', () => {
   test('builds a fail-closed ACL for the current user, SYSTEM, and Administrators', async () => {
     const runCommand = jest.fn(async (command: string) => {
       if (command === 'whoami.exe') {
@@ -742,7 +761,7 @@ describe('Windows Sandbox key-bearing config hardening', () => {
       expect.arrayContaining(['-NoProfile', '-NonInteractive', '-Command'])
     )
     const auditScript = (runCommand.mock.calls[4]?.[1] as string[]).join(' ')
-    expect(auditScript).toContain("$env:PSModulePath = $env:SystemRoot +")
+    expect(auditScript).toContain('$env:PSModulePath = $env:SystemRoot +')
     expect(auditScript).toContain('[System.IO.File]::GetAccessControl')
     expect(auditScript).not.toContain('Get-Acl')
   })
@@ -769,7 +788,7 @@ describe('Windows Sandbox key-bearing config hardening', () => {
     })
 
     const auditScript = (runCommand.mock.calls[0]?.[1] as string[]).join(' ')
-    expect(auditScript).toContain("$env:PSModulePath = $env:SystemRoot +")
+    expect(auditScript).toContain('$env:PSModulePath = $env:SystemRoot +')
     expect(auditScript).toContain('[System.IO.Directory]::GetAccessControl')
     expect(auditScript).not.toContain('Get-Acl')
   })

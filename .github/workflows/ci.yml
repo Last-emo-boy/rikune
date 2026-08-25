@@ -195,6 +195,8 @@ jobs:
           }
 
       - name: Run Windows Host Agent and runtime contract tests
+        env:
+          RIKUNE_SKIP_LEGACY_WINDOWS_POWERSHELL_ACL_INTEGRATION: 'true'
         run: >
           npm test -- --runInBand --forceExit
           --testPathPatterns="tests/unit/(packages/windows-host-agent|runtime-node/|ghidra-config|setup-script-contract|local-installer-python-lock)"

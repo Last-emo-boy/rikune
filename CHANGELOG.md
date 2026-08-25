@@ -49,10 +49,12 @@ Versioning where practical.
 
 ### Known limitations
 
-- Hosted Windows CI does not release-gate the live Node runtime-env ACL integration paths that
-  delegate to inbox Windows PowerShell 5.1. Static security contracts, direct PowerShell ACL
-  creation/reverification, insecure-creator rejection, and the remaining Windows Host Agent tests
-  remain enforced. Validate the Host Agent on the target Windows image before production use.
+- Hosted Windows CI does not release-gate the live Node runtime-env ACL integration paths or the
+  Windows Sandbox key-bearing ACL integration suite that delegate to inbox Windows PowerShell 5.1.
+  Static security contracts, direct PowerShell ACL creation/reverification, insecure-creator
+  rejection, the cross-platform Host Agent lifecycle suite, and the other Windows Host
+  Agent/runtime tests remain enforced. Validate the Host Agent on the target Windows image before
+  production use.
 
 ### Security
 

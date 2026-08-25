@@ -73,7 +73,7 @@ The env writer rotates to a new 32-byte analyzer API key from the operating syst
 
 Hybrid mode runs the Analyzer in Docker and delegates live Windows work to a Windows Host Agent. The Host Agent can start Windows Sandbox on demand or control a configured Hyper-V VM.
 
-Windows installers require PowerShell 7 or newer (`pwsh`). In v1.4.0, live Node runtime-env ACL integration paths that delegate to inbox Windows PowerShell 5.1 are a known limitation on hosted Windows runners and are not a release gate. Direct PowerShell ACL creation/reverification, insecure-creator rejection, static Node writer security contracts, and the remaining Windows Host Agent contracts stay enforced; validate the Host Agent on the target Windows image before production use.
+Windows installers require PowerShell 7 or newer (`pwsh`). In v1.4.0, live Node runtime-env ACL integration paths and Windows Sandbox key-bearing ACL integration that delegate to inbox Windows PowerShell 5.1 are a known limitation on hosted Windows runners and are not a release gate. Direct PowerShell ACL creation/reverification, insecure-creator rejection, static Node writer security contracts, the cross-platform Host Agent lifecycle suite, and the other Windows Host Agent/runtime contracts stay enforced; validate the Host Agent on the target Windows image before production use.
 
 ```powershell
 .\rikune.ps1 install -Profile hybrid -InstallRuntime
