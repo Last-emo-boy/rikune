@@ -1,6 +1,6 @@
 {
   "name": "@rikune/plugin-sdk",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Plugin SDK for rikune — types and utilities for third-party plugin authors.",
   "type": "module",
   "main": "dist/index.js",
@@ -32,7 +32,7 @@
     "zod": "^3.0.0"
   },
   "dependencies": {
-    "@rikune/shared": "1.4.0"
+    "@rikune/shared": "1.4.1"
   },
   "engines": {
     "node": ">=18.17.0"

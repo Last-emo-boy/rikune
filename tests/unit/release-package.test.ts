@@ -46,7 +46,7 @@ describe('release package verification', () => {
       'packages/tsconfig',
     ]
 
-    expect(root.version).toBe('1.4.0')
+    expect(root.version).toBe('1.4.1')
     for (const workspacePath of workspacePaths) {
       const manifest = JSON.parse(
         fs.readFileSync(path.join(process.cwd(), workspacePath, 'package.json'), 'utf8')

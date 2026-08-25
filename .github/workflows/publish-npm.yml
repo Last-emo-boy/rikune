@@ -1,14 +1,14 @@
-name: Release v1.4.0
+name: Release v1.4.1
 
 on:
   push:
-    tags: ['v1.4.0']
+    tags: ['v1.4.1']
   workflow_dispatch:
     inputs:
       version:
         description: 'Exact release version'
         required: true
-        default: '1.4.0'
+        default: '1.4.1'
         type: string
       dry_run:
         description: 'Run reversible preflight gates only'
@@ -25,12 +25,12 @@ on:
           - verify-human-published
 
 concurrency:
-  group: release-v1.4.0-${{ github.ref }}
+  group: release-v1.4.1-${{ github.ref }}
   cancel-in-progress: false
 
 env:
-  RELEASE_VERSION: '1.4.0'
-  RELEASE_TAG: 'v1.4.0'
+  RELEASE_VERSION: '1.4.1'
+  RELEASE_TAG: 'v1.4.1'
   NPM_PACKAGE: rikune
   NPM_REGISTRY_URL: https://registry.npmjs.org
   STATIC_IMAGE: ghcr.io/last-emo-boy/rikune-analyzer-static
@@ -55,11 +55,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Validate exact v1.4.0 release ref
+      - name: Validate exact v1.4.1 release ref
         id: release
         shell: bash
         env:
-          DISPATCH_VERSION: ${{ inputs.version || '1.4.0' }}
+          DISPATCH_VERSION: ${{ inputs.version || '1.4.1' }}
           DISPATCH_DRY_RUN: ${{ inputs.dry_run || false }}
           DISPATCH_PHASE: ${{ inputs.release_phase || 'stage' }}
         run: |
@@ -255,10 +255,10 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/Last-emo-boy/rikune
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=1.4.0
+            org.opencontainers.image.version=1.4.1
             org.opencontainers.image.rikune.profile=hybrid
-          cache-from: type=gha,scope=rikune-hybrid-v1.4.0
-          cache-to: type=gha,mode=max,scope=rikune-hybrid-v1.4.0
+          cache-from: type=gha,scope=rikune-hybrid-v1.4.1
+          cache-to: type=gha,mode=max,scope=rikune-hybrid-v1.4.1
 
       - name: Verify hardened Hybrid startup and bind revision
         id: contract
@@ -377,10 +377,10 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/Last-emo-boy/rikune
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=1.4.0
+            org.opencontainers.image.version=1.4.1
             org.opencontainers.image.rikune.profile=static
-          cache-from: type=gha,scope=rikune-static-v1.4.0
-          cache-to: type=gha,mode=max,scope=rikune-static-v1.4.0
+          cache-from: type=gha,scope=rikune-static-v1.4.1
+          cache-to: type=gha,mode=max,scope=rikune-static-v1.4.1
 
       - name: Bind immutable candidate digest
         id: digest
@@ -499,7 +499,7 @@ jobs:
           ' manifest.json
           docker pull "$ref"
           test "$(docker image inspect "$ref" --format '{{.Architecture}}/{{.Os}}')" = amd64/linux
-          test "$(docker image inspect "$ref" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = 1.4.0
+          test "$(docker image inspect "$ref" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = 1.4.1
           test "$(docker image inspect "$ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
           test "$(docker image inspect "$ref" --format '{{index .Config.Labels "org.opencontainers.image.rikune.profile"}}')" = static
 
@@ -557,13 +557,13 @@ jobs:
         run: |
           set -euo pipefail
           ref="$STATIC_IMAGE@${{ needs.static-build-push.outputs.digest }}"
-          identity='^https://github.com/Last-emo-boy/rikune/.github/workflows/publish-npm.yml@refs/tags/v1.4.0$'
+          identity='^https://github.com/Last-emo-boy/rikune/.github/workflows/publish-npm.yml@refs/tags/v1.4.1$'
           cosign verify "$ref" --certificate-identity-regexp "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com
           gh attestation verify "oci://$ref" --repo "$GITHUB_REPOSITORY" --predicate-type https://slsa.dev/provenance/v1
           gh attestation verify "oci://$ref" --repo "$GITHUB_REPOSITORY" --predicate-type https://spdx.dev/Document/v2.3
 
   static-version-alias:
-    name: Bind immutable v1.4.0 OCI before npm exposure
+    name: Bind immutable v1.4.1 OCI before npm exposure
     needs: [preflight, static-verify]
     if: needs.preflight.outputs.dry_run != 'true'
     runs-on: ubuntu-latest
@@ -589,7 +589,7 @@ jobs:
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - name: Publish or verify immutable v1.4.0 OCI tag
+      - name: Publish or verify immutable v1.4.1 OCI tag
         id: contract
         shell: bash
         env:
@@ -825,11 +825,11 @@ jobs:
       - name: Create verified GitHub Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          tag_name: v1.4.0
+          tag_name: v1.4.1
           generate_release_notes: true
           fail_on_unmatched_files: true
           body: |
-            npm: rikune@1.4.0 (human 2FA publication verified)
+            npm: rikune@1.4.1 (human 2FA publication verified)
             Static OCI: ghcr.io/last-emo-boy/rikune-analyzer-static@${{ needs.static-version-alias.outputs.digest }}
             Hybrid Dockerfile: linux/amd64 build and hardened startup verified at ${{ needs.hybrid-build-verify.outputs.revision }}
           files: |

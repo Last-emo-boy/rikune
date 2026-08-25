@@ -7,6 +7,16 @@ Versioning where practical.
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-08-25
+
+### Fixed
+
+- Made object-union MCP tool schemas declare an explicit object root so strict official SDK
+  clients can parse `tools/list` after activating `sample.delete`, without changing the union's
+  structured result semantics.
+- Added official SDK schema parsing, core tool, and built-in plugin contract regressions for MCP
+  input/output root compatibility.
+
 ## [1.4.0] - 2026-08-24
 
 ### Added
