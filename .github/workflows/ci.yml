@@ -135,6 +135,10 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
+      - name: Diagnose legacy Windows PowerShell Utils initialization
+        shell: pwsh
+        run: ./scripts/probe-windows-powershell-utils.ps1
+
       - name: Validate PowerShell installer and ACL contracts
         shell: pwsh
         run: ./scripts/verify-powershell-installers.ps1
