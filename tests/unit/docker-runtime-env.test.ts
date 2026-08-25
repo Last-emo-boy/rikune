@@ -606,13 +606,60 @@ describe('Docker runtime env writer', () => {
           "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.Automation.Runspaces.InitialSessionState' threw an exception.\r\n",
       },
       {
-        name: 'different managed type initializer remains generic',
-        expected: 'legacy-en-managed-exception-shape',
+        name: 'other managed type initializer uses bounded ASCII fallback',
+        expected: 'legacy-en-bounded-ascii-type-init-shape',
         canaries: [
           "The type initializer for 'System.Management.Automation.Runspaces.OtherState' threw an exception.",
         ],
         stderr:
           "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.Automation.Runspaces.OtherState' threw an exception.\r\n",
+      },
+      {
+        name: 'PSEtwLog type initializer exception',
+        expected: 'legacy-en-psetwlog-type-init-shape',
+        canaries: [
+          "The type initializer for 'System.Management.Automation.Tracing.PSEtwLog' threw an exception.",
+        ],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.Automation.Tracing.PSEtwLog' threw an exception.\r\n",
+      },
+      {
+        name: 'EtwActivity type initializer exception',
+        expected: 'legacy-en-etw-activity-type-init-shape',
+        canaries: [
+          "The type initializer for 'System.Management.Automation.Tracing.EtwActivity' threw an exception.",
+        ],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.Automation.Tracing.EtwActivity' threw an exception.\r\n",
+      },
+      {
+        name: 'bounded nested generic type initializer exception',
+        expected: 'legacy-en-bounded-ascii-type-init-shape',
+        canaries: ["The type initializer for 'Company.Namespace.GenericType`1+Nested'"],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'Company.Namespace.GenericType`1+Nested' threw an exception.\r\n",
+      },
+      {
+        name: 'one-character bounded ASCII type initializer exception',
+        expected: 'legacy-en-bounded-ascii-type-init-shape',
+        canaries: ["The type initializer for 'A' threw an exception."],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'A' threw an exception.\r\n",
+      },
+      {
+        name: 'maximum-length bounded ASCII type initializer exception',
+        expected: 'legacy-en-bounded-ascii-type-init-shape',
+        canaries: ['A'.repeat(192)],
+        stderr: `Windows PowerShell terminated with the following error: \r\n The type initializer for '${'A'.repeat(192)}' threw an exception.\r\n`,
+      },
+      {
+        name: 'case-variant PSEtwLog type falls back to bounded ASCII',
+        expected: 'legacy-en-bounded-ascii-type-init-shape',
+        canaries: [
+          "The type initializer for 'System.Management.Automation.Tracing.PSetwLog' threw an exception.",
+        ],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.Automation.Tracing.PSetwLog' threw an exception.\r\n",
       },
       {
         name: 'InitialSessionState type initializer with an extra CRLF remains generic',
@@ -631,6 +678,26 @@ describe('Docker runtime env writer', () => {
         ],
         stderr:
           "Windows PowerShell terminated with the following error: \r\n The type initializer for 'System.Management.Automation.Runspaces.InitialSessionState' threw an exception. extra\r\n",
+      },
+      {
+        name: 'type initializer outside the bounded ASCII slot remains generic',
+        expected: 'legacy-en-managed-exception-shape',
+        canaries: ["The type initializer for 'Company/InvalidType' threw an exception."],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for 'Company/InvalidType' threw an exception.\r\n",
+      },
+      {
+        name: 'empty bounded ASCII type slot remains generic',
+        expected: 'legacy-en-managed-exception-shape',
+        canaries: ["The type initializer for '' threw an exception."],
+        stderr:
+          "Windows PowerShell terminated with the following error: \r\n The type initializer for '' threw an exception.\r\n",
+      },
+      {
+        name: 'type initializer outside the bounded slot length remains generic',
+        expected: 'legacy-en-managed-exception-shape',
+        canaries: ['A'.repeat(193)],
+        stderr: `Windows PowerShell terminated with the following error: \r\n The type initializer for '${'A'.repeat(193)}' threw an exception.\r\n`,
       },
       {
         name: 'ConsoleHost startup',

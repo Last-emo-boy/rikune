@@ -158,6 +158,33 @@ const WINDOWS_POWERSHELL_LEGACY_ENGLISH_INITIAL_SESSION_STATE_TYPE_INIT = Buffer
   "The type initializer for 'System.Management.Automation.Runspaces.InitialSessionState' threw an exception.",
   'utf16le'
 )
+const WINDOWS_POWERSHELL_LEGACY_ENGLISH_PSETWLOG_TYPE_INIT = Buffer.from(
+  "The type initializer for 'System.Management.Automation.Tracing.PSEtwLog' threw an exception.",
+  'utf16le'
+)
+const WINDOWS_POWERSHELL_LEGACY_ENGLISH_ETW_ACTIVITY_TYPE_INIT = Buffer.from(
+  "The type initializer for 'System.Management.Automation.Tracing.EtwActivity' threw an exception.",
+  'utf16le'
+)
+const WINDOWS_POWERSHELL_LEGACY_ENGLISH_TYPE_INIT_PREFIX = Buffer.from(
+  "The type initializer for '",
+  'utf16le'
+)
+const WINDOWS_POWERSHELL_LEGACY_ENGLISH_TYPE_INIT_SUFFIX = Buffer.from(
+  "' threw an exception.",
+  'utf16le'
+)
+const WINDOWS_POWERSHELL_LEGACY_ENGLISH_EXACT_MANAGED_EXCEPTION_SHAPES = [
+  [
+    'legacy-en-initial-session-state-type-init-shape',
+    WINDOWS_POWERSHELL_LEGACY_ENGLISH_INITIAL_SESSION_STATE_TYPE_INIT,
+  ],
+  ['legacy-en-psetwlog-type-init-shape', WINDOWS_POWERSHELL_LEGACY_ENGLISH_PSETWLOG_TYPE_INIT],
+  [
+    'legacy-en-etw-activity-type-init-shape',
+    WINDOWS_POWERSHELL_LEGACY_ENGLISH_ETW_ACTIVITY_TYPE_INIT,
+  ],
+]
 const WINDOWS_POWERSHELL_LEGACY_ENGLISH_CONSOLEHOST_STARTUP_PREFIX = Buffer.from(
   'The shell cannot be started. A failure occurred during initialization:\r\n',
   'utf16le'
@@ -421,19 +448,61 @@ function matchesWindowsPowerShellLegacyEnglishManagedException(value) {
   )
 }
 
-function matchesWindowsPowerShellLegacyEnglishInitialSessionStateTypeInit(value) {
+function matchesWindowsPowerShellLegacyEnglishExactManagedException(value, description) {
   const contentEnd = windowsPowerShellWideContentEnd(value)
   const descriptionStart = WINDOWS_POWERSHELL_LEGACY_ENGLISH_MANAGED_EXCEPTION_PREFIX.length
   return (
-    contentEnd ===
-      descriptionStart + WINDOWS_POWERSHELL_LEGACY_ENGLISH_INITIAL_SESSION_STATE_TYPE_INIT.length &&
+    contentEnd === descriptionStart + description.length &&
     bufferMatchesAt(value, WINDOWS_POWERSHELL_LEGACY_ENGLISH_MANAGED_EXCEPTION_PREFIX, 0) &&
-    bufferMatchesAt(
-      value,
-      WINDOWS_POWERSHELL_LEGACY_ENGLISH_INITIAL_SESSION_STATE_TYPE_INIT,
-      descriptionStart
-    )
+    bufferMatchesAt(value, description, descriptionStart)
   )
+}
+
+function isWindowsPowerShellWideTypeName(value, start, end) {
+  const characterCount = (end - start) / 2
+  if (characterCount < 1 || characterCount > 192 || (end - start) % 2 !== 0) return false
+  for (let index = start; index < end; index += 2) {
+    const character = value[index]
+    const isTypeNameCharacter =
+      (character >= 0x30 && character <= 0x39) ||
+      (character >= 0x41 && character <= 0x5a) ||
+      (character >= 0x61 && character <= 0x7a) ||
+      character === 0x2b ||
+      character === 0x2e ||
+      character === 0x5f ||
+      character === 0x60
+    if (!isTypeNameCharacter || value[index + 1] !== 0) return false
+  }
+  return true
+}
+
+function matchesWindowsPowerShellLegacyEnglishBoundedAsciiTypeInit(value) {
+  const contentEnd = windowsPowerShellWideContentEnd(value)
+  if (contentEnd === null) return false
+  const descriptionStart = WINDOWS_POWERSHELL_LEGACY_ENGLISH_MANAGED_EXCEPTION_PREFIX.length
+  const typeNameStart = descriptionStart + WINDOWS_POWERSHELL_LEGACY_ENGLISH_TYPE_INIT_PREFIX.length
+  const suffixStart = contentEnd - WINDOWS_POWERSHELL_LEGACY_ENGLISH_TYPE_INIT_SUFFIX.length
+  return (
+    bufferMatchesAt(value, WINDOWS_POWERSHELL_LEGACY_ENGLISH_MANAGED_EXCEPTION_PREFIX, 0) &&
+    bufferMatchesAt(value, WINDOWS_POWERSHELL_LEGACY_ENGLISH_TYPE_INIT_PREFIX, descriptionStart) &&
+    bufferMatchesAt(value, WINDOWS_POWERSHELL_LEGACY_ENGLISH_TYPE_INIT_SUFFIX, suffixStart) &&
+    isWindowsPowerShellWideTypeName(value, typeNameStart, suffixStart)
+  )
+}
+
+function classifyWindowsPowerShellLegacyEnglishManagedException(value) {
+  for (const [
+    token,
+    description,
+  ] of WINDOWS_POWERSHELL_LEGACY_ENGLISH_EXACT_MANAGED_EXCEPTION_SHAPES) {
+    if (matchesWindowsPowerShellLegacyEnglishExactManagedException(value, description)) return token
+  }
+  if (matchesWindowsPowerShellLegacyEnglishBoundedAsciiTypeInit(value)) {
+    return 'legacy-en-bounded-ascii-type-init-shape'
+  }
+  return matchesWindowsPowerShellLegacyEnglishManagedException(value)
+    ? 'legacy-en-managed-exception-shape'
+    : null
 }
 
 function matchesWindowsPowerShellLegacyEnglishConsoleHostStartup(value) {
@@ -455,11 +524,8 @@ function classifyWindowsPowerShellLegacyEnglishResource(value) {
       matches.push(token)
     }
   }
-  if (matchesWindowsPowerShellLegacyEnglishInitialSessionStateTypeInit(value)) {
-    matches.push('legacy-en-initial-session-state-type-init-shape')
-  } else if (matchesWindowsPowerShellLegacyEnglishManagedException(value)) {
-    matches.push('legacy-en-managed-exception-shape')
-  }
+  const managedExceptionToken = classifyWindowsPowerShellLegacyEnglishManagedException(value)
+  if (managedExceptionToken !== null) matches.push(managedExceptionToken)
   if (matchesWindowsPowerShellLegacyEnglishConsoleHostStartup(value)) {
     matches.push('legacy-en-consolehost-startup-shape')
   }
