@@ -23,7 +23,11 @@ import {
   securePurgeQuarantineForTest,
   secureQuarantineRenameForTest,
 } from '../../src/sample/secure-filesystem.js'
-import { createSampleDeleteHandler } from '../../src/tools/sample-delete.js'
+import {
+  createSampleDeleteHandler,
+  sampleDeleteOutputSchema,
+} from '../../src/tools/sample-delete.js'
+import { zodToJsonSchema } from '../../src/core/zod-schema-converter.js'
 import { JobQueue } from '../../src/job-queue.js'
 import { JobPriority } from '../../src/types.js'
 
@@ -31,6 +35,13 @@ const SHA = 'a'.repeat(64)
 const SAMPLE_ID = `sha256:${SHA}`
 const OTHER_SHA = 'b'.repeat(64)
 const OTHER_SAMPLE_ID = `sha256:${OTHER_SHA}`
+
+test('sample.delete exports an MCP SDK-compatible object output schema', () => {
+  const schema = zodToJsonSchema(sampleDeleteOutputSchema)
+
+  expect(schema.type).toBe('object')
+  expect(schema.anyOf).toHaveLength(2)
+})
 
 describe('sample.delete crash-safe lifecycle', () => {
   let root: string

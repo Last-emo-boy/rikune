@@ -171,8 +171,18 @@ describe('built-in plugin SDK contract', () => {
             schemaErrors.push(`${plugin.id}:${definition?.name}: missing outputSchema`)
           } else {
             try {
-              zodToJsonSchema(definition.inputSchema)
-              zodToJsonSchema(definition.outputSchema)
+              const inputSchema = zodToJsonSchema(definition.inputSchema)
+              const outputSchema = zodToJsonSchema(definition.outputSchema)
+              if (inputSchema.type !== 'object') {
+                schemaErrors.push(
+                  `${plugin.id}:${definition?.name}: inputSchema root must be object`
+                )
+              }
+              if (outputSchema.type !== 'object') {
+                schemaErrors.push(
+                  `${plugin.id}:${definition?.name}: outputSchema root must be object`
+                )
+              }
             } catch (error) {
               schemaErrors.push(
                 `${plugin.id}:${definition?.name}: schema conversion failed: ${

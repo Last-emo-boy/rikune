@@ -6,7 +6,7 @@ import { jest } from '@jest/globals'
 import { MCPServer } from '../../src/server'
 import { Config, getDefaultAuditLogPath, getDefaultCacheRoot } from '../../src/config'
 import { z } from 'zod'
-import { TextContent } from '@modelcontextprotocol/sdk/types.js'
+import { ListToolsResultSchema, TextContent } from '@modelcontextprotocol/sdk/types.js'
 import { toTransportToolName } from '../../src/tool-name-normalization'
 import { RIKUNE_VERSION } from '../../src/version'
 
@@ -247,10 +247,37 @@ describe('MCPServer', () => {
       const schema = tools.find((tool) => tool.name === toTransportToolName('schema.union'))
         ?.inputSchema as any
 
+      expect(schema.type).toBe('object')
       expect(Array.isArray(schema.anyOf)).toBe(true)
       expect(schema.anyOf).toHaveLength(2)
       expect(schema.anyOf[0].type).toBe('object')
       expect(schema.anyOf[1].type).toBe('object')
+    })
+
+    it('should export object-union output schemas accepted by the MCP SDK', async () => {
+      const toolDefinition = {
+        name: 'schema.output-union',
+        description: 'Object union output schema test',
+        inputSchema: z.object({}),
+        outputSchema: z.union([
+          z.object({ ok: z.literal(true), data: z.object({ value: z.string() }) }),
+          z.object({ ok: z.literal(false), error: z.object({ code: z.string() }) }),
+        ]),
+      }
+
+      server.registerTool(toolDefinition, async () => ({
+        content: [],
+        structuredContent: { ok: true, data: { value: 'ok' } },
+      }))
+
+      const result = await server.listTools()
+      const outputSchema = result.tools.find(
+        (tool) => tool.name === toTransportToolName('schema.output-union')
+      )?.outputSchema as any
+
+      expect(outputSchema.type).toBe('object')
+      expect(outputSchema.anyOf).toHaveLength(2)
+      expect(() => ListToolsResultSchema.parse(result)).not.toThrow()
     })
   })
 

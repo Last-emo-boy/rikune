@@ -14,10 +14,44 @@ import { z } from 'zod'
 export function zodToJsonSchema(schema: z.ZodTypeAny): Record<string, unknown> {
   const converted = zodFieldToJsonSchema(schema)
   if (converted && typeof converted === 'object') {
-    return converted
+    return normalizeObjectRootSchema(converted)
   }
 
   return { type: 'object', properties: {} }
+}
+
+/**
+ * The currently locked MCP SDK requires tool input/output schemas to declare
+ * an object at the root. Zod unions and intersections serialize as combinators
+ * without that redundant root type, even when every branch is already an
+ * object schema. Preserve the branch validation semantics while making the
+ * shared object constraint explicit for strict clients.
+ */
+export function normalizeObjectRootSchema(
+  jsonSchema: Record<string, unknown>
+): Record<string, unknown> {
+  if (jsonSchema.type !== undefined) {
+    return jsonSchema
+  }
+
+  for (const keyword of ['anyOf', 'oneOf', 'allOf'] as const) {
+    const branches = jsonSchema[keyword]
+    if (
+      Array.isArray(branches) &&
+      branches.length > 0 &&
+      branches.every(
+        (branch) =>
+          branch !== null &&
+          typeof branch === 'object' &&
+          !Array.isArray(branch) &&
+          (branch as Record<string, unknown>).type === 'object'
+      )
+    ) {
+      return { ...jsonSchema, type: 'object' }
+    }
+  }
+
+  return jsonSchema
 }
 
 /**
