@@ -5,6 +5,7 @@ $resultToken = "fullclr-utils-probe-bootstrap-failed-shape"
 $probeRoot = $null
 $compilerResult = $null
 $helperResult = $null
+$automationSignature = $null
 $bootstrapPhase = "unclassified"
 
 function Get-CanonicalWindowsSystemRoot {
@@ -39,7 +40,7 @@ function Get-CanonicalWindowsSystemRoot {
     return $systemRoot
 }
 
-function Get-TrustedSignedFile {
+function Get-CanonicalRegularFile {
     param(
         [string]$ExpectedPath
     )
@@ -57,12 +58,30 @@ function Get-TrustedSignedFile {
     ) {
         throw "Trusted probe dependency is not a canonical regular file"
     }
+    return $expected
+}
 
-    $signature = Get-AuthenticodeSignature -LiteralPath $expected -ErrorAction Stop
+function Get-ValidAuthenticodeSignature {
+    param(
+        [string]$ExpectedPath
+    )
+
+    $signature = Get-AuthenticodeSignature -LiteralPath $ExpectedPath -ErrorAction Stop
     if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
         throw "Trusted probe dependency signature is invalid"
     }
-    $signerName = $signature.SignerCertificate.GetNameInfo(
+    return $signature
+}
+
+function Assert-TrustedMicrosoftSigner {
+    param(
+        [object]$Signature
+    )
+
+    if ($null -eq $Signature -or $null -eq $Signature.SignerCertificate) {
+        throw "Trusted probe dependency signer is unavailable"
+    }
+    $signerName = $Signature.SignerCertificate.GetNameInfo(
         [System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName,
         $false
     )
@@ -73,6 +92,16 @@ function Get-TrustedSignedFile {
     )) {
         throw "Trusted probe dependency signer is invalid"
     }
+}
+
+function Get-TrustedSignedFile {
+    param(
+        [string]$ExpectedPath
+    )
+
+    $expected = Get-CanonicalRegularFile -ExpectedPath $ExpectedPath
+    $signature = Get-ValidAuthenticodeSignature -ExpectedPath $expected
+    Assert-TrustedMicrosoftSigner -Signature $signature
     return $expected
 }
 
@@ -152,8 +181,17 @@ function Get-BootstrapFailureToken {
         "compiler-trust" {
             return "fullclr-utils-probe-bootstrap-compiler-trust-failed-shape"
         }
-        "automation-trust" {
-            return "fullclr-utils-probe-bootstrap-automation-trust-failed-shape"
+        "automation-file" {
+            return "fullclr-utils-probe-bootstrap-automation-file-failed-shape"
+        }
+        "automation-signature" {
+            return "fullclr-utils-probe-bootstrap-automation-signature-failed-shape"
+        }
+        "automation-signer" {
+            return "fullclr-utils-probe-bootstrap-automation-signer-failed-shape"
+        }
+        "automation-identity" {
+            return "fullclr-utils-probe-bootstrap-automation-identity-failed-shape"
         }
         "workspace" {
             return "fullclr-utils-probe-bootstrap-workspace-failed-shape"
@@ -342,10 +380,16 @@ try {
     $cscPath = Get-TrustedSignedFile -ExpectedPath (
         Join-Path $systemRoot "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
     )
-    $bootstrapPhase = "automation-trust"
-    $automationAssemblyPath = Get-TrustedSignedFile -ExpectedPath (
+    $bootstrapPhase = "automation-file"
+    $automationAssemblyPath = Get-CanonicalRegularFile -ExpectedPath (
         Join-Path $system32 "WindowsPowerShell\v1.0\System.Management.Automation.dll"
     )
+    $bootstrapPhase = "automation-signature"
+    $automationSignature = Get-ValidAuthenticodeSignature -ExpectedPath $automationAssemblyPath
+    $bootstrapPhase = "automation-signer"
+    Assert-TrustedMicrosoftSigner -Signature $automationSignature
+    $automationSignature = $null
+    $bootstrapPhase = "automation-identity"
     Assert-AutomationAssemblyIdentity -Path $automationAssemblyPath
 
     $bootstrapPhase = "workspace"
@@ -592,6 +636,7 @@ internal static class Program
 } finally {
     $compilerResult = $null
     $helperResult = $null
+    $automationSignature = $null
     try {
         if ($null -ne $probeRoot) {
             if (-not (Test-CanonicalProbeRoot -Path $probeRoot)) {
