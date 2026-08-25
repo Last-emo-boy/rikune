@@ -70,6 +70,8 @@ env writer 默认使用操作系统 CSPRNG 轮换新的 32-byte analyzer API key
 
 Hybrid profile 在 Docker 中运行 Analyzer，把真实 Windows 执行委托给 Windows Host Agent。Host Agent 可按需启动 Windows Sandbox，也可以控制预配置的 Hyper-V VM。
 
+Windows installer 要求 PowerShell 7 或更新版本（`pwsh`）。在 v1.4.0 中，委托给 inbox Windows PowerShell 5.1 的 live Node runtime-env ACL integration 与 Windows Sandbox key-bearing ACL integration 是 hosted Windows runner 上的已知限制，不作为 release gate。Direct PowerShell ACL creation/reverification、insecure-creator rejection、static Node writer security contract、cross-platform Host Agent lifecycle suite，以及其他 Windows Host Agent/runtime contract 仍保持强制执行；生产使用前必须在目标 Windows image 上验证 Host Agent。
+
 ```powershell
 .\rikune.ps1 install -Profile hybrid -InstallRuntime
 ```
