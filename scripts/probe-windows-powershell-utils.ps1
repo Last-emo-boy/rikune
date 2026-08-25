@@ -5,6 +5,7 @@ $resultToken = "fullclr-utils-probe-bootstrap-failed-shape"
 $probeRoot = $null
 $compilerResult = $null
 $helperResult = $null
+$bootstrapPhase = "unclassified"
 
 function Get-CanonicalWindowsSystemRoot {
     $systemRootValue = [Environment]::GetEnvironmentVariable("SystemRoot", "Process")
@@ -137,6 +138,36 @@ function Get-BoundedEnvironmentValue {
         throw "Probe environment value is invalid"
     }
     return [string]$value
+}
+
+function Get-BootstrapFailureToken {
+    param(
+        [string]$Phase
+    )
+
+    switch -CaseSensitive ($Phase) {
+        "system-root" {
+            return "fullclr-utils-probe-bootstrap-system-root-failed-shape"
+        }
+        "compiler-trust" {
+            return "fullclr-utils-probe-bootstrap-compiler-trust-failed-shape"
+        }
+        "automation-trust" {
+            return "fullclr-utils-probe-bootstrap-automation-trust-failed-shape"
+        }
+        "workspace" {
+            return "fullclr-utils-probe-bootstrap-workspace-failed-shape"
+        }
+        "compile" {
+            return "fullclr-utils-probe-bootstrap-compile-failed-shape"
+        }
+        "helper" {
+            return "fullclr-utils-probe-bootstrap-helper-failed-shape"
+        }
+        default {
+            return "fullclr-utils-probe-bootstrap-failed-shape"
+        }
+    }
 }
 
 function Invoke-CapturedProcess {
@@ -303,17 +334,21 @@ if (-not $IsWindows) {
 }
 
 try {
+    $bootstrapPhase = "system-root"
     $systemRoot = Get-CanonicalWindowsSystemRoot
     $system32 = Join-Path $systemRoot "System32"
     $systemDrive = $systemRoot.Substring(0, 2)
+    $bootstrapPhase = "compiler-trust"
     $cscPath = Get-TrustedSignedFile -ExpectedPath (
         Join-Path $systemRoot "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
     )
+    $bootstrapPhase = "automation-trust"
     $automationAssemblyPath = Get-TrustedSignedFile -ExpectedPath (
         Join-Path $system32 "WindowsPowerShell\v1.0\System.Management.Automation.dll"
     )
     Assert-AutomationAssemblyIdentity -Path $automationAssemblyPath
 
+    $bootstrapPhase = "workspace"
     $probeRoot = Join-Path (
         [System.IO.Path]::GetTempPath()
     ) "rikune-fullclr-utils-probe-$([Guid]::NewGuid().ToString('N'))"
@@ -444,6 +479,7 @@ internal static class Program
 }
 '@ | Set-Content -LiteralPath $sourcePath -Encoding utf8NoBOM
 
+    $bootstrapPhase = "compile"
     $compileInfo = [System.Diagnostics.ProcessStartInfo]::new()
     $compileInfo.FileName = $cscPath
     $compileInfo.UseShellExecute = $false
@@ -480,6 +516,7 @@ internal static class Program
     }
     $compilerResult = $null
 
+    $bootstrapPhase = "helper"
     $helperInfo = [System.Diagnostics.ProcessStartInfo]::new()
     $helperInfo.FileName = $helperPath
     $helperInfo.WorkingDirectory = Split-Path -Parent $PSScriptRoot
@@ -551,7 +588,7 @@ internal static class Program
         $resultToken = $expectedToken
     }
 } catch {
-    $resultToken = "fullclr-utils-probe-bootstrap-failed-shape"
+    $resultToken = Get-BootstrapFailureToken -Phase $bootstrapPhase
 } finally {
     $compilerResult = $null
     $helperResult = $null
