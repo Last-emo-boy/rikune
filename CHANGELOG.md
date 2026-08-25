@@ -47,6 +47,13 @@ Versioning where practical.
   `auto-sandbox` topologies are not supported in v1.4.0. WSL2 sample-custody paths must reside on
   the WSL Linux filesystem, not a `/mnt/<drive>` DrvFS mount.
 
+### Known limitations
+
+- Hosted Windows CI does not release-gate the live Node runtime-env ACL integration paths that
+  delegate to inbox Windows PowerShell 5.1. Static security contracts, direct PowerShell ACL
+  creation/reverification, insecure-creator rejection, and the remaining Windows Host Agent tests
+  remain enforced. Validate the Host Agent on the target Windows image before production use.
+
 ### Security
 
 - Added the exact static OCI contract: a generated 100-plugin lock, the ordered

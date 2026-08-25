@@ -73,6 +73,8 @@ The env writer rotates to a new 32-byte analyzer API key from the operating syst
 
 Hybrid mode runs the Analyzer in Docker and delegates live Windows work to a Windows Host Agent. The Host Agent can start Windows Sandbox on demand or control a configured Hyper-V VM.
 
+Windows installers require PowerShell 7 or newer (`pwsh`). In v1.4.0, live Node runtime-env ACL integration paths that delegate to inbox Windows PowerShell 5.1 are a known limitation on hosted Windows runners and are not a release gate. Direct PowerShell ACL creation/reverification, insecure-creator rejection, static Node writer security contracts, and the remaining Windows Host Agent contracts stay enforced; validate the Host Agent on the target Windows image before production use.
+
 ```powershell
 .\rikune.ps1 install -Profile hybrid -InstallRuntime
 ```
@@ -298,6 +300,7 @@ Minimum development baseline:
 - Java 21+ for modern Ghidra releases
 - Ghidra for decompiler-backed function analysis
 - Windows 10/11 Pro, Enterprise, or equivalent VM support for Windows Sandbox and Hyper-V runtime paths
+- PowerShell 7 or newer (`pwsh`) for Windows installers
 
 Optional tools are plugin-specific. Run `system.health`, `system.setup.guide`, `tool.readiness`, and `plugin.list` to see what is missing in a given environment.
 

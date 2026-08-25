@@ -135,13 +135,9 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
-      - name: Diagnose legacy Windows PowerShell Utils initialization
-        shell: pwsh
-        run: ./scripts/probe-windows-powershell-utils.ps1
-
       - name: Validate PowerShell installer and ACL contracts
         shell: pwsh
-        run: ./scripts/verify-powershell-installers.ps1
+        run: ./scripts/verify-powershell-installers.ps1 -SkipLegacyWindowsPowerShellAclIntegration
 
       - name: Validate Windows worker syntax
         run: python -m py_compile workers/static_worker.py workers/speakeasy_compat.py

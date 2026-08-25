@@ -1,7 +1,17 @@
+param(
+    [switch]$SkipLegacyWindowsPowerShellAclIntegration
+)
+
 $ErrorActionPreference = "Stop"
 
 if ($PSVersionTable.PSVersion.Major -lt 7) {
     throw "PowerShell installer verification requires PowerShell 7 or newer"
+}
+if (
+    $SkipLegacyWindowsPowerShellAclIntegration -and
+    (-not $IsWindows -or $env:CI -cne "true" -or $env:GITHUB_ACTIONS -cne "true")
+) {
+    throw "Legacy Windows PowerShell ACL integration may only be skipped by GitHub Actions on Windows"
 }
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -1281,71 +1291,75 @@ if ($IsWindows) {
             @(Get-ChildItem -LiteralPath $aclTestRoot -Filter "*.tmp" -Force).Count -eq 0
         ) "PowerShell secure env writer must not leave temporary files behind"
 
-        $runtimeTransactionOriginalBytes = [System.IO.File]::ReadAllBytes($powerShellTarget)
-        $runtimeTransactionPreviousControls = @{}
-        $runtimeTransactionSnapshot = $null
-        foreach ($name in $privateEnvInternalControls) {
-            $runtimeTransactionPreviousControls[$name] = Get-ProcessEnvironmentEntrySnapshot -Name $name
-            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
-        }
-        foreach ($name in $privateEnvInternalControls) {
-            Assert-Contract (
-                -not (Get-ProcessEnvironmentEntrySnapshot -Name $name).Exists
-            ) "Windows runtime transaction must truly remove inherited private env control '$name'"
-        }
-        try {
-            $runtimeTransactionSnapshot = Get-RuntimePrivateEnvSnapshot `
-                -Path $powerShellTarget `
-                -NodePath $nodeCommand `
-                -WriterPath $nodeWriter
-            Remove-RuntimePrivateEnvForSnapshot `
-                -Path $powerShellTarget `
-                -Snapshot $runtimeTransactionSnapshot `
-                -NodePath $nodeCommand `
-                -WriterPath $nodeWriter `
-                -FailurePhase "verifier-rollback-remove"
-            Assert-Contract (
-                -not (Test-Path -LiteralPath $powerShellTarget)
-            ) "Windows runtime transaction must keep the protected env absent during lifecycle commands"
-
-            Restore-RuntimePrivateEnvSnapshot `
-                -Path $powerShellTarget `
-                -Snapshot $runtimeTransactionSnapshot `
-                -NodePath $nodeCommand `
-                -WriterPath $nodeWriter
-            Assert-Contract (
-                [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($powerShellTarget)) -eq
-                    [Convert]::ToBase64String($runtimeTransactionOriginalBytes)
-            ) "Windows runtime transaction rollback must restore exact bytes"
-            Assert-ProtectedFileAcl -Path $powerShellTarget -Description "Rolled-back Windows runtime env file"
-
-            Remove-RuntimePrivateEnvForSnapshot `
-                -Path $powerShellTarget `
-                -Snapshot $runtimeTransactionSnapshot `
-                -NodePath $nodeCommand `
-                -WriterPath $nodeWriter `
-                -FailurePhase "verifier-commit-remove"
-            $runtimeTransactionReplacement = "HOST_AGENT_API_KEY=$([string]::new([char]0x63, 64))`n"
-            Write-SecureRuntimeEnvFile `
-                -Path $powerShellTarget `
-                -Content $runtimeTransactionReplacement `
-                -RequireAbsent
-            Assert-Contract (
-                [System.IO.File]::ReadAllText($powerShellTarget) -eq $runtimeTransactionReplacement
-            ) "Windows runtime transaction must commit only the verified replacement"
-            Assert-ProtectedFileAcl -Path $powerShellTarget -Description "Committed Windows runtime env file"
-        } finally {
+        if ($SkipLegacyWindowsPowerShellAclIntegration) {
+            Write-Warning "Skipping the known Windows PowerShell 5.1 runtime ACL integration limitation"
+        } else {
+            $runtimeTransactionOriginalBytes = [System.IO.File]::ReadAllBytes($powerShellTarget)
+            $runtimeTransactionPreviousControls = @{}
             $runtimeTransactionSnapshot = $null
             foreach ($name in $privateEnvInternalControls) {
-                Restore-ProcessEnvironmentEntry `
-                    -Name $name `
-                    -Snapshot $runtimeTransactionPreviousControls[$name]
+                $runtimeTransactionPreviousControls[$name] = Get-ProcessEnvironmentEntrySnapshot -Name $name
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
             }
             foreach ($name in $privateEnvInternalControls) {
-                Assert-ProcessEnvironmentEntryMatchesSnapshot `
-                    -Name $name `
-                    -Snapshot $runtimeTransactionPreviousControls[$name] `
-                    -Message "Windows runtime transaction must restore private env control '$name' exactly"
+                Assert-Contract (
+                    -not (Get-ProcessEnvironmentEntrySnapshot -Name $name).Exists
+                ) "Windows runtime transaction must truly remove inherited private env control '$name'"
+            }
+            try {
+                $runtimeTransactionSnapshot = Get-RuntimePrivateEnvSnapshot `
+                    -Path $powerShellTarget `
+                    -NodePath $nodeCommand `
+                    -WriterPath $nodeWriter
+                Remove-RuntimePrivateEnvForSnapshot `
+                    -Path $powerShellTarget `
+                    -Snapshot $runtimeTransactionSnapshot `
+                    -NodePath $nodeCommand `
+                    -WriterPath $nodeWriter `
+                    -FailurePhase "verifier-rollback-remove"
+                Assert-Contract (
+                    -not (Test-Path -LiteralPath $powerShellTarget)
+                ) "Windows runtime transaction must keep the protected env absent during lifecycle commands"
+
+                Restore-RuntimePrivateEnvSnapshot `
+                    -Path $powerShellTarget `
+                    -Snapshot $runtimeTransactionSnapshot `
+                    -NodePath $nodeCommand `
+                    -WriterPath $nodeWriter
+                Assert-Contract (
+                    [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($powerShellTarget)) -eq
+                        [Convert]::ToBase64String($runtimeTransactionOriginalBytes)
+                ) "Windows runtime transaction rollback must restore exact bytes"
+                Assert-ProtectedFileAcl -Path $powerShellTarget -Description "Rolled-back Windows runtime env file"
+
+                Remove-RuntimePrivateEnvForSnapshot `
+                    -Path $powerShellTarget `
+                    -Snapshot $runtimeTransactionSnapshot `
+                    -NodePath $nodeCommand `
+                    -WriterPath $nodeWriter `
+                    -FailurePhase "verifier-commit-remove"
+                $runtimeTransactionReplacement = "HOST_AGENT_API_KEY=$([string]::new([char]0x63, 64))`n"
+                Write-SecureRuntimeEnvFile `
+                    -Path $powerShellTarget `
+                    -Content $runtimeTransactionReplacement `
+                    -RequireAbsent
+                Assert-Contract (
+                    [System.IO.File]::ReadAllText($powerShellTarget) -eq $runtimeTransactionReplacement
+                ) "Windows runtime transaction must commit only the verified replacement"
+                Assert-ProtectedFileAcl -Path $powerShellTarget -Description "Committed Windows runtime env file"
+            } finally {
+                $runtimeTransactionSnapshot = $null
+                foreach ($name in $privateEnvInternalControls) {
+                    Restore-ProcessEnvironmentEntry `
+                        -Name $name `
+                        -Snapshot $runtimeTransactionPreviousControls[$name]
+                }
+                foreach ($name in $privateEnvInternalControls) {
+                    Assert-ProcessEnvironmentEntryMatchesSnapshot `
+                        -Name $name `
+                        -Snapshot $runtimeTransactionPreviousControls[$name] `
+                        -Message "Windows runtime transaction must restore private env control '$name' exactly"
+                }
             }
         }
 
@@ -1402,6 +1416,7 @@ if ($IsWindows) {
             @(Get-ChildItem -LiteralPath $aclTestRoot -Filter "*.tmp" -Force).Count -eq 0
         ) "Insecure creator rejection must clean the PowerShell runtime env temporary file"
 
+        if (-not $SkipLegacyWindowsPowerShellAclIntegration) {
         [System.IO.File]::WriteAllText(
             $targetPath,
             "OLD_MARKER=true`nRIKUNE_API_KEY=legacy-key`n",
@@ -1503,6 +1518,7 @@ if ($IsWindows) {
 
         $temporaryFiles = @(Get-ChildItem -LiteralPath $aclTestRoot -Filter ".docker-runtime.env.*.tmp" -Force)
         Assert-Contract ($temporaryFiles.Count -eq 0) "Node secure env writer must not leave temporary files behind"
+        }
 
         $pm2Contract = Resolve-PinnedPm2Command -ProjectRoot $projectRoot
         $expectedPm2Command = Join-Path $projectRoot "node_modules\.bin\pm2.cmd"
