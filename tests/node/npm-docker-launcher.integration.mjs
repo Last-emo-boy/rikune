@@ -80,7 +80,7 @@ const defaultPrintRun = spawnSync(process.execPath, [binPath, 'docker-run', '--p
 assert.equal(defaultPrintRun.status, 0)
 assert.match(
   defaultPrintRun.stdout.trim(),
-  /^docker run --rm -i -e API_ENABLED=false -e NODE_ENV=production -e PYTHONUNBUFFERED=1 ghcr\.io\/last-emo-boy\/rikune-analyzer-static:1\.4\.0 node dist\/index\.js$/
+  /^docker run --rm -i -e API_ENABLED=false -e NODE_ENV=production -e PYTHONUNBUFFERED=1 ghcr\.io\/last-emo-boy\/rikune-analyzer-static:1\.4\.1 node dist\/index\.js$/
 )
 
 const agentHelp = spawnSync(process.execPath, [agentBinPath, '--help'], {
