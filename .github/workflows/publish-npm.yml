@@ -426,7 +426,7 @@ jobs:
 
       - name: Install Cosign
         if: needs.preflight.outputs.phase == 'stage'
-        uses: sigstore/cosign-installer@f713795cb21599bc4e5c4b58cbad1da852d7eeb9 # v3
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
 
       - name: Keyless-sign immutable candidate digest
         if: needs.preflight.outputs.phase == 'stage'
@@ -482,7 +482,7 @@ jobs:
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@f713795cb21599bc4e5c4b58cbad1da852d7eeb9 # v3
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
 
       - name: Verify registry digest and exact runnable platform
         shell: bash
