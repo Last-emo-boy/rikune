@@ -55,11 +55,7 @@ describe('v1.4.1 release DAG', () => {
       false
     )
     const ceremonyJob = workflow.jobs['npm-candidate-ceremony']
-    expect(ceremonyJob.needs).toEqual([
-      'preflight',
-      'hybrid-build-verify',
-      'static-version-alias',
-    ])
+    expect(ceremonyJob.needs).toEqual(['preflight', 'hybrid-build-verify', 'static-version-alias'])
     expect(ceremonyJob.if).toContain("needs.preflight.outputs.phase == 'stage'")
     const candidateUpload = ceremonyJob.steps.find(
       (step: any) =>
@@ -171,9 +167,7 @@ describe('v1.4.1 release DAG', () => {
     expect(versionAliasJob.if).toContain("needs.preflight.outputs.dry_run != 'true'")
     expect(versionAliasJob.permissions.packages).toBe('write')
     expect(versionAliasJob.outputs.digest).toBe('${{ steps.contract.outputs.digest }}')
-    const versionAliasScript = versionAliasJob.steps
-      .map((step: any) => step.run || '')
-      .join('\n')
+    const versionAliasScript = versionAliasJob.steps.map((step: any) => step.run || '').join('\n')
     expect(versionAliasScript).toContain('versioned="$STATIC_IMAGE:$RELEASE_VERSION"')
     expect(versionAliasScript).toContain('RELEASE_PHASE')
     expect(versionAliasScript).toContain('[[ "$RELEASE_PHASE" == stage ]]')
@@ -319,9 +313,7 @@ describe('v1.4.1 release DAG', () => {
       expect(statusFor('ERROR: unexpected status from HEAD request: 404 Not Found\n')).toBe(0)
       expect(statusFor('ERROR: unauthorized: authentication required\n')).toBe(1)
       expect(
-        statusFor(
-          'ERROR: ghcr.io/last-emo-boy/rikune-analyzer-static:another-tag: not found\n'
-        )
+        statusFor('ERROR: ghcr.io/last-emo-boy/rikune-analyzer-static:another-tag: not found\n')
       ).toBe(1)
       expect(statusFor(`ERROR: failed to resolve ${inspected}: network timeout\n`)).toBe(1)
     } finally {
@@ -396,6 +388,43 @@ describe('v1.4.1 release DAG', () => {
     expect(hybridBuild.with.labels).toContain('org.opencontainers.image.revision=${{ github.sha }}')
     expect(hybridBuild.with.labels).toContain('org.opencontainers.image.rikune.profile=hybrid')
 
+    const hybridPackage = hybridJob.steps.find((step: any) => step.id === 'hybrid-package')
+    const versionReference = '${{ steps.hybrid-package.outputs.version }}'
+    expect(hybridBuild.with.labels).toContain(
+      `org.opencontainers.image.version=${versionReference}`
+    )
+    const hybridCheck = hybridJob.steps.find(
+      (step: any) => step.name === 'Verify hardened Hybrid startup and assets'
+    )
+    expect(hybridCheck.env.PACKAGE_VERSION).toBe(versionReference)
+    expect(hybridCheck.run).toContain('"$GITHUB_SHA" "$PACKAGE_VERSION"')
+
+    // Execute the real version-export step against a future release so a stale
+    // hard-coded version cannot pass merely because it matches today's package.
+    const versionFixture = fs.mkdtempSync(path.join(os.tmpdir(), 'rikune-hybrid-version-'))
+    try {
+      const output = path.join(versionFixture, 'github-output')
+      fs.writeFileSync(
+        path.join(versionFixture, 'package.json'),
+        JSON.stringify({ version: '9.8.7' })
+      )
+      fs.writeFileSync(path.join(versionFixture, 'npm'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+      fs.writeFileSync(path.join(versionFixture, 'git'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+      const result = spawnSync('bash', ['-c', hybridPackage.run], {
+        cwd: versionFixture,
+        env: {
+          ...process.env,
+          PATH: `${versionFixture}${path.delimiter}${process.env.PATH}`,
+          GITHUB_OUTPUT: output,
+        },
+        encoding: 'utf8',
+      })
+      expect({ status: result.status, stderr: result.stderr }).toEqual({ status: 0, stderr: '' })
+      expect(fs.readFileSync(output, 'utf8')).toBe('version=9.8.7\n')
+    } finally {
+      fs.rmSync(versionFixture, { recursive: true, force: true })
+    }
+
     const hybridVerifier = fs.readFileSync(
       path.join(process.cwd(), 'scripts', 'verify-hybrid-container.sh'),
       'utf8'
@@ -436,6 +465,13 @@ describe('v1.4.1 release DAG', () => {
     ]) {
       expect(hybridVerifier).toContain(`--tmpfs "${directory}:`)
     }
+    const missingVersion = spawnSync(
+      'bash',
+      ['scripts/verify-hybrid-container.sh', 'unused:test', 'a'.repeat(40)],
+      { encoding: 'utf8' }
+    )
+    expect(missingVersion.status).not.toBe(0)
+    expect(missingVersion.stderr).toContain('IMAGE EXPECTED_REVISION EXPECTED_VERSION')
   })
 
   test('pins every workflow action to a full commit SHA', () => {

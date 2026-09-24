@@ -190,13 +190,22 @@ export function createGhidraAnalyzeHandler(deps: PluginToolDeps) {
     ])
     const seen = new Set<string>()
     return (database as DatabaseManager).findArtifacts(sampleId).flatMap((artifact) => {
-      if (!paths.has(artifact.path) || seen.has(artifact.path) ||
-          !['ghidra_functions', 'function_recovery'].includes(artifact.type)) return []
+      if (
+        !paths.has(artifact.path) ||
+        seen.has(artifact.path) ||
+        !['ghidra_functions', 'function_recovery'].includes(artifact.type)
+      )
+        return []
       seen.add(artifact.path)
-      return [GhidraArtifactRefSchema.parse({
-        id: artifact.id, type: artifact.type, path: artifact.path,
-        sha256: artifact.sha256, mime: artifact.mime || undefined,
-      })]
+      return [
+        GhidraArtifactRefSchema.parse({
+          id: artifact.id,
+          type: artifact.type,
+          path: artifact.path,
+          sha256: artifact.sha256,
+          mime: artifact.mime || undefined,
+        }),
+      ]
     })
   }
 

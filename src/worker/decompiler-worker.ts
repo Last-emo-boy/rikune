@@ -2185,9 +2185,7 @@ export class DecompilerWorker {
         fs.writeFileSync(artifactFullPath, serializedArtifact, 'utf8')
 
         // Compute artifact SHA256
-        const artifactSha256 = createHash('sha256')
-          .update(serializedArtifact, 'utf8')
-          .digest('hex')
+        const artifactSha256 = createHash('sha256').update(serializedArtifact, 'utf8').digest('hex')
 
         // Insert artifact record
         this.database.insertArtifact({

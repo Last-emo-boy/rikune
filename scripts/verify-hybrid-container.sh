@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-image_ref=${1:?usage: verify-hybrid-container.sh IMAGE EXPECTED_REVISION [EXPECTED_VERSION]}
-expected_revision=${2:?usage: verify-hybrid-container.sh IMAGE EXPECTED_REVISION [EXPECTED_VERSION]}
-expected_version=${3:-1.4.0}
+image_ref=${1:?usage: verify-hybrid-container.sh IMAGE EXPECTED_REVISION EXPECTED_VERSION}
+expected_revision=${2:?usage: verify-hybrid-container.sh IMAGE EXPECTED_REVISION EXPECTED_VERSION}
+expected_version=${3:?usage: verify-hybrid-container.sh IMAGE EXPECTED_REVISION EXPECTED_VERSION}
 container_name="rikune-hybrid-contract-${RANDOM}-$$"
 
 if [[ ! "$expected_revision" =~ ^[a-f0-9]{40}$ ]]; then

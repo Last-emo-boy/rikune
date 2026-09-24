@@ -104,7 +104,12 @@ jobs:
           cache: npm
 
       - name: Generate exact committed Hybrid target
+        id: hybrid-package
         run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           npm ci
           npm run build
           npm run docker:generate:hybrid
@@ -126,14 +131,16 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/Last-emo-boy/rikune
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=1.4.0
+            org.opencontainers.image.version=${{ steps.hybrid-package.outputs.version }}
             org.opencontainers.image.rikune.profile=hybrid
           cache-from: type=gha,scope=rikune-hybrid-ci
           cache-to: type=gha,mode=max,scope=rikune-hybrid-ci
 
       - name: Verify hardened Hybrid startup and assets
         shell: bash
-        run: bash scripts/verify-hybrid-container.sh rikune-analyzer-hybrid:ci "$GITHUB_SHA" 1.4.0
+        env:
+          PACKAGE_VERSION: ${{ steps.hybrid-package.outputs.version }}
+        run: bash scripts/verify-hybrid-container.sh rikune-analyzer-hybrid:ci "$GITHUB_SHA" "$PACKAGE_VERSION"
 
   build:
     name: Build full image without publishing
