@@ -149,6 +149,37 @@ docker exec "$container_name" node --input-type=module --eval '
   }
 '
 
+docker exec "$container_name" node --input-type=module --eval '
+  import assert from "node:assert/strict";
+  import { createHash } from "node:crypto";
+
+  // Readiness probes do not exercise sample custody or openat2. Verify the
+  // actual publication, database lookup, byte retrieval and deduplication.
+  const payload = Buffer.from("MZ benign static container upload contract\0");
+  const expectedId = `sha256:${createHash("sha256").update(payload).digest("hex")}`;
+  const base = "http://127.0.0.1:18080/api/v1/samples";
+  const headers = { "X-API-Key": process.env.API_KEY };
+  for (const duplicate of [false, true]) {
+    const form = new FormData();
+    form.append("file", new Blob([payload]), "static-upload-contract.bin");
+    const response = await fetch(base, { method: "POST", headers, body: form });
+    const body = await response.json();
+    assert.equal(response.status, 201, JSON.stringify(body));
+    assert.equal(body.ok, true);
+    assert.equal(body.data.sample_id, expectedId);
+    assert.equal(body.data.size, payload.length);
+    assert.equal(Boolean(body.data.existed), duplicate);
+  }
+  const sampleUrl = `${base}/${encodeURIComponent(expectedId)}`;
+  const metadata = await fetch(sampleUrl, { headers });
+  assert.equal(metadata.status, 200);
+  assert.equal((await metadata.json()).data.sample_id, expectedId);
+  const download = await fetch(`${sampleUrl}?download=true`, { headers });
+  assert.equal(download.status, 200);
+  assert.deepEqual(Buffer.from(await download.arrayBuffer()), payload);
+  console.log("Static upload, persistence, download and deduplication passed");
+'
+
 docker exec "$container_name" sh -ceu '
   for target in /app/workspaces /app/data /app/cache /app/logs /app/storage /app/uploads /ghidra-projects /ghidra-logs /tmp; do
     probe="$target/.runtime-write-probe"

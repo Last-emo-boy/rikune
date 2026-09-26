@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Linux-only dirfd/openat2 helper for sample quarantine renames.
+"""Linux-only dirfd helper for sample custody and quarantine operations.
 
 Every path component is resolved beneath a frozen root directory descriptor
-with symlink resolution disabled. Unsupported kernels/platforms fail closed.
+with symlink resolution disabled. Single-component openat is used only when
+openat2 is unavailable; unsupported platforms still fail closed.
 """
 
 import ctypes
@@ -53,8 +54,13 @@ LIBC = ctypes.CDLL(None, use_errno=True)
 
 
 def openat2(directory_fd, relative):
+    # O_NOFOLLOW only protects the final component with openat. Enforce a
+    # single basename on both paths so ENOSYS cannot weaken our resolution
+    # contract (including absolute paths, dot/dot-dot and procfs magic links).
+    relative = single_name(relative, "directory component")
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
     how = OpenHow(
-        os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW,
+        flags,
         0,
         RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS,
     )
@@ -68,6 +74,11 @@ def openat2(directory_fd, relative):
     )
     if result < 0:
         code = ctypes.get_errno()
+        if code == errno.ENOSYS:
+            # Some Linux syscall translators (e.g. amd64 Docker on Apple
+            # Silicon) lack openat2. The pinned dirfd and single basename
+            # make openat + O_DIRECTORY + O_NOFOLLOW equally restrictive.
+            return os.open(relative, flags, dir_fd=directory_fd)
         raise OSError(code, os.strerror(code), relative)
     return result
 
